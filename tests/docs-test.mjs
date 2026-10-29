@@ -1,0 +1,14 @@
+import fs from 'fs';
+const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+const src = fs.readFileSync(new URL('../extension/docs.js', import.meta.url).pathname, 'utf8');
+const pdfItemsToText = new Function(src.slice(src.indexOf('function pdfItemsToText'), src.indexOf('async function extractDocText')) + '; return pdfItemsToText;')();
+const doc = await pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync(new URL('./fixtures/resume.pdf', import.meta.url).pathname)) }).promise;
+const pages = [];
+for (let i = 1; i <= doc.numPages; i++) pages.push(pdfItemsToText((await (await doc.getPage(i)).getTextContent()).items));
+const text = pages.join('\n\n');
+console.log('--- PDF text ---\n' + text + '\n---');
+const ok = /Jordan Example\njordan@example.edu/.test(text) && /Acme Corp Jun 2025 - Aug 2025/.test(text) && /Skills\nTypeScript, React Native/.test(text);
+console.log(ok ? 'PASS  PDF: lines rebuilt in reading order, both pages' : 'FAIL  PDF extraction');
+const mammoth = (await import('mammoth')).default;
+const d = await mammoth.extractRawText({ buffer: fs.readFileSync(new URL('./fixtures/resume.docx', import.meta.url).pathname) });
+console.log(/Jordan Example[\s\S]*Skills: TypeScript, Python/.test(d.value) ? 'PASS  DOCX: text extracted' : 'FAIL  DOCX', JSON.stringify(d.value));

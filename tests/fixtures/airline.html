@@ -1,0 +1,170 @@
+<!doctype html>
+<!-- A copy of how turkishairlines.com's booking form behaves (inspected 2026-10-29): ARIA comboboxes
+     that only list airports after you type, one shared listbox (#bookerInputList), duplicated
+     ids/labels on every multi-city leg, a react-calendar date picker (day buttons labelled
+     "December 10 Thursday, 2026", "Go to the next month"), and header/nav items that look like
+     options. Plain JS, no framework, so it runs in jsdom and in real Chrome. -->
+<html lang="en"><head><meta charset="utf-8"><title>Turkish Airlines | Flights</title>
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  header { display: flex; gap: 12px; padding: 8px; background: #222; color: #fff; }
+  header .lang-option, header .nav-option { cursor: pointer; }
+  .carousel { height: 80px; background: #ccc; display: flex; justify-content: space-between; align-items: center; }
+  .booker { padding: 16px; border: 1px solid #ddd; margin: 12px; position: relative; }
+  .trip span { margin-right: 12px; cursor: pointer; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  .row .n { width: 70px; font-weight: bold; }
+  .port { border: 1px solid #aaa; padding: 4px; width: 220px; }
+  .port small { display: block; color: #666; min-height: 1em; }
+  .port input { width: 200px; }
+  .dates { border: 1px solid #aaa; padding: 8px; width: 120px; cursor: pointer; }
+  #bookerInputList { position: absolute; background: #fff; border: 1px solid #888; list-style: none; margin: 0; padding: 0; width: 320px; z-index: 5; }
+  #bookerInputList[hidden] { display: none; }
+  #bookerInputList li { padding: 6px; cursor: pointer; }
+  .react-calendar { position: absolute; background: #fff; border: 1px solid #888; padding: 8px; z-index: 6; display: flex; gap: 16px; }
+  .react-calendar__month-view__days { display: grid; grid-template-columns: repeat(7, 32px); }
+  .react-calendar__tile { height: 28px; }
+  .results { margin: 12px; }
+</style></head>
+<body>
+<header>
+  <a href="#" class="nav-option">Turkish Airlines Holidays</a><a href="#" class="nav-option">Corporate Club</a>
+  <div class="nav-option" role="button">Search</div><div class="lang-option" role="button">EN-US</div>
+</header>
+<div class="carousel"><button aria-label="Go to the previous slide">❮</button><span>Earn bonus miles</span><button aria-label="Go to the next slide">❯</button></div>
+<main>
+  <div class="booker" id="booker">
+    <div class="trip">
+      <span role="button" id="round-trip">Round trip</span><span role="button" id="one-way">One way</span>
+      <span role="button" id="multi-city">Multi-city</span>
+    </div>
+    <div id="legs"></div>
+    <div class="row"><div role="button" id="addFlight" tabindex="0">Add flight</div>
+      <div role="button" aria-expanded="false" tabindex="0">Passengers 1 Passenger ECO</div>
+      <button type="button" id="buttonSearchflights">Search flights</button></div>
+    <ul id="bookerInputList" role="listbox" hidden></ul>
+  </div>
+  <div class="results" id="results"></div>
+</main>
+<script>
+(function () {
+  const TODAY = new Date(2026, 9, 29); // fixed so tests don't depend on the real date
+  const AIRPORTS = [
+    { name: 'Washington DC', code: 'All', km: 11, city: 'Washington DC', country: 'United States', all: true, codes: ['IAD', 'DCA', 'BWI'] },
+    { name: 'Baltimore Washington International Airport', code: 'BWI', km: 72, city: 'Washington DC', country: 'United States' },
+    { name: 'Ronald Reagan National Airport', code: 'DCA', km: 44, city: 'Washington DC', country: 'United States' },
+    { name: 'Dulles International Airport', code: 'IAD', km: 11, city: 'Washington DC', country: 'United States' },
+    { name: 'Istanbul', code: 'All', km: 27, city: 'Istanbul', country: 'Türkiye', all: true, codes: ['IST', 'SAW'] },
+    { name: 'Istanbul Airport', code: 'IST', km: 27, city: 'Istanbul', country: 'Türkiye' },
+    { name: 'Sabiha Gokcen Airport', code: 'SAW', km: 36, city: 'Istanbul', country: 'Türkiye' },
+    { name: 'Almaty International Airport', code: 'ALA', km: 15, city: 'Almaty', country: 'Kazakhstan' },
+    { name: 'Astana International Airport', code: 'NQZ', km: 16, city: 'Astana', country: 'Kazakhstan' }
+  ];
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const list = document.getElementById('bookerInputList');
+  const legs = document.getElementById('legs');
+  window.booking = [];
+  let multi = false;
+
+  function legRow(i) {
+    const row = document.createElement('div');
+    row.className = 'row leg';
+    row.innerHTML = `<span class="n">${i + 1}. Flight</span>
+      <div class="port"><small class="lbl">From</small><input id="fromPort" role="combobox" aria-label="From" aria-expanded="false" aria-controls="bookerInputList" aria-autocomplete="list" aria-haspopup="listbox" autocomplete="off"><small class="sub"></small></div>
+      <div class="port"><small class="lbl">To</small><input id="toPort" role="combobox" aria-label="To" aria-expanded="false" aria-controls="bookerInputList" aria-autocomplete="list" aria-haspopup="listbox" autocomplete="off"><small class="sub"></small></div>
+      <div class="dates" role="button" aria-expanded="false" tabindex="0">Dates</div>`;
+    window.booking[i] = { from: null, to: null, date: null };
+    for (const [k, inp] of [['from', row.querySelectorAll('input')[0]], ['to', row.querySelectorAll('input')[1]]]) {
+      inp.addEventListener('focus', () => openList(inp, i, k));
+      inp.addEventListener('click', () => openList(inp, i, k));
+      inp.addEventListener('input', () => openList(inp, i, k));
+    }
+    // Like the real site, clicking Dates while its calendar is open closes it.
+    row.querySelector('.dates').addEventListener('click', e => { const box = e.currentTarget; if (cal && cal.previousElementSibling === box) { cal.remove(); cal = null; box.setAttribute('aria-expanded', 'false'); } else openCalendar(box, i); });
+    return row;
+  }
+  function render(n) { legs.innerHTML = ''; for (let i = 0; i < n; i++) legs.appendChild(legRow(i)); }
+
+  function openList(inp, i, k) {
+    const q = inp.value.trim().toLowerCase();
+    const r = inp.getBoundingClientRect(), b = document.getElementById('booker').getBoundingClientRect();
+    list.style.left = (r.left - b.left) + 'px'; list.style.top = (r.bottom - b.top + 4) + 'px';
+    list.innerHTML = '';
+    const items = !q ? [] : AIRPORTS.filter(a => a.name.toLowerCase().includes(q) || a.city.toLowerCase().includes(q) || a.code.toLowerCase() === q || (a.codes || []).some(c => c.toLowerCase() === q));
+    if (!items.length) {
+      const li = document.createElement('li'); li.setAttribute('role', 'option'); li.setAttribute('aria-label', 'See all destinations'); li.id = 'booker-option-0'; li.textContent = 'See all destinations'; list.appendChild(li);
+    }
+    items.forEach((a, n) => {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option'); li.setAttribute('aria-label', a.name); li.id = 'booker-option-' + n; li.tabIndex = 0;
+      li.textContent = `${a.name}(${a.code}) (${a.km} km),${a.city}${a.country}`;
+      li.addEventListener('click', () => {
+        inp.value = a.city;
+        inp.parentElement.querySelector('.sub').textContent = `${a.name} (${a.code})`;
+        window.booking[i][k] = a.code;
+        list.hidden = true; inp.setAttribute('aria-expanded', 'false');
+        // Like the real site: choosing the destination opens that flight's calendar by itself.
+        if (k === 'to') openCalendar(inp.closest('.leg').querySelector('.dates'), i);
+      });
+      list.appendChild(li);
+    });
+    list.hidden = false; inp.setAttribute('aria-expanded', 'true');
+  }
+
+  let cal = null;
+  function openCalendar(box, i) {
+    if (cal) cal.remove();
+    let first = new Date(TODAY.getFullYear(), TODAY.getMonth(), 1);
+    cal = document.createElement('div');
+    cal.className = 'react-calendar';
+    const draw = () => {
+      cal.innerHTML = `<div class="react-calendar__navigation"><button type="button" class="react-calendar__navigation__arrow react-calendar__navigation__prev-button" aria-label="Go to the previous month">‹</button>
+        <button type="button" class="react-calendar__navigation__arrow react-calendar__navigation__next-button" aria-label="Go to the next month">›</button></div>`;
+      for (let m = 0; m < 2; m++) {
+        const d0 = new Date(first.getFullYear(), first.getMonth() + m, 1);
+        const wrap = document.createElement('div');
+        wrap.innerHTML = `<div class="hm__style_monthLabel">${MONTHS[d0.getMonth()]} ${d0.getFullYear()}</div><div class="react-calendar__month-view__days"></div>`;
+        const grid = wrap.querySelector('.react-calendar__month-view__days');
+        const days = new Date(d0.getFullYear(), d0.getMonth() + 1, 0).getDate();
+        for (let d = 1; d <= days; d++) {
+          const date = new Date(d0.getFullYear(), d0.getMonth(), d);
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = 'react-calendar__tile react-calendar__month-view__days__day';
+          b.disabled = date < TODAY;
+          b.innerHTML = `<abbr aria-label="${MONTHS[date.getMonth()]} ${d} ${DAYS[date.getDay()]}, ${date.getFullYear()}">${d}</abbr>`;
+          b.addEventListener('click', () => {
+            window.booking[i].date = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            box.textContent = `${MONTHS[date.getMonth()].slice(0, 3)} ${d}, ${date.getFullYear()}`;
+            cal.remove(); cal = null; box.setAttribute('aria-expanded', 'false');
+          });
+          grid.appendChild(b);
+        }
+        cal.appendChild(wrap);
+      }
+      cal.querySelector('.react-calendar__navigation__next-button').onclick = () => { first = new Date(first.getFullYear(), first.getMonth() + 1, 1); draw(); };
+      cal.querySelector('.react-calendar__navigation__prev-button').onclick = () => { first = new Date(first.getFullYear(), first.getMonth() - 1, 1); draw(); };
+    };
+    draw();
+    box.after(cal); box.setAttribute('aria-expanded', 'true');
+  }
+
+  document.getElementById('multi-city').onclick = () => { multi = true; render(2); };
+  document.getElementById('one-way').onclick = () => { multi = false; render(1); };
+  document.getElementById('addFlight').onclick = () => { if (multi && legs.children.length < 5) { const i = legs.children.length; legs.appendChild(legRow(i)); } };
+  document.getElementById('buttonSearchflights').onclick = () => {
+    const out = document.getElementById('results');
+    const bad = window.booking.findIndex(l => !l.from || !l.to || !l.date);
+    if (bad >= 0) { out.innerHTML = `<p class="error" role="alert">Please complete flight ${bad + 1}.</p>`; return; }
+    // Like the real results page (checked 2026-10-29): one best total for the whole trip, then
+    // each flight priced as an add-on to it ("+USD 0.00" = included, "+USD 45.00" = extra).
+    const fares = { 'IAD-IST': [0, 45, 120], 'IST-ALA': [0, 18, 60], 'ALA-IAD': [0, 89, 140] };
+    out.innerHTML = `<p class="total">The best total price for the flights you have selected: USD 1,243.30</p>` + window.booking.map((l, n) => {
+      const key = `${l.from}-${l.to}`, f = fares[key] || [0, 30, 90];
+      return `<section><h3>Flight ${n + 1}: ${l.from} → ${l.to}, ${l.date}</h3><ul>${f.map((p, k) => `<li>${13 + k}:30 ${l.from} · ${k ? '1 stop' : 'Direct'} · Economy · Per passenger +USD ${p}.00${k ? '' : ' · Best price'}</li>`).join('')}</ul></section>`;
+    }).join('') + '<p>The best total price applies to the selection of packages with +0; other packages add the fee shown.</p>';
+    window.searched = (window.searched || 0) + 1;
+  };
+  render(1);
+})();
+</script></body></html>

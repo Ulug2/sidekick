@@ -1,0 +1,61 @@
+# Sidekick (Chrome extension) — v0.9.4
+
+Your personal AI assistant in a Chrome side panel. It knows who you are, remembers what you tell it, does exact math, searches the web, sees your tab, and can operate pages for you (forms, job applications) with your approval.
+
+## Install / update
+1. Unzip somewhere permanent (or over your old folder).
+2. `chrome://extensions` → Developer mode → **Load unpacked** (or the reload ↻ arrow on Sidekick).
+3. First install opens onboarding: API key, resume, profile. Settings: the gear icon in the panel.
+
+## How it's built (8 layers, adapted for one person)
+| Layer | In Sidekick |
+|---|---|
+| Persona | Name, personality, how it addresses you (Settings → Your assistant). Says which model it runs on; never claims to be another product. |
+| Grounding | Your profile, long-term **memories**, your **documents** library and past chats, retrieved per message (local BM25 ranking). Web search for anything current, with sources. |
+| Tools | Exact **calculator** (math.js + computer algebra: derivatives, integrals, limits, solving), web search + read URL, read page, look at screen, remember/recall/forget, and the browser **agent**. |
+| Access control | Agent asks before final actions (or before everything), never-act-on site list, never types passwords/cards/ID numbers. |
+| Guardrails | Web pages, files and search results are fenced as untrusted data; card numbers, SSNs and API keys are masked before anything reaches the model. |
+| Cost routing | Fast model for everyday messages, smart model for math/code/analysis/images (badge at the top: Auto / Fast / Smart). Prompt caching on Claude. |
+| Observability | Every answer has **Details**: model, why it was chosen, each tool call with inputs/outputs, tokens, time. Settings → Usage shows tokens per model. |
+| Evals | Settings → Quality checks runs 16 graded conversations (math, identity, editing, injection, memory, style). Re-run after changing models or instructions; aim for ≥ 85%. |
+
+## Using it
+- **Ask anything.** Hard questions go to the smart model automatically. Math is computed exactly, not guessed.
+- **Double-checked math (v0.7.3).** Math answers end with a collapsed "How I set it up" block (variables, objective, constraints, answer), so a misread problem is easy to spot. A second solve checks the answer, but it can only replace it with evidence: the code compares the cost (or plugs answers into the equations) under both setups. If that can't decide, a third solve on the strongest model (Settings → tie-break model) breaks the tie. A correction is labeled "Correction after double-check" with the original kept underneath; if the solves still disagree you get a warning with all answers. "Just give me the answer" holds the reply until the check is done. A problem on screen always uses the smart model at high effort and also reads the page text (including MyOpenMath inside Moodle).
+- **Memory, in three layers:**
+  - *Pinned notes (this chat):* after every reply Sidekick updates a short list of your instructions and the task so far, and attaches it to every message, so "answer in Russian" or "use TypeScript" sticks for the whole chat, even if the model changes. See them with the pin button.
+  - *Learning (between chats):* when you start a new chat, Sidekick reviews the one you finished and keeps only what matters about you (how you like answers, habits, goals, key facts). It tells you what it learned. Everything else from that chat is left behind.
+  - *How Sidekick sees you:* a short summary of how you like to work, refined after each chat and included in every conversation. Edit it, and all memories, on your profile page.
+- **Agent that gets faster on sites it knows (v0.8):**
+  - *Shortcuts:* when the agent finishes a task, the steps that worked are saved as a shortcut for that site (greenhouse.io, myopenmath.com, …). Next time it replays the routine part in a second, with no AI calls: navigation, fields from your profile (saved as *which* field, never the value), your resume, radio answers from your profile. It always stops for written answers, choices that aren't in your profile, consent checkboxes, and before anything final, and it never guesses when the page looks different.
+  - *Site notes:* if a run hit problems (a tricky dropdown, a refused field), the fast model writes 1–3 short tips for next time. It only sees what was done and where, never what you typed.
+  - *The site's own tools (WebMCP):* sites that offer tools to AI agents (the new web standard from Chrome and Edge) are used directly instead of clicking. Read-only tools run right away; anything else asks you first.
+  - *Faster steps:* after the first full view of a page the agent gets only what changed; identical buttons are listed once; `fill_fields` fills a whole form in one step; several sure actions can go in one turn.
+  - *Page structure:* fields are grouped under their section headings, with the site's help text, like a screen reader sees them.
+  - See and delete shortcuts and notes on your profile page (Site skills); turn learning off in Settings.
+- **Skills (v0.9):** when you correct *how* Sidekick does something ("round to 4 decimals", "separate answers with commas", "show the setup first"), or a method works well for a recurring task, the end-of-chat review saves it as a short skill. Only skill names sit in every prompt; a skill's steps are added when a message matches it. Read, edit, add or delete them on your profile page (Skills).
+- **Smarter memory (v0.9):** memories can have a due date (deadlines and exams within two weeks are always in front of Sidekick), be marked done, and show whether you said it or Sidekick inferred it. Export everything (memories, skills, site notes, how Sidekick sees you) as one readable Markdown file and import it back.
+- **Code-checked answers (v0.9):** every candidate answer is checked against its own setup by code (is it really a minimum? does it satisfy its equations?). An answer that fails its own check can't win, and if the double-check agrees with an answer the code rejects, a third solve is run.
+- **See what it's doing (v0.9.1):** a live status line says what Sidekick is doing right now (thinking, reading the page, double-checking, which agent step) and shows its latest thought; afterwards it folds into "Thought for Ns" with the full thinking inside, saved with the chat.
+- **New chat each time (v0.9.1):** opening Sidekick starts a fresh chat; the previous one is saved (also on close or reload, even mid-reply) and is in History.
+- **Keeps working in the background (v0.9.1):** in Agent mode you can switch tabs; the agent stays on its own page and never pulls you back. If a page or an embedded frame (like MyOpenMath inside Moodle) is blocked, Sidekick tells you which one and what to do.
+- **Several tasks at once (v0.9.2):** "apply to these 4 jobs" gets a checklist in the agent card; each application opens in its own tab, each submit asks you, and it keeps going until every item is done. The run is saved as it goes. Agent mode now knows the earlier chat ("apply for that one"), searches the page (find) and the web instead of scrolling or guessing addresses.
+- **Safer and calmer agent runs (v0.9.3):** several tasks start with one plan card to approve (tasks + sites, optionally "submit without asking"); its tabs sit in an orange "Sidekick" tab group; Chrome notifies you when it needs you or finishes; a fast AI double-checks visits to new sites and sharing your details there; pages with hidden instructions for AI or invisible trap fields are flagged. All switchable in Settings → Agent.
+- **Travel and booking-style forms (v0.9.4):** airport/city autocompletes (it types the code or name and picks the closest match), calendar date pickers (pick_date), and multi-city or repeated rows. It searches and compares prices but never books or pays.
+- **Documents:** profile page → Documents. Add syllabi, notes, PDFs; ask "when is my final?".
+- **Agent:** ask it to do something on a page ("fill this form", "apply to this job"), or turn on Agent mode. It uses real clicks and typing; Chrome shows "Sidekick started debugging this browser" while it works (click Cancel there to stop it).
+- **Voice:** mic button to dictate; replies to dictated messages are read aloud.
+
+## Bundled libraries (vendor/)
+marked (MIT), DOMPurify (Apache-2.0/MPL-2.0), KaTeX (MIT), highlight.js (BSD-3), math.js (Apache-2.0), nerdamer (MIT), pdf.js (Apache-2.0), mammoth (BSD-2), Inter font (OFL).
+
+## Security
+See SECURITY.md: what protects you (and is tested), and the risks that remain.
+
+## Lessons
+See LESSONS.md: every bug that reached you, its real cause, and the rule that keeps it from coming back.
+
+## Limits
+- Can't read Chrome's own pages (chrome://, Web Store) or its PDF viewer (give it the PDF's link instead, or use Explain screen).
+- Canvas-heavy apps work through screenshots + coordinate clicks; slower and less precise.
+- Claude's built-in web search costs $10 per 1,000 searches (turn off in Settings to use the free fallback).

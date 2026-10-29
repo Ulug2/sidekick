@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sidekick</title>
+  <link rel="stylesheet" href="vendor/katex.min.css" />
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header class="topbar">
+    <button id="historyBtn" class="icon-btn" type="button" title="Chat history" aria-label="Chat history">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+    </button>
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="1.6">
+          <ellipse cx="12" cy="12" rx="9" ry="4.2" />
+          <ellipse cx="12" cy="12" rx="9" ry="4.2" transform="rotate(60 12 12)" />
+          <ellipse cx="12" cy="12" rx="9" ry="4.2" transform="rotate(120 12 12)" />
+        </g>
+      </svg>
+      <span>Sidekick</span>
+    </div>
+    <button id="modelBadge" class="badge" type="button" title="Model choice. Click to switch between Auto, Fast and Smart."></button>
+    <div class="spacer"></div>
+    <button id="pinBtn" class="icon-btn pin-btn hidden" type="button" aria-label="Pinned notes for this chat">
+      <svg viewBox="0 0 24 24"><path d="M9 4h6l-1 6 4 4H6l4-4Z"/><path d="M12 14v6"/></svg>
+      <span class="pin-count">0</span>
+    </button>
+    <button id="clear" class="icon-btn" type="button" title="New chat (Sidekick keeps what matters about you)" aria-label="New chat">
+      <svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    </button>
+    <button id="profileBtn" class="icon-btn" type="button" title="Your profile" aria-label="Your profile">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+    </button>
+    <button id="settings" class="icon-btn" type="button" title="Settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+    </button>
+  </header>
+
+  <!-- chat history drawer -->
+  <div id="drawerScrim" class="scrim hidden"></div>
+  <aside id="drawer" class="drawer" aria-hidden="true" aria-label="Chat history">
+    <div class="drawer-head">
+      <span>Chats</span>
+      <button id="drawerClose" class="icon-btn" type="button" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="drawer-search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>
+      <input id="chatSearch" type="search" placeholder="Search chats" />
+    </div>
+    <div id="chatList" class="chat-list"></div>
+  </aside>
+
+  <div id="pinPop" class="pin-pop hidden" role="dialog" aria-label="Pinned notes">
+    <div class="pin-head">Pinned for this chat</div>
+    <p class="pin-hint">Sidekick keeps these in mind for every reply, whichever model answers. They're left behind when you start a new chat; anything lasting about you is saved to memory.</p>
+    <ul id="pinList" class="pin-list"></ul>
+  </div>
+
+  <main id="scroller">
+    <div id="messages"></div>
+  </main>
+
+  <div class="to-bottom-wrap">
+    <button id="toBottom" class="to-bottom" type="button" title="Scroll to bottom" aria-label="Scroll to bottom">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
+    </button>
+  </div>
+
+  <footer class="composer-area">
+    <div class="quick" role="group" aria-label="Quick actions">
+      <button type="button" class="chip" data-action="rewrite">Rewrite</button>
+      <button type="button" class="chip" data-action="shorten">Shorten</button>
+      <button type="button" class="chip" data-action="grammar">Fix grammar</button>
+      <button type="button" class="chip" data-action="summarize">Summarize page</button>
+      <button type="button" class="chip" data-action="screen">Explain screen</button>
+      <button type="button" class="chip agent-chip" data-action="apply">Apply to this job</button>
+      <button type="button" class="chip agent-chip" data-action="fillform">Fill this form with my info</button>
+      <button type="button" class="chip agent-chip" data-action="findjobs">Find jobs that fit me here</button>
+    </div>
+
+    <div class="composer" id="composer">
+      <div id="tray" class="tray hidden"></div>
+
+      <textarea id="input" rows="1" placeholder="Ask anything"></textarea>
+
+      <div class="composer-row">
+        <button id="attachBtn" class="tool icon" type="button" title="Attach images or text files (or paste / drop them)" aria-label="Attach files">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button id="grab" class="tool icon" type="button" title="Attach the text selected on the page" aria-label="Attach selection">
+          <svg viewBox="0 0 24 24"><path d="M9 4h6M9 20h6M12 4v16"/></svg>
+        </button>
+        <button id="pageBtn" class="tool icon" type="button" title="Attach this page's text" aria-label="Attach page text">
+          <svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>
+        </button>
+        <button id="regionBtn" class="tool icon" type="button" title="Capture an area of the page: drag a box on the page" aria-label="Capture an area">
+          <svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/></svg>
+        </button>
+        <button id="screenToggle" class="tool icon" type="button" aria-pressed="false" title="Screen: attach a screenshot of the tab to every message" aria-label="Attach screen to every message">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+        </button>
+        <button id="agentToggle" class="tool agent-toggle" type="button" aria-pressed="false" title="Agent: let Sidekick click, type and fill forms on this page for you">
+          <svg viewBox="0 0 24 24"><path d="M5 3l14 7-6 2-2 6Z"/><path d="M13 12l6 6"/></svg>
+          <span>Agent</span>
+        </button>
+        <div class="spacer"></div>
+        <button id="micBtn" class="tool icon" type="button" title="Dictate" aria-label="Dictate" aria-pressed="false">
+          <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+        <button id="send" class="send" type="button" title="Send" aria-label="Send" disabled>
+          <svg class="i-send" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+          <svg class="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>
+        </button>
+      </div>
+      <input id="fileInput" type="file" multiple hidden
+        accept="image/png,image/jpeg,image/webp,image/gif,text/*,.md,.csv,.json,.js,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.h,.cs,.go,.rs,.rb,.php,.swift,.kt,.sql,.html,.css,.xml,.yaml,.yml,.toml,.ini,.sh,.tex,.log" />
+    </div>
+    <p class="footnote">Sidekick can make mistakes. Check important info.</p>
+  </footer>
+
+  <div id="toast" class="toast" role="status"></div>
+
+  <div id="dropZone" class="drop-zone hidden">
+    <div>
+      <svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+      <span>Drop images or text files</span>
+    </div>
+  </div>
+
+  <script src="vendor/marked.js"></script>
+  <script src="vendor/purify.min.js"></script>
+  <script src="vendor/katex.min.js"></script>
+  <script src="vendor/highlight.min.js"></script>
+  <script src="ai.js"></script>
+  <script src="guard.js"></script>
+  <script src="profile-core.js"></script>
+  <script src="memory.js"></script>
+  <script src="skills.js"></script>
+  <script src="docs.js"></script>
+  <script src="web.js"></script>
+  <script src="screen.js"></script>
+  <script src="calc.js"></script>
+  <script src="page-agent.js"></script>
+  <script src="cdp.js"></script>
+  <script src="adapters.js"></script>
+  <script src="agent.js"></script>
+  <script src="session.js"></script>
+  <script src="brain.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

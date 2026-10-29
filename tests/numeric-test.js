@@ -1,0 +1,32 @@
+const { JSDOM } = require('jsdom'); const fs = require('fs');
+const w = new JSDOM('<!doctype html><head></head>', { runScripts: 'outside-only' }).window;
+w.eval(fs.readFileSync(require('path').join(__dirname, '..', 'extension', 'vendor/math.js'), 'utf8')); w.eval(fs.readFileSync(require('path').join(__dirname, '..', 'extension', 'vendor/nerdamer.js'), 'utf8'));
+w.eval(fs.readFileSync(require('path').join(__dirname, '..', 'extension', 'calc.js'), 'utf8') + ';window.calcEngine = calcEngine;');
+const results = []; const check = (n, ok, x = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  ${n}\n        ${String(x).replace(/\n/g, '\n        ')}`);
+const run = l => w.calcEngine.run(l);
+const near = (txt, name, val, tol = 5e-6) => { const m = txt.match(new RegExp(`${name} = (-?[\\d.e-]+)`)); return m && Math.abs(+m[1] - val) < tol; };
+(async () => {
+  const X = 18 / Math.sqrt(19), Y = 18 / Math.sqrt(205);
+  let r = await run(['C(x, y) = 40 sqrt(x^2 + 4) + 46 sqrt(y^2 + 1) + 36 (10 - x - y)', 'minimize(C(x, y), [x, y])']);
+  check('Pipeline problem: minimize finds x = 4.1295, y = 1.2572', near(r, 'x', X) && near(r, 'y', Y), r);
+  r = await run(['minimize(40 sqrt(x^2 + 4) + 46 sqrt(y^2 + 1) + 36 (10 - x - y), [x, y], [1, 1], [[0, 10], [0, 10]])']);
+  check('…with a guess and bounds', near(r, 'x', X) && near(r, 'y', Y), r);
+  r = await run(['solveSystem([40 x / sqrt(x^2 + 4) - 36 = 0, 46 y / sqrt(y^2 + 1) - 36 = 0])']);
+  check('solveSystem with square roots falls back to numeric (the call that failed)', /numeric/.test(r) && near(r, 'x', X) && near(r, 'y', Y), r);
+  r = await run(['nsolveSystem([40 x / sqrt(x^2 + 4) = 36, 46 y / sqrt(y^2 + 1) = 36], [x, y], [1, 1])']);
+  check('nsolveSystem with = and a guess', near(r, 'x', X) && near(r, 'y', Y), r);
+  r = await run(['nsolve(cos(x) = x, x)', 'solve(e^x = 3 - x, x)', 'nsolve(x^3 - 2x - 5, x, 2)']);
+  check('Single equations: cos x = x, e^x = 3 − x, cubic', near(r.split('\n')[0], 'x', 0.7390851332) && /0\.79205996/.test(r.split('\n')[1]) && near(r.split('\n')[2], 'x', 2.0945514815), r);
+  r = await run(['maximize(x (20 - 2x)^2, [x], [3], [[0, 10]])']);
+  check('maximize (box volume)', /maximum 592\.59/.test(r) && near(r, 'x', 10 / 3), r);
+  r = await run(['f(x, y) = (x-6)^2 + (y-2)^2 + x^2 + y^2', 'minimize(f(x, y), [x, y])', 'solve(x^2 - 5x + 6, x)']);
+  check('Still exact where possible; numeric agrees with exact', near(r, 'x', 3) && near(r, 'y', 1) && /\{3, 2\}/.test(r), r);
+  r = await run(['nsolve(x^2 + 1, x)']);
+  check('No real root: clear message', /✗ No real root found/.test(r), r);
+  let best = [Infinity, 0]; for (let i = 0; i <= 200000; i++) { const x = i / 20000; const v = Math.sin(x) + Math.cos(1.5 * x); if (v < best[0]) best = [v, x]; }
+  r = await run(['minimize(sin(x) + cos(3x/2), [x], [0], [[0, 10]])']);
+  check('Bounded 1-D: global minimum, not a local one', near(r, 'x', best[1], 1e-3) && new RegExp('minimum ' + best[0].toFixed(4).replace('.', '\\.')).test(r), r + `  (true: ${best})`);
+  r = await run(['V(x) = x (20 - 2x)^2', 'diff(V(x), x)']);
+  check('Implicit multiplication x (…) works everywhere', /V\(x\) = x \(20 - 2x\)\^2\s+→\s+function/.test(r) && !/✗/.test(r), r);
+  console.log(results.join('\n')); console.log(`\n${results.filter(x => x.startsWith('PASS')).length}/${results.length} passed`);
+})().catch(e => console.error('CRASH', e));

@@ -1,0 +1,63 @@
+{
+  "manifest_version": 3,
+  "name": "Sidekick AI",
+  "version": "0.9.4",
+  "description": "Your personal AI assistant in Chrome: remembers you, calculates exactly, searches the web, and can operate pages for you.",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "unlimitedStorage",
+    "contextMenus",
+    "scripting",
+    "activeTab",
+    "tabs",
+    "debugger",
+    "notifications",
+    "tabGroups"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open Sidekick",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "options_page": "options.html",
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+A",
+        "mac": "Alt+Shift+A"
+      },
+      "description": "Open Sidekick"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "webmcp-capture.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

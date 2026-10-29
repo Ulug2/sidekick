@@ -1,0 +1,16 @@
+{
+  "name": "sidekick",
+  "version": "0.9.4",
+  "private": true,
+  "description": "Sidekick: a personal AI assistant in a Chrome side panel (homework, deadlines, job applications, browser agent).",
+  "scripts": {
+    "test": "node tests/run-all.js",
+    "test:chrome": "node tests/real-chrome-test.js"
+  },
+  "devDependencies": {
+    "jsdom": "30.1.3",
+    "mammoth": "1.13.0",
+    "pdfjs-dist": "6.4.299",
+    "playwright": "1.63.0"
+  }
+}
