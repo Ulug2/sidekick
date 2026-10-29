@@ -228,7 +228,7 @@ async function executeChatTool(call, env) {
       return { text: out, summary: out.split("\n").slice(-1)[0] };
     }
     case "web_search": {
-      const results = await webSearchFallback(String(a.query || ""));
+      const results = await webSearchFallback(String(a.query || ""), 6, { signal: env.signal });
       const text = results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`).join("\n");
       env.addCitations(results.map(r => ({ url: r.url, title: r.title })));
       return { text: untrusted(`web search: ${a.query}`, text), summary: `${results.length} results` };
@@ -237,7 +237,7 @@ async function executeChatTool(call, env) {
       // A page could trick the model into "reading" a link that carries your data away.
       const leaked = typeof personalDetailsIn === "function" && typeof getProfile === "function" ? personalDetailsIn(String(a.url || ""), await getProfile()) : [];
       if (leaked.length) return { text: `Not opened: that link contains the user's ${leaked.join(", ")}. If they really want it, they can open it themselves.`, isError: true };
-      const page = await fetchUrlText(String(a.url || ""));
+      const page = await fetchUrlText(String(a.url || ""), { signal: env.signal });
       env.addCitations([{ url: page.url, title: page.title }]);
       return { text: untrusted(page.url, `Title: ${page.title}\n\n${page.text}${page.truncated ? "\n[shortened]" : ""}`), summary: page.title };
     }
@@ -629,7 +629,7 @@ ${question}
 async function solverLoop({ system, text, images = [], tier, model, signal, onThinking }) {
   const calcTool = chatTools({ hasTab: false, hasAgent: false, webSearchServer: true }).filter(t => t.name === "calculate");
   const transcript = [{ role: "user", images, text }];
-  const env = { memory: realMemoryStore, addCitations() {} };
+  const env = { memory: realMemoryStore, addCitations() {}, signal };
   const tools = [];
   let out = "", model_ = model;
   for (let round = 0; round < 8; round++) {
@@ -885,6 +885,7 @@ async function runTurn(history, user, ui) {
     memory,
     onMemory: ui.onMemory,
     runAgent: ui.runAgent,
+    signal: ui.signal,
     addCitations: list => { for (const c of list) if (c.url && !citations.some(x => x.url === c.url)) citations.push(c); }
   };
 

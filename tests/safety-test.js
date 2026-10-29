@@ -18,7 +18,7 @@ const FORM = (title, extra = '') => `<!doctype html><html><head><title>${title}<
   <button type="button" id="go" onclick="window.goTo('https://other.example/next')">Continue</button>${extra}</main></body></html>`;
 
 function fakeChrome({ local, startUrl, html = u => FORM(new URL(u).host), groupFails = false, onPage }) {
-  const tabs = new Map(); let nextId = 5; const events = [];
+  const tabs = new Map(); let nextId = 5; const events = []; const tabCalls = [];
   const mk = (id, url) => {
     const page = new JSDOM(html(url), { runScripts: 'dangerously', pretendToBeVisual: true, url }).window;
     prep(page);
@@ -38,8 +38,8 @@ function fakeChrome({ local, startUrl, html = u => FORM(new URL(u).host), groupF
     tabs: {
       query: async q => q?.active ? [info(tabs.get(5))] : [...tabs.values()].map(info),
       get: async id => info(tabs.get(id)),
-      create: async ({ url }) => info(open(url)),
-      update: async (id, o) => { const t = tabs.get(id); if (o.url) { t.url = o.url; t.page = mk(id, o.url); } return info(t); },
+      create: async ({ url, active }) => { tabCalls.push(['create', url, active]); const t = open(url); if (active === false) t.active = false; return info(t); },
+      update: async (id, o) => { tabCalls.push(['update', id, o]); const t = tabs.get(id); if (o.url) { t.url = o.url; t.page = mk(id, o.url); } return info(t); },
       goBack: async () => {},
       group: async o => { groups.calls.push(o); if (groupFails && o.groupId != null) throw new Error('No group with id'); return o.groupId ?? ++gid; },
       onCreated: { addListener() {}, removeListener() {} },
@@ -50,7 +50,7 @@ function fakeChrome({ local, startUrl, html = u => FORM(new URL(u).host), groupF
     debugger: { attach: async () => { throw new Error('no'); }, detach: async () => {}, onDetach: { addListener() {}, removeListener() {} }, sendCommand: async () => ({}) },
     runtime: { getURL: p => p }
   };
-  return { chrome, tabs, events, groups };
+  return { chrome, tabs, events, groups, tabCalls };
 }
 
 async function agent({ plan, goal = 'Apply to the two Acme jobs', startUrl = 'https://jobs.acme.com/apply', checker = () => 'ok', planAnswer, settings = {}, html, groupFails, userMessages, onPage }) {
@@ -228,6 +228,33 @@ async function agent({ plan, goal = 'Apply to the two Acme jobs', startUrl = 'ht
     for (let i = 0; i < 300 && !$('.agent-run.finished'); i++) await sleep(10);
     await sleep(50);
     check('While you\'re looking at the panel: no notification for the finish', !notes.some(n => /finished/.test(n.title)));
+  }
+
+  // ---------- 6. v0.9.5: shared hosting sites, and the agent leaves you on your tab ----------
+  {
+    const run = await agent({ startUrl: 'https://alice.github.io/apply', planAnswer: { ok: true, autoSubmit: true }, plan: (step) => [
+      () => [['plan', { items: ['Apply: Backend', 'Apply: Frontend'], sites: ['alice.github.io'] }]],
+      () => [['navigate', { url: 'https://evil.github.io/collect' }]],
+      () => [['done', { summary: 'ok' }]]][step]() });
+    check('A plan approved for alice.github.io doesn\'t cover evil.github.io (shared hosting = different sites)', run.plans[0]?.sites.join() === 'alice.github.io' && run.approvals.some(a => /Go to evil\.github\.io\? It isn't in the plan you approved/.test(a.title)), JSON.stringify([run.plans, run.approvals]));
+  }
+  {
+    const run = await agent({ startUrl: 'https://alice.github.io/apply', checker: b => /evil/.test(JSON.stringify(b.messages)) ? 'ask' : 'ok', plan: (step, all) => [
+      () => [['navigate', { url: 'https://evil.github.io/form' }]],
+      () => [['type', { id: lastId(all, 'Email'), text: 'jordan@example.edu' }]],
+      () => [['done', { summary: 'ok' }]]][step]() });
+    check('Going from alice.github.io to evil.github.io is a new site: checked, and sharing your email there asks', run.checks.length >= 1 && run.approvals.some(a => /^Go to evil\.github\.io\?/.test(a.title)) && run.approvals.some(a => /^Share your email with evil\.github\.io\?/.test(a.title)), JSON.stringify([run.checks.length, run.approvals]));
+  }
+  {
+    const run = await agent({ plan: (step) => [
+      () => [['open_tab', { url: 'https://jobs.acme.com/apply/2' }]],
+      () => [['list_tabs', {}]],
+      () => [['switch_tab', { tab_id: 5 }]],
+      () => [['done', { summary: 'ok' }]]][step]() });
+    const creates = run.fc.tabCalls.filter(c => c[0] === 'create');
+    const activations = run.fc.tabCalls.filter(c => c[0] === 'update' && c[2].active);
+    check('open_tab opens the agent\'s tab in the background (your tab stays in front)', creates.length === 1 && creates[0][2] === false, JSON.stringify(run.fc.tabCalls));
+    check('switch_tab moves the agent, not you: no tab is activated', activations.length === 0 && run.steps.every(s => s.ok !== false), JSON.stringify([run.fc.tabCalls, run.steps]));
   }
 
   console.log(results.join('\n'));

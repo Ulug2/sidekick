@@ -78,6 +78,25 @@ General rules that came out of these: design for the long version of a task; eve
 - **Rule:** before fixing a site failure, look at the real site's markup and behavior (in Chrome, read-only) and build a test copy that reproduces the failure without the fix. Validate the fix on the real site too. Match the way people read options (codes, close wording), not exact strings.
 - **Tests:** forms-test (12) on fixtures/airline.html, which fails 4 checks with the old calendar code; real-chrome 14; and on the real turkishairlines.com, all three legs were filled through Sidekick's own page code (IAD→IST Dec 10, IST→ALA Dec 15, ALA→IAD Jan 25 2027).
 
+## v0.9.5 (2026-10-29): found by reading the code, before the TypeScript migration
+
+### 12. "Site" was two labels, so evil.github.io counted as alice.github.io
+- **Cause:** `siteOf` kept the last two labels of a host (three for `co.uk`-style), with no idea of shared hosting. Plan approval, upload approval, sharing checks and shortcuts are all per site.
+- **Fix:** ~60 shared hosting domains keep one more label (`alice.github.io`). The full Public Suffix List comes with the TypeScript build.
+- **Rule:** any security decision keyed by "site" must treat hosts that different people control as different sites. Test it with two subdomains of one shared host.
+- **Tests:** sites 1, safety 6.
+
+### 13. The timeout rule only held in agent mode
+- **Cause:** rule 4 was applied to the agent's page calls, but chat's page reads, screenshots, `read_url` and web search awaited Chrome and the network with no limit and no Stop.
+- **Fix:** 15 s limit on chat page scripts and captures (none for scripts that wait for you, like picking an area); 20 s and Stop on every `read_url`/search request.
+- **Rule:** when adding a rule like "every outside await has a timeout", grep for every await on Chrome or the network and check each one, not only the one that broke.
+- **Tests:** timeouts (11), which hang on the old code.
+
+### 14. The agent switched your tab
+- **Cause:** `open_tab` created the tab with `active: true` and `switch_tab` activated it, against the "never change the user's tab" rule.
+- **Fix:** the agent's tabs open in the background and `switch_tab` moves only the agent. Trade-off: in a background tab it uses page events instead of the debugger and can't take screenshots (the fallback that already existed when you switch away).
+- **Tests:** safety 6, real-chrome 12 (4 applications in background tabs, your tab stays in front).
+
 ## Earlier lessons (v0.7–v0.9)
 - **A double-check must not overrule a right answer without evidence** (v0.7.2 pipeline problem). Replacements need a code check (objective or residuals) under both setups.
 - **Examples in prompts anchor the model.** Use neutral numbers, never the real answer.

@@ -502,7 +502,7 @@ async function attachPage() {
 }
 
 async function captureRegion() {
-  const rect = await runInPage(pickRegionInPage, [], "captured");
+  const rect = await runInPage(pickRegionInPage, [], "captured", undefined, 0); // waits for you to drag
   if (!rect) return; // cancelled
   const shot = await captureScreen({ raw: true });
   addAttachment({ kind: "image", name: "Captured area", dataUrl: await cropDataUrl(shot, rect) });

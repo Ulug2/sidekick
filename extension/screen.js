@@ -11,6 +11,17 @@ async function activeTab() {
 
 const sleepMs = ms => new Promise(r => setTimeout(r, ms));
 
+// A page showing a dialog ("Leave site?", alert()) or a frozen page never answers a script
+// call, and Chrome can stall a capture. Never wait forever: give up with a clear error.
+const PAGE_READ_MS = 15000;
+function pageTimeout(promise, ms = globalThis.SK_PAGE_MS || PAGE_READ_MS) {
+  if (!ms) return promise;
+  let timer;
+  const limit = new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error("The page isn't responding. It may be showing a dialog (like \"Leave site?\" or an alert) or be frozen. Close the dialog and try again."), { name: "PageTimeout" })), ms); });
+  promise.catch(() => {});
+  return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
+}
+
 function explainCaptureError(reason, url) {
   if (PROTECTED_URL.test(url)) return `Chrome doesn't allow extensions to see this page (${url.split("?")[0]}). Switch to a normal website.`;
   if (url.startsWith("file:")) return "To see local files, turn on 'Allow access to file URLs' in chrome://extensions → Sidekick → Details.";
@@ -42,7 +53,7 @@ async function captureScreen({ tab, raw = false } = {}) {
   let lastErr;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const shot = await chrome.tabs.captureVisibleTab(tab.windowId, raw ? { format: "png" } : { format: "jpeg", quality: 80 });
+      const shot = await pageTimeout(chrome.tabs.captureVisibleTab(tab.windowId, raw ? { format: "png" } : { format: "jpeg", quality: 80 }));
       return raw ? shot : (await shrinkImage(shot)).dataUrl;
     } catch (err) {
       lastErr = err;
@@ -56,14 +67,16 @@ async function captureScreen({ tab, raw = false } = {}) {
   throw new Error(explainCaptureError(lastErr?.message || String(lastErr), url));
 }
 
-async function runInPage(func, args = [], what = "read", tabId) {
+// timeoutMs 0: no limit (for scripts that wait for you, like picking an area).
+async function runInPage(func, args = [], what = "read", tabId, timeoutMs) {
   const tab = tabId ? await chrome.tabs.get(tabId) : await activeTab();
   const url = tab.url || tab.pendingUrl || "";
   if (PROTECTED_URL.test(url)) throw new Error(explainCaptureError("", url));
   try {
-    const [res] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args });
+    const [res] = await pageTimeout(chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args }), timeoutMs);
     return res?.result;
   } catch (err) {
+    if (err.name === "PageTimeout") throw err;
     if (url.toLowerCase().split("?")[0].endsWith(".pdf")) {
       throw new Error("Chrome's PDF viewer can't be read by extensions. Use 'Explain screen' or the area tool to show it as an image, or give me the PDF's link.");
     }
@@ -88,7 +101,7 @@ async function readProblemText(limit = 8000) {
   if (PROTECTED_URL.test(url)) return null;
   let frames;
   try {
-    frames = await chrome.scripting.executeScript({
+    frames = await pageTimeout(chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
       func: () => {
         const main = document.querySelector("article, main, [role=main], .question, #questionwrap, form");
@@ -98,7 +111,7 @@ async function readProblemText(limit = 8000) {
           .map(f => { try { return new URL(f.src || "about:blank", location.href).hostname; } catch { return ""; } });
         return { url: location.href, text, frames };
       }
-    });
+    }));
   } catch (err) {
     // The whole page is off limits (site access settings, the PDF viewer, …): say so instead of silence.
     return { url, text: `[Sidekick can't read this page: ${explainCaptureError(err?.message || String(err), url)}]`, truncated: false, blocked: [] };

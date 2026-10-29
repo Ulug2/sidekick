@@ -1,6 +1,6 @@
 # Sidekick product plan
 
-Updated 2026-10-29 (v0.9.4).
+Updated 2026-10-29 (v0.9.5).
 
 ## Vision
 A personal assistant that knows Ulugbek and works where he works: it helps with homework, keeps track of assignments and deadlines, applies to jobs for him, and watches his screen for things worth noting. It starts as a Chrome side-panel extension and later becomes a Mac app that can see the whole screen and use other apps.
@@ -27,6 +27,7 @@ Homework help with answers that are checked, not guessed. Reminders for assignme
 | 0.9.1 | Live status + visible thinking, Lagrange max/min with DNE (`scanCurve`, completeness check), profile layout at half width, new chat on every open, agent keeps working when you switch tabs, blocked frames reported, MathQuill boxes, no wrapper tags in replies |
 | 0.9.2 | Several tasks in one run (checklist, budgets, keep going after each submit), no more freezes (timeouts, Stop always works, "Leave site?" disarmed), saved as it goes, chat context for Agent mode, find / scroll all / web_search |
 | 0.9.3 | From Claude in Chrome: notifications, agent tab group, approve the plan once, fast-model check of risky steps, local injection scan, hidden trap fields, site re-check before acting |
+| 0.9.5 | Before the TypeScript migration: shared hosting domains (`*.github.io`, `*.vercel.app`, …) count as separate sites for approvals; the agent opens and switches its own tabs in the background, never yours; chat page reads, screenshots, read_url and web search have time limits and obey Stop |
 | 0.9.4 | Autocomplete matching (codes, typed filtering, field's own list), pick_date calendars, row context for repeated fields; validated on the real turkishairlines.com form |
 
 **Honest status of the browser agent:** works on the test pages; still unreliable on complex real sites (the 2026-10-29 Turkish Airlines run failed: pop-ups, coordinate guessing, wrong clicks). Chat, memory, math and the safety layer are in better shape than agent reliability.

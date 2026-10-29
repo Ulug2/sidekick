@@ -2,6 +2,19 @@
 // and reading a web page or PDF by URL. Results are fenced as untrusted content.
 
 const UA_FETCH = { credentials: "omit", redirect: "follow" };
+const WEB_TIMEOUT_MS = 20000;
+
+// Fetch options that give up after a while and also stop when you press Stop.
+function webFetchOpts(signal, ms = globalThis.SK_WEB_MS || WEB_TIMEOUT_MS) {
+  const limit = AbortSignal.timeout(ms);
+  return { ...UA_FETCH, signal: signal ? AbortSignal.any([signal, limit]) : limit };
+}
+// A timeout reads as "the site was slow", never as a crash; Stop stays a Stop.
+function webError(err, what, signal) {
+  if (signal?.aborted) return signal.reason instanceof Error ? signal.reason : new DOMException("Stopped", "AbortError");
+  if (err?.name === "TimeoutError" || err?.name === "AbortError") return new Error(`${what} didn't answer within ${Math.round((globalThis.SK_WEB_MS || WEB_TIMEOUT_MS) / 1000)} s. Try again, or try another source.`);
+  return err;
+}
 
 function htmlToText(doc) {
   doc.querySelectorAll("script, style, noscript, svg, iframe, nav, footer, header, aside, form, [aria-hidden=true], [hidden]").forEach(e => e.remove());
@@ -31,12 +44,17 @@ function isPrivateHost(host) {
     || /^\d+$/.test(h);
 }
 
-async function fetchUrlText(url, { max = 15000 } = {}) {
+async function fetchUrlText(url, { max = 15000, signal } = {}) {
+  try { return await fetchUrlTextInner(url, { max, signal }); }
+  catch (err) { throw webError(err, "The site", signal); }
+}
+
+async function fetchUrlTextInner(url, { max, signal }) {
   let u;
   try { u = new URL(url); } catch { throw new Error("That isn't a valid URL."); }
   if (!/^https?:$/.test(u.protocol)) throw new Error("Only http(s) links can be read.");
   if (isPrivateHost(u.hostname)) throw new Error("Sidekick doesn't read local network addresses.");
-  const res = await fetch(u.href, UA_FETCH);
+  const res = await fetch(u.href, webFetchOpts(signal));
   // A public link that redirects into your network (router, printer, NAS) is refused too.
   try { if (res.url && isPrivateHost(new URL(res.url).hostname)) throw new Error("redirect"); } catch { throw new Error("That link redirects to a local network address, which Sidekick doesn't read."); }
   if (!res.ok) throw new Error(`The site answered ${res.status} ${res.statusText}.`);
@@ -60,10 +78,10 @@ async function fetchUrlText(url, { max = 15000 } = {}) {
 }
 
 // Keyless web search through DuckDuckGo's HTML page, with Bing as a fallback.
-async function webSearchFallback(query, limit = 6) {
+async function webSearchFallback(query, limit = 6, { signal } = {}) {
   const tries = [
     async () => {
-      const res = await fetch("https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query), UA_FETCH);
+      const res = await fetch("https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query), webFetchOpts(signal));
       const doc = new DOMParser().parseFromString(await res.text(), "text/html");
       return [...doc.querySelectorAll(".result")].map(r => {
         const a = r.querySelector("a.result__a");
@@ -77,7 +95,7 @@ async function webSearchFallback(query, limit = 6) {
       }).filter(Boolean);
     },
     async () => {
-      const res = await fetch("https://www.bing.com/search?q=" + encodeURIComponent(query), UA_FETCH);
+      const res = await fetch("https://www.bing.com/search?q=" + encodeURIComponent(query), webFetchOpts(signal));
       const doc = new DOMParser().parseFromString(await res.text(), "text/html");
       return [...doc.querySelectorAll("li.b_algo")].map(li => {
         const a = li.querySelector("h2 a");
@@ -91,7 +109,7 @@ async function webSearchFallback(query, limit = 6) {
     try {
       const results = (await t()).filter(r => /^https?:/.test(r.url)).slice(0, limit);
       if (results.length) return results;
-    } catch (err) { lastErr = err; }
+    } catch (err) { if (signal?.aborted) throw webError(err, "", signal); lastErr = webError(err, "The search engine", signal); }
   }
   throw new Error("Web search didn't return results" + (lastErr ? ` (${lastErr.message})` : "") + ". Try different words, or open a site directly.");
 }

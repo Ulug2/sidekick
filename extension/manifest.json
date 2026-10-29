@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sidekick AI",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "description": "Your personal AI assistant in Chrome: remembers you, calculates exactly, searches the web, and can operate pages for you.",
   "permissions": [
     "sidePanel",

@@ -102,6 +102,7 @@ const toolResults = req => (req.messages.at(-1).content || []).filter(c => c.typ
     w.chrome = { storage: { local: makeStore(), session: makeStore() }, runtime: { getURL: p => p } };
     loadScripts(w, ['guard.js', 'adapters.js'], ['siteOf', 'findTarget', 'compileFlow', 'profileKeyFor', 'profileValues']);
     check('siteOf: subdomains are one site, country domains kept', w.siteOf('https://boards.greenhouse.io/acme/jobs/1') === 'greenhouse.io' && w.siteOf('https://job-boards.greenhouse.io/x') === 'greenhouse.io' && w.siteOf('https://jobs.example.co.uk/a') === 'example.co.uk' && w.siteOf('https://www.myopenmath.com/assess2/') === 'myopenmath.com');
+    check('siteOf: shared hosting subdomains belong to different people (alice.github.io ≠ evil.github.io)', w.siteOf('https://alice.github.io/x') === 'alice.github.io' && w.siteOf('https://evil.github.io') === 'evil.github.io' && w.siteOf('https://app.vercel.app/') === 'app.vercel.app' && w.siteOf('https://b.s3.amazonaws.com/k') === 'b.s3.amazonaws.com' && w.siteOf('https://x.up.railway.app') === 'x.up.railway.app' && w.siteOf('https://github.io') === 'github.io');
     const els = {
       '1': { role: 'radio', label: 'Yes', line: '[1] radio "Yes" question: "Are you legally authorized to work in the US?", unchecked' },
       '2': { role: 'radio', label: 'Yes', line: '[2] radio "Yes" question: "Will you now or in the future require visa sponsorship?", unchecked' },

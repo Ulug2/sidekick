@@ -3,9 +3,9 @@
 ```
 npm install
 npx playwright install chromium   # once
-npm test                          # every jsdom suite, one line each + total (about 530 checks)
+npm test                          # every jsdom suite, one line each + total (about 546 checks)
 node tests/run-all.js forms e2e   # just some suites
-npm run test:chrome               # real Chromium with the real extension (about 54 checks); screenshots in .artifacts/shots
+npm run test:chrome               # real Chromium with the real extension (about 55 checks); screenshots in .artifacts/shots
 node tests/scroll-test.js         # chat auto-scroll behavior (prints true/false lines)
 node tests/region-test.js         # area-capture overlay (prints true/false lines)
 ```
@@ -18,6 +18,7 @@ node tests/region-test.js         # area-capture overlay (prints true/false line
 ## Suites
 | Suite | Covers |
 |---|---|
+| timeouts | chat page reads, screenshots, read_url and web search give up after a time limit and obey Stop (v0.9.5) |
 | forms | turkishairlines.com-style form (fixtures/airline.html): airport autocompletes, calendar date picker, multi-city rows (v0.9.4) |
 | safety | ideas from Claude in Chrome: plan approval, action check, tab group, notifications, injection scan, hidden traps, site re-check (v0.9.3) |
 | multitask | several tasks per run, no freezes, chat context, find / scroll all / web_search (v0.9.2) |

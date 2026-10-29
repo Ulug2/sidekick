@@ -15,7 +15,7 @@ Read these first:
 - For any failure on a real site, reproduce it on the real site first (he has Chrome; use Claude in Chrome or Playwright against the live page, read-only) before changing code.
 
 ## Status
-- Version 0.9.4. Plain JavaScript, no build step, no modules: every script in a page shares one global scope (no duplicate top-level names across files loaded together).
+- Version 0.9.5. Plain JavaScript, no build step, no modules: every script in a page shares one global scope (no duplicate top-level names across files loaded together).
 - Planned next: organize the repo and migrate to TypeScript with a build (behavior-preserving), then rebuild the browser agent's perception/action layers (see ARCHITECTURE.md "Target architecture").
 
 ## Layout (current)
@@ -44,9 +44,9 @@ docs/                 product plan, architecture, lessons, security, research, u
 ```
 npm install
 npx playwright install chromium      # once, for the real-Chrome suite
-npm test                             # all jsdom suites (about 530 checks, ~3 min)
+npm test                             # all jsdom suites (about 546 checks, ~3 min)
 node tests/run-all.js forms safety   # selected suites
-npm run test:chrome                  # real Chromium with the real extension (about 54 checks); screenshots in .artifacts/shots
+npm run test:chrome                  # real Chromium with the real extension (about 55 checks); screenshots in .artifacts/shots
 ```
 Load in Chrome: chrome://extensions → Developer mode → Load unpacked → `extension/`. After code changes: reload the extension, then reopen the side panel.
 

@@ -433,6 +433,8 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   }
   const submittedHits = hits.filter(h => h.startsWith('/submitted/')).map(h => h.split('/')[2]);
   check('Real Chrome agent: 4 applications in one run: you approve the plan once, then each submit', submittedHits.join() === '1,2,3,4' && approved === 5, JSON.stringify({ submittedHits, approved, card: (await panel.locator('.agent-run').last().innerText()).slice(0, 900) }));
+  const panelStillInFront = await panel.evaluate(async () => (await chrome.tabs.getCurrent())?.active);
+  check('Real Chrome agent: opened 4 tabs of its own in the background; the tab you were on stayed in front (v0.9.5)', panelStillInFront === true, String(panelStillInFront));
   check('Real Chrome agent: knew "those" from the chat', /Earlier in this chat/.test(firstAgentMsg) && /Backend Software Engineer, Agentic/.test(firstAgentMsg));
   check('Real Chrome agent: leaving a filled form can\'t raise "Leave site?" (the page\'s handler ran but couldn\'t cancel)', hits.some(h => h === '/left/1?prompt=false') && !hits.some(h => /prompt=true/.test(h)), hits.filter(h => h.startsWith('/left')).join());
   check('Real Chrome agent: checklist shows 4 of 4 done', (await panel.locator('.agent-run').last().locator('.plan-item.done').count()) === 4);

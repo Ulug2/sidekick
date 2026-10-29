@@ -559,7 +559,7 @@ async function runAgent(goal, ui, opts = {}) {
   // You can keep using Chrome while the agent works: it carries on in its own tab.
   let toldBackground = false;
   const onActivated = info => {
-    // The agent's own open_tab/switch_tab also activates a tab; check once it has moved there.
+    // Tabs the page opens after an agent click can become active; check once it has moved there.
     setTimeout(() => {
       if (info.tabId !== state.tabId && !toldBackground && !state.finished) {
         toldBackground = true;
@@ -1183,7 +1183,7 @@ async function runToolInner(call, state, ui, profile, takeTabNote) {
         const q = String(a.query || "").trim();
         if (!q) return fail("web_search needs a query.");
         if (personalDetailsIn(q, profile).length) return fail("That search would send the user's personal details to a search engine. Search without them.");
-        const results = await webSearchFallback(q);
+        const results = await webSearchFallback(q, 6, { signal: state.signal });
         step.done(true, `${results.length} results`);
         return { text: untrusted(`web search: ${q}`, results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`).join("\n") || "No results.") };
       }
@@ -1224,7 +1224,7 @@ async function runToolInner(call, state, ui, profile, takeTabNote) {
         // Only the visible tab can be photographed. If you've switched to another tab, the agent
         // doesn't pull you back (or photograph your tab by mistake); it works from the page text.
         const tab = await chrome.tabs.get(state.tabId);
-        if (tab.active === false) return fail("The page is in a background tab (the user switched tabs), so it can't be photographed right now. Work from the snapshot and read_text; if you truly need to see it, use ask_user to have them switch back.");
+        if (tab.active === false) return fail("The page is in a background tab (the agent's own tab, or the user switched tabs), so it can't be photographed right now. Work from the snapshot and read_text; if you truly need to see it, use ask_user to have them switch to it.");
         const input = await trustedInput(state);
         let shot = null;
         if (input) {
@@ -1258,7 +1258,8 @@ async function runToolInner(call, state, ui, profile, takeTabNote) {
         if (!/^https?:\/\//i.test(a.url || "")) return fail("Only http(s) URLs are allowed.");
         if (!(await urlLooksSafe(a.url))) return declined();
         if (!(await gateVisit(state, a.url, askApproval))) return declined();
-        const t = await chrome.tabs.create({ url: a.url, active: true });
+        // The agent works in its own tabs and never switches the tab you're looking at.
+        const t = await chrome.tabs.create({ url: a.url, active: false });
         state.tabId = t.id;
         await addToAgentGroup(state, t.id);
         await sleep(300);
@@ -1273,8 +1274,8 @@ async function runToolInner(call, state, ui, profile, takeTabNote) {
       case "switch_tab": {
         const t = await chrome.tabs.get(Number(a.tab_id)).catch(() => null);
         if (!t) return fail("No tab with that id.");
+        // Works there in the background: the tab you're looking at stays in front.
         state.tabId = t.id;
-        await chrome.tabs.update(t.id, { active: true });
         step.done(true);
         return withSnapshot();
       }
