@@ -88,3 +88,12 @@ Confidence tags: **(high)** I checked it in the code or by running it; **(medium
 4. **WXT:** are you attached to WXT (from ARCHITECTURE.md), or OK with plain Vite if the plan makes the case?
 5. **`open_tab` / `switch_tab` activating tabs:** intended (the agent chose to go there), or should it follow the "never change your tab" rule? Not changing it now either way.
 6. **Git identity:** commits use your global git config (`Ulug2 <jordan@example.edu>`). Fine, or do you want a different name or email (for example GitHub's noreply address) before anything is pushed?
+
+## 8. Your answers (2026-10-29) and what happened
+
+1. Start fresh: loading `dist/` with a new extension ID is fine (MIGRATION_PLAN §6 suggests pinning the ID with a manifest key).
+2. `siteOf`: fixed in v0.9.5 (shared hosting list; full Public Suffix List after the migration). The `read_url` redirect gap is documented in SECURITY.md and comes after the migration.
+3. Timeouts: fixed in v0.9.5 (chat page reads and captures, `read_url`, web search; Stop works on the network ones).
+4. Build tool: open; MIGRATION_PLAN recommends plain Vite.
+5. Tabs: the agent opens and switches its own tabs in the background (v0.9.5).
+6. Git identity: kept.
