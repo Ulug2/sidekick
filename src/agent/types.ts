@@ -1,6 +1,8 @@
 // Shapes the browser agent passes around: what the page scripts return (snapshots, action
 // results), the elements the model can act on, the agent's tool calls, and what it learns.
 // Types only: page scripts (src/page) may import these with `import type`.
+import type { Settings } from "../core/llm/ai.js";
+import type { TrustedInput } from "../core/browser/cdp.js";
 
 // ---------- page snapshot (page/snapshot.ts → agent) ----------
 // A site's form declared as a tool for AI agents (WebMCP declarative API).
@@ -95,3 +97,68 @@ export interface ShortcutStep {
 }
 export interface Shortcut { id: string; site: string; goal: string; title: string; steps: ShortcutStep[]; created: number; updated: number; runs: number; replays: number; replayOk: number }
 export interface SiteNote { text: string; added: number }
+
+// ---------- an agent run ----------
+export type PlanStatus = "todo" | "doing" | "done" | "failed" | "skipped";
+export interface PlanItem { text: string; status: PlanStatus | string; note?: string }
+// One frame of a capture, after its lines got frame-prefixed ids ("3:12").
+export interface CapturedFrame {
+  frameId: number; url: string; isTop: boolean; dialog: string; headings: string[]; errors: string[]; lines: string[];
+  skipped: number; traps: number; text: string; textLength: number; formTools: (FormTool & { frameId: number })[];
+}
+export interface Capture {
+  title: string; url: string; frames: CapturedFrame[]; siteTools: SiteTool[];
+  protected?: boolean; error?: string; blockedFrames?: { count: number; hosts: string[] }; scroll?: FrameSnapshot["scroll"];
+}
+// The last full snapshot, so later ones can list only what changed.
+export interface SnapshotBase { page: string; lines: Map<string, string>; at: number; headings: string; textHead: string; toolsKey: string; blockedKey: string }
+export interface AgentState {
+  tabId: number;
+  goal: string;
+  settings: Settings;
+  elements: Elements;
+  siteTools: Record<string, SiteTool>;
+  shortcuts: Record<string, Shortcut>;
+  steps: string[]; // step titles shown to you
+  safeSteps: string[]; // the same steps without any values (for site notes)
+  actionLog: ActionLogEntry[]; // successful actions, by meaning (for shortcuts)
+  errors: string[];
+  answers: string[];
+  input: TrustedInput | null;
+  signal?: AbortSignal;
+  userContext?: string[];
+  startSite?: string;
+  visitOk: Set<string>;
+  shareOk: Set<string>;
+  uploadOk?: Set<string>;
+  plan?: PlanItem[];
+  planApproval?: { sites: Set<string>; autoSubmit: boolean };
+  deferSnapshot?: boolean;
+  viewport?: { width: number; height: number };
+  groupId?: number | null;
+  lastActionAt?: number;
+  snapCount?: number;
+  lastSnapHost?: string;
+  lastSnapshotKind?: string;
+  base?: SnapshotBase | null;
+  finished?: boolean;
+  inputTimedOut?: boolean;
+  inputFailedFor?: number;
+}
+// A step card in the panel.
+export interface StepHandle { done(ok: boolean, detail?: string): void; waiting(): void }
+// How the agent talks to the panel (sidepanel.runAgentCard) or a test.
+export interface AgentUI {
+  signal: AbortSignal;
+  step(text: string, tool?: string): StepHandle;
+  note(text: string): void;
+  thinking?(chunk: string): void;
+  plan?(items: PlanItem[]): void;
+  approve(req: { title: string; detail: string }): Promise<boolean>;
+  approvePlan?(req: { items: string[]; sites: string[] }): Promise<{ ok: boolean; autoSubmit?: boolean } | undefined>;
+  ask(question: string): Promise<string>;
+}
+// What a tool call returns to the loop (text goes back to the model).
+export interface ToolOutcome { text: string; images?: string[]; failed?: boolean; declined?: boolean; errorMsg?: string; snapshot?: string; done?: boolean; summary?: string }
+export interface AgentRunResult { summary: string | null; steps: string[]; learned: { shortcut?: { id: string; title: string; site: string; steps: number; automatic: number }; notes?: string[] } | null; plan?: PlanItem[] }
+export type AskApproval = (title: string, detail: string) => Promise<boolean>;

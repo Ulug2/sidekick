@@ -1,6 +1,5 @@
 import { pickRegionInPage } from "../../page/region.js";
 import { pageReplaceSelection } from "../../page/replace-selection.js";
-import { runAgent } from "../../agent/agent.js";
 import { getSettings, modelFor } from "../../core/llm/ai.js";
 import { FAST_ONLY, runTurn } from "../../assistant/brain.js";
 import { extractDocText, isDocFile } from "../../core/docs/docs.js";
@@ -11,7 +10,8 @@ import { activeTab, captureScreen, readPageText, readSelectionFromPage, runInPag
 import { reflectOnChat, updateSessionNotes } from "../../assistant/session.js";
 import { readLocal, type Chat, type ChatIndexEntry, type ChatMessage } from "../../core/storage/schema.js";
 import type { Tier } from "../../core/llm/ai.js";
-import type { AgentUI, PlanItem } from "../../agent/agent.js";
+import { runAgent } from "../../agent/loop/run.js";
+import type { AgentUI, PlanItem } from "../../agent/types.js";
 
 // UI lookups return `any`: the elements are known from the page's own HTML, not checked here.
 export const $ = (sel: string): any => document.querySelector(sel);
