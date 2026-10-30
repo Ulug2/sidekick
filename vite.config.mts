@@ -5,12 +5,11 @@ import { resolve } from "node:path";
 const SRC = resolve(import.meta.dirname, "src");
 const OUT = resolve(import.meta.dirname, "dist");
 export const PAGES = ["sidepanel", "profile", "options", "evals", "mic"];
-// Copied byte for byte (dist path ← source): the manifest, the service worker, and the
-// MAIN-world content script, which must add nothing to pages. public/ (icons, vendored
+// Copied byte for byte (dist path ← source): the manifest and the MAIN-world content script,
+// which must add nothing to pages. public/ (icons, vendored
 // libraries loaded by URL at runtime) is copied as is by Vite.
 const STATIC: Record<string, string> = {
   "manifest.json": "manifest.json",
-  "background.js": "background/background.js",
   "webmcp-capture.js": "content/webmcp-capture.js"
 };
 
@@ -35,7 +34,11 @@ export default defineConfig({
     modulePreload: { polyfill: false },
     assetsInlineLimit: 0,
     rolldownOptions: {
-      input: Object.fromEntries(PAGES.map(p => [p, resolve(SRC, "pages", `${p}.html`)]))
+      input: {
+        ...Object.fromEntries(PAGES.map(p => [p, resolve(SRC, "pages", `${p}.html`)])),
+        background: resolve(SRC, "background/background.ts") // the service worker: one standalone file
+      },
+      output: { entryFileNames: chunk => (chunk.name === "background" ? "background.js" : "assets/[name]-[hash].js") }
     }
   },
   plugins: [copyStatic()]

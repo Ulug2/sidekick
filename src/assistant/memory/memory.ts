@@ -107,7 +107,7 @@ export async function addMemory(text: string, source = "chat", kind: string = "f
   return { memory, updated: false };
 }
 
-export async function updateMemory(id: string, text?: string | null, kind?: string, extra: Record<string, any> = {}): Promise<Memory | null> {
+export async function updateMemory(id: string, text?: string | null, kind?: string | null, extra: Record<string, any> = {}): Promise<Memory | null> {
   const list = await getMemories();
   const m = list.find(x => x.id === id);
   if (!m) return null;

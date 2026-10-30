@@ -1,42 +1,44 @@
-import { DEFAULT_SETTINGS, effectiveProvider, getSettings, modelFor } from "../../core/llm/ai.js";
+import { DEFAULT_SETTINGS, effectiveProvider, getSettings, modelFor, type Settings } from "../../core/llm/ai.js";
+import { readLocal } from "../../core/storage/schema.js";
 
-export const el = id => document.getElementById(id);
-export const FIELDS = Object.keys(DEFAULT_SETTINGS).filter(k => el(k));
+// Settings fields are <input>, <select> and <textarea> elements, keyed by setting name.
+export const el = (id: string) => document.getElementById(id) as HTMLInputElement;
+export const FIELDS = (Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]).filter(k => el(k));
 
 (async () => {
   const s = await getSettings();
   for (const k of FIELDS) {
     if (el(k).type === "checkbox") el(k).checked = !!s[k];
-    else el(k).value = s[k] ?? "";
+    else el(k).value = String(s[k] ?? "");
   }
   renderUsage();
   renderEvalStatus();
 })();
 
 el("save").onclick = async () => {
-  const data = {};
+  const data: Record<string, any> = {};
   for (const k of FIELDS) data[k] = el(k).type === "checkbox" ? el(k).checked : el(k).value.trim();
   // Empty model fields fall back to the defaults.
-  for (const k of ["anthropicFast", "anthropicSmart", "openaiFast", "openaiSmart", "anthropicBest", "openaiBest", "assistantName"]) if (!data[k]) data[k] = DEFAULT_SETTINGS[k];
+  for (const k of ["anthropicFast", "anthropicSmart", "openaiFast", "openaiSmart", "anthropicBest", "openaiBest", "assistantName"]) if (!data[k]) data[k] = DEFAULT_SETTINGS[k as keyof Settings];
   // If only one key is filled in, select that provider.
   if (data.openaiKey && !data.anthropicKey) data.provider = "openai";
   if (data.anthropicKey && !data.openaiKey) data.provider = "anthropic";
   el("provider").value = data.provider;
   const before = await getSettings();
   await chrome.storage.local.set(data);
-  const changedBrain = ["customInstructions", "anthropicFast", "anthropicSmart", "openaiFast", "openaiSmart", "provider", "personality"].some(k => before[k] !== data[k]);
+  const changedBrain = ["customInstructions", "anthropicFast", "anthropicSmart", "openaiFast", "openaiSmart", "provider", "personality"].some(k => before[k as keyof Settings] !== data[k]);
   el("status").textContent = changedBrain ? "Saved. Run the quality checks to make sure everything still works." : "Saved";
   setTimeout(() => (el("status").textContent = ""), 4000);
   renderEvalStatus();
 };
 
 export async function renderUsage() {
-  const { usage = {} } = await chrome.storage.local.get("usage");
+  const { usage = {} } = await readLocal("usage");
   const days = Object.keys(usage).sort().reverse();
   const today = new Date().toLocaleDateString("en-CA");
-  const since = n => new Date(Date.now() - n * 86400000).toLocaleDateString("en-CA");
-  const sum = (from) => {
-    const by = {};
+  const since = (n: number) => new Date(Date.now() - n * 86400000).toLocaleDateString("en-CA");
+  const sum = (from: string) => {
+    const by: Record<string, { calls: number; input: number; output: number; cacheRead: number }> = {};
     for (const d of days) {
       if (d < from) continue;
       for (const [model, u] of Object.entries(usage[d])) {
@@ -46,7 +48,7 @@ export async function renderUsage() {
     }
     return by;
   };
-  const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n);
+  const fmt = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n);
   const box = el("usage");
   if (!days.length) { box.innerHTML = `<p class="muted small">No usage yet.</p>`; return; }
   box.innerHTML = "";
@@ -56,7 +58,7 @@ export async function renderUsage() {
     const h = document.createElement("p");
     h.className = "small";
     h.innerHTML = `<strong></strong>`;
-    h.firstChild.textContent = label;
+    h.firstChild!.textContent = label;
     box.appendChild(h);
     const t = document.createElement("table");
     t.className = "usage";
@@ -65,7 +67,7 @@ export async function renderUsage() {
       const tr = document.createElement("tr");
       for (const v of [model, u.calls, fmt(u.input), fmt(u.cacheRead), fmt(u.output)]) {
         const td = document.createElement("td");
-        td.textContent = v;
+        td.textContent = String(v);
         tr.appendChild(td);
       }
       t.tBodies[0].appendChild(tr);
@@ -75,7 +77,7 @@ export async function renderUsage() {
 }
 
 export async function renderEvalStatus() {
-  const { evalRuns = [] } = await chrome.storage.local.get("evalRuns");
+  const { evalRuns = [] } = await readLocal("evalRuns");
   const last = evalRuns[0];
   const pill = el("evalStatus");
   if (!last) { pill.textContent = "Not run yet"; pill.className = "pill"; return; }
@@ -86,6 +88,6 @@ export async function renderEvalStatus() {
 }
 
 // Same key the eval page uses to tell whether results still match the settings.
-export function evalConfigKey(s) {
+export function evalConfigKey(s: Settings): string {
   return [effectiveProvider(s), modelFor(s, "fast"), modelFor(s, "smart"), s.smartEffort, s.fastEffort, s.personality, s.customInstructions].join("|");
 }

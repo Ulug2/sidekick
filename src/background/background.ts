@@ -1,4 +1,6 @@
-// Clicking the toolbar icon (or pressing the shortcut) opens the side panel.
+// The service worker. Clicking the toolbar icon (or pressing the shortcut) opens the side panel.
+import type { SessionSchema } from "../core/storage/schema.js";
+
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
 
 chrome.runtime.onInstalled.addListener(details => {
@@ -10,12 +12,11 @@ chrome.runtime.onInstalled.addListener(details => {
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   // sidePanel.open must run immediately inside the user gesture, so call it before anything async.
-  chrome.sidePanel.open({ windowId: tab.windowId });
-  chrome.storage.session.set({
-    pending: {
-      mode: info.menuItemId === "sidekick-rewrite" ? "rewrite" : "ask",
-      text: info.selectionText || "",
-      ts: Date.now()
-    }
-  });
+  chrome.sidePanel.open({ windowId: tab!.windowId });
+  const pending: SessionSchema["pending"] = {
+    mode: info.menuItemId === "sidekick-rewrite" ? "rewrite" : "ask",
+    text: info.selectionText || "",
+    ts: Date.now()
+  };
+  chrome.storage.session.set({ pending });
 });

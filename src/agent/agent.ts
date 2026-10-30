@@ -78,7 +78,7 @@ export interface AgentUI {
 }
 // What a tool call returns to the loop (text goes back to the model).
 export interface ToolOutcome { text: string; images?: string[]; failed?: boolean; declined?: boolean; errorMsg?: string; snapshot?: string; done?: boolean; summary?: string }
-export interface AgentRunResult { summary: string | null; steps: string[]; learned: { shortcut?: object; notes?: string[] } | null; plan?: PlanItem[] }
+export interface AgentRunResult { summary: string | null; steps: string[]; learned: { shortcut?: { id: string; title: string; site: string; steps: number; automatic: number }; notes?: string[] } | null; plan?: PlanItem[] }
 type AskApproval = (title: string, detail: string) => Promise<boolean>;
 
 export const AGENT_MAX_STEPS = 40;

@@ -6,14 +6,17 @@ import { addDocument, addMemory, bm25, deleteDocument, deleteMemory, getDocIndex
 import { DECLINE, DEFAULT_PROFILE, PROFILE_SECTIONS, getApplications, getProfile, saveProfile } from "../../assistant/profile-core.js";
 import { getUserModel, setUserModel } from "../../assistant/session.js";
 import { addSkill, deleteSkill, getSkills, updateSkill } from "../../assistant/skills.js";
+import type { Profile } from "../../assistant/profile-core.js";
 
-export const $ = s => document.querySelector(s);
+// UI lookups return `any`: the elements are known from the page's own HTML, not checked here.
+export const $ = (s: string): any => document.querySelector(s);
 export const params = new URLSearchParams(location.search);
 export const isOnboarding = params.get("welcome") === "1";
 
-export let profile = { ...DEFAULT_PROFILE };
+// Indexed by field key while editing, so it's also a plain record.
+export let profile: Profile & Record<string, any> = { ...DEFAULT_PROFILE };
 
-export const FIELD_UI = {
+export const FIELD_UI: Record<string, { type?: string; options?: string[]; placeholder?: string; autocomplete?: AutoFill; wide?: boolean; tall?: boolean }> = {
   fullName: { autocomplete: "name" }, preferredName: {}, pronouns: { placeholder: "e.g. he/him" },
   email: { type: "email", autocomplete: "email" }, phone: { type: "tel", autocomplete: "tel" },
   address: { wide: true, autocomplete: "street-address" }, city: {}, state: {}, zip: {}, country: {},
@@ -46,14 +49,14 @@ export const FIELD_UI = {
   aboutMe: { type: "textarea", wide: true, tall: true, placeholder: "Anything else Sidekick should know: where you're from, your story, interests, what you're looking for, how you like to write." }
 };
 
-export const SECTION_HINTS = {
+export const SECTION_HINTS: Record<string, string> = {
   "Work eligibility": "Asked on most US applications. Answer exactly as you would on the form.",
   "Voluntary self-identification (use these exact answers)": "US employers ask these optionally. Sidekick uses exactly what you pick here; 'Decline' is always safe.",
   "Saved answers to common questions": "Sidekick reuses these instead of writing new ones, and adapts them to each company.",
   "More about me": "Free-form context. The more you write, the more Sidekick sounds like you."
 };
 
-export const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+export const slug = (s: any) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
 // ---------- render ----------
 
@@ -65,21 +68,21 @@ export function renderFields() {
     sec.className = "card";
     sec.id = "sec-" + slug(title);
     sec.innerHTML = `<h2></h2>${SECTION_HINTS[title] ? `<p class="muted small hint"></p>` : ""}<div class="grid two"></div>`;
-    sec.querySelector("h2").textContent = title;
-    if (SECTION_HINTS[title]) sec.querySelector(".hint").textContent = SECTION_HINTS[title];
+    sec.querySelector("h2")!.textContent = title;
+    if (SECTION_HINTS[title]) sec.querySelector(".hint")!.textContent = SECTION_HINTS[title];
     const grid = sec.querySelector(".grid");
     for (const [label, key] of fields) {
       const ui = FIELD_UI[key] || {};
       const lab = document.createElement("label");
       if (ui.wide || ui.type === "textarea" || !label) lab.className = "wide";
       if (label) lab.append(label);
-      let el;
+      let el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
       if (ui.type === "textarea") {
         el = document.createElement("textarea");
         if (ui.tall) el.className = "tall";
       } else if (ui.type === "select") {
         el = document.createElement("select");
-        for (const o of ui.options) {
+        for (const o of ui.options!) {
           const opt = document.createElement("option");
           opt.value = o;
           opt.textContent = o || "Select…";
@@ -90,14 +93,14 @@ export function renderFields() {
         el.type = ui.type || "text";
         if (ui.autocomplete) el.autocomplete = ui.autocomplete;
       }
-      if (ui.placeholder) el.placeholder = ui.placeholder;
+      if (ui.placeholder) (el as HTMLInputElement).placeholder = ui.placeholder;
       if (!label) el.setAttribute("aria-label", title);
       el.id = "f-" + key;
       el.dataset.key = key;
-      el.value = profile[key] ?? "";
-      el.addEventListener("input", () => { profile[key] = el.value; scheduleSave(); });
+      el.value = (profile as Record<string, any>)[key] ?? "";
+      el.addEventListener("input", () => { (profile as Record<string, any>)[key] = el.value; scheduleSave(); });
       lab.appendChild(el);
-      grid.appendChild(lab);
+      grid!.appendChild(lab);
     }
     wrap.appendChild(sec);
   }
@@ -131,7 +134,7 @@ export function renderResume() {
   if (r) {
     $("#resumeName").textContent = r.name;
     const words = (r.text || "").split(/\s+/).filter(Boolean).length;
-    $("#resumeMeta").textContent = `${Math.max(1, Math.round(r.size / 1024))} KB · ${words} words read · updated ${new Date(r.updatedAt).toLocaleDateString()}`;
+    $("#resumeMeta").textContent = `${Math.max(1, Math.round(r.size! / 1024))} KB · ${words} words read · updated ${new Date(r.updatedAt!).toLocaleDateString()}`;
   }
 }
 
@@ -140,12 +143,12 @@ export async function renderSteps() {
   $("#onboardSteps").hidden = false;
   $("#heroTitle").textContent = "Welcome to Sidekick";
   const s = await getSettings();
-  const done = {
+  const done: Record<string, boolean> = {
     key: !!(s.anthropicKey || s.openaiKey),
     resume: !!profile.resume,
     review: !!(profile.fullName && profile.email)
   };
-  document.querySelectorAll("#onboardSteps li").forEach(li => li.classList.toggle("done", !!done[li.dataset.step]));
+  document.querySelectorAll("#onboardSteps li").forEach(li => li.classList.toggle("done", !!done[(li as any).dataset.step]));
 }
 
 // Learned shortcuts and notes, grouped by site.
@@ -158,7 +161,7 @@ export async function renderSites() {
     box.innerHTML = `<p class="empty-apps">Nothing yet. After the agent finishes a task on a site (for example a job application), its shortcut shows up here.</p>`;
     return;
   }
-  const xBtn = label => {
+  const xBtn = (label: any) => {
     const b = document.createElement("button");
     b.className = "icon-btn";
     b.type = "button";
@@ -181,15 +184,15 @@ export async function renderSites() {
       const body = document.createElement("div");
       body.className = "site-item";
       body.innerHTML = `<div class="site-title"></div><div class="muted small site-meta"></div><details class="site-steps"><summary class="small">Steps</summary><ol></ol></details>`;
-      body.querySelector(".site-title").textContent = `Shortcut: ${a.title}`;
-      body.querySelector(".site-meta").textContent = `${a.steps.length} steps, ${auto} automatic · learned from ${a.runs || 1} run${(a.runs || 1) > 1 ? "s" : ""}${a.replays ? ` · worked in ${a.replayOk || 0} of ${a.replays} replay${a.replays > 1 ? "s" : ""}` : ""} · updated ${new Date(a.updated).toLocaleDateString()}`;
+      body.querySelector(".site-title")!.textContent = `Shortcut: ${a.title}`;
+      body.querySelector(".site-meta")!.textContent = `${a.steps.length} steps, ${auto} automatic · learned from ${a.runs || 1} run${(a.runs || 1) > 1 ? "s" : ""}${a.replays ? ` · worked in ${a.replayOk || 0} of ${a.replays} replay${a.replays > 1 ? "s" : ""}` : ""} · updated ${new Date(a.updated).toLocaleDateString()}`;
       for (const st of a.steps) {
         const item = document.createElement("li");
-        const field = k => PERSONAL_LABELS[k] || PROFILE_FIELD_NAMES[k] || k;
+        const field = (k: any) => PERSONAL_LABELS[k] || PROFILE_FIELD_NAMES[k] || k;
         const how = st.final ? "you approve" : st.needsModel ? "the agent decides each time" : st.valueKey ? `from your profile (${field(st.valueKey)})` : st.labelKey ? `your profile's answer (${field(st.labelKey)})` : st.optional ? "only if it shows up" : "automatic";
         const verb = { click: "Click", type: "Type into", select_option: "Choose in", set_checked: st.role === "radio" ? "Choose" : st.value === false ? "Uncheck" : "Check", upload_file: "Attach your resume to", press_key: `Press ${st.value || "a key"} in` }[st.tool] || st.tool;
         item.textContent = `${verb} “${String(st.label || "").slice(0, 60)}”${st.question ? ` for “${String(st.question).slice(0, 70)}”` : ""} — ${how}`;
-        body.querySelector("ol").appendChild(item);
+        body.querySelector("ol")!.appendChild(item);
       }
       const del = xBtn("Delete shortcut");
       del.onclick = async () => { await deleteAdapter(a.id); renderSites(); };
@@ -201,7 +204,7 @@ export async function renderSites() {
       const body = document.createElement("div");
       body.className = "site-item";
       body.innerHTML = `<div class="site-note"></div>`;
-      body.firstChild.textContent = `Note: ${n.text}`;
+      body.firstChild!.textContent = `Note: ${n.text}`;
       const del = xBtn("Delete note");
       del.onclick = async () => {
         const list = (await getSiteNotes(site)).filter((_, k) => k !== i);
@@ -244,12 +247,12 @@ export async function renderApps() {
     }
     const st = document.createElement("td");
     st.innerHTML = `<span class="status"></span>`;
-    st.firstChild.textContent = a.status;
+    st.firstChild!.textContent = a.status;
     if (a.notes) st.title = a.notes;
     tr.appendChild(st);
     const del = document.createElement("td");
     del.innerHTML = `<button class="icon-btn" type="button" aria-label="Remove"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
-    del.firstChild.onclick = async () => {
+    (del.firstChild as any).onclick = async () => {
       const list = (await getApplications()).filter(x => x.id !== a.id);
       await chrome.storage.local.set({ applications: list });
       renderApps();
@@ -263,7 +266,7 @@ export async function renderApps() {
 
 // ---------- saving ----------
 
-export let saveTimer = null;
+export let saveTimer: ReturnType<typeof setTimeout> | undefined;
 export function scheduleSave() {
   $("#saveState").textContent = "Saving…";
   clearTimeout(saveTimer);
@@ -276,7 +279,7 @@ export function scheduleSave() {
 
 // ---------- resume ----------
 
-export async function handleResume(file) {
+export async function handleResume(file: any) {
   if (!file) return;
   const status = $("#fillStatus");
   status.classList.remove("err");
@@ -293,9 +296,9 @@ export async function handleResume(file) {
   status.textContent = "Reading your resume…";
   try {
     const { text } = await extractDocText(file, { maxChars: 40_000 });
-    const dataUrl = await new Promise((res, rej) => {
+    const dataUrl = await new Promise<string>((res, rej) => {
       const r = new FileReader();
-      r.onload = () => res(r.result);
+      r.onload = () => res(r.result as string);
       r.onerror = () => rej(r.error);
       r.readAsDataURL(file);
     });
@@ -304,13 +307,13 @@ export async function handleResume(file) {
     renderResume();
     renderSteps();
     await fillFromResume();
-  } catch (err) {
+  } catch (err: any) {
     status.classList.add("err");
     status.textContent = err.message;
   }
 }
 
-export const RESUME_KEYS = {
+export const RESUME_KEYS: Record<string, string> = {
   fullName: "full name", email: "email", phone: "phone", address: "street address", city: "city", state: "state or region",
   zip: "ZIP/postal code", country: "country", linkedin: "LinkedIn URL", github: "GitHub URL", portfolio: "portfolio/website URL",
   otherLinks: "other links, one per line", headline: "one-line professional headline",
@@ -339,10 +342,11 @@ export async function fillFromResume() {
       "Copy facts exactly; never guess or invent anything.\n\nKeys:\n" +
       Object.entries(RESUME_KEYS).map(([k, d]) => `- ${k}: ${d}`).join("\n") +
       `\n\nResume:\n"""\n${profile.resume.text}\n"""`;
+    // (useProfile has never been read by callModel; kept so the request stays exactly as before.)
     const reply = await callModel([{ role: "user", text: instructions }], () => {}, undefined, {
       system: "You extract structured data from documents. You output only valid JSON.",
       useProfile: false
-    });
+    } as Parameters<typeof callModel>[3]);
     const json = JSON.parse(reply.slice(reply.indexOf("{"), reply.lastIndexOf("}") + 1));
     let filled = 0, kept = 0;
     for (const key of Object.keys(RESUME_KEYS)) {
@@ -352,7 +356,7 @@ export async function fillFromResume() {
       profile[key] = val;
       const el = document.getElementById("f-" + key);
       if (el) {
-        el.value = val;
+        (el as any).value = val;
         el.classList.remove("filled");
         void el.offsetWidth;
         el.classList.add("filled");
@@ -363,7 +367,7 @@ export async function fillFromResume() {
     renderSteps();
     status.textContent = `Filled ${filled} field${filled === 1 ? "" : "s"} from your resume` +
       (kept ? `, kept ${kept} you'd already entered` : "") + ". Check them below and add the rest.";
-  } catch (err) {
+  } catch (err: any) {
     status.classList.add("err");
     status.textContent = `Couldn't fill from the resume: ${err.message}`;
   } finally {
@@ -390,28 +394,28 @@ export async function renderMemories() {
     const li = document.createElement("li");
     li.innerHTML = `<div class="mem-main"><div class="mem-text" contenteditable="plaintext-only" spellcheck="false"></div><div class="mem-badges"></div></div><span class="mem-kind"></span><span class="mem-meta"></span><button class="icon-btn mem-done" type="button"></button><button class="icon-btn" type="button" aria-label="Delete memory">${X_ICON}</button>`;
     const t = li.querySelector(".mem-text");
-    t.textContent = m.text;
+    t!.textContent = m.text;
     if (m.status === "done") li.classList.add("done");
     const badges = li.querySelector(".mem-badges");
-    const badge = (text, cls = "") => { const b = document.createElement("span"); b.className = "mem-badge " + cls; b.textContent = text; badges.appendChild(b); return b; };
+    const badge = (text: any, cls = "") => { const b = document.createElement("span"); b.className = "mem-badge " + cls; b.textContent = text; badges!.appendChild(b); return b; };
     if (m.due) badge(`due ${new Date(m.due + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`, "due");
     if (m.status === "done") badge("done");
     if (m.origin === "inferred") badge("inferred", "inferred").title = "Sidekick concluded this; you didn't say it directly. Edit or delete it if it's wrong.";
-    if (m.url) { const a = document.createElement("a"); a.className = "mem-badge"; a.href = m.url; a.target = "_blank"; a.rel = "noopener"; a.textContent = "source"; badges.appendChild(a); }
+    if (m.url) { const a = document.createElement("a"); a.className = "mem-badge"; a.href = m.url; a.target = "_blank"; a.rel = "noopener"; a.textContent = "source"; badges!.appendChild(a); }
     const doneBtn = li.querySelector(".mem-done");
-    doneBtn.setAttribute("aria-label", m.status === "done" ? "Mark as not done" : "Mark as done");
-    doneBtn.title = doneBtn.getAttribute("aria-label");
-    doneBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`;
-    doneBtn.onclick = async () => { await updateMemory(m.id, null, null, { status: m.status === "done" ? "active" : "done" }); renderMemories(); };
-    li.querySelector(".mem-kind").textContent = { preference: "how you like answers", pattern: "habit", goal: "goal" }[m.kind] || "fact";
-    li.querySelector(".mem-meta").textContent = new Date(m.updated).toLocaleDateString();
-    t.onblur = async () => {
-      const v = t.textContent.trim();
+    doneBtn!.setAttribute("aria-label", m.status === "done" ? "Mark as not done" : "Mark as done");
+    (doneBtn as any).title = doneBtn!.getAttribute("aria-label");
+    doneBtn!.innerHTML = `<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`;
+    (doneBtn as any).onclick = async () => { await updateMemory(m.id, null, null, { status: m.status === "done" ? "active" : "done" }); renderMemories(); };
+    li.querySelector(".mem-kind")!.textContent = { preference: "how you like answers", pattern: "habit", goal: "goal" }[m.kind] || "fact";
+    li.querySelector(".mem-meta")!.textContent = new Date(m.updated).toLocaleDateString();
+    (t as any).onblur = async () => {
+      const v = t!.textContent.trim();
       if (!v) { await deleteMemory(m.id); renderMemories(); }
       else if (v !== m.text) { await updateMemory(m.id, v); $("#saveState").textContent = "Memory updated"; }
     };
-    t.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); t.blur(); } };
-    li.querySelector('button[aria-label="Delete memory"]').onclick = async () => { await deleteMemory(m.id); renderMemories(); };
+    (t as any).onkeydown = (e: any) => { if (e.key === "Enter") { e.preventDefault(); (t as any).blur(); } };
+    (li.querySelector('button[aria-label="Delete memory"]') as any).onclick = async () => { await deleteMemory(m.id); renderMemories(); };
     ul.appendChild(li);
   }
 }
@@ -433,22 +437,22 @@ export async function renderSkills() {
       <input class="skill-when" type="text" aria-label="When to use it" placeholder="When to use it" />
       <textarea class="skill-body" aria-label="Steps" spellcheck="false"></textarea>
       <div class="skill-foot"><button type="button" class="small skill-save" hidden>Save changes</button><span class="muted small skill-msg" role="status"></span></div>`;
-    li.querySelector(".skill-name").value = s.name;
-    li.querySelector(".skill-when").value = s.when || "";
-    li.querySelector(".skill-body").value = s.body;
-    li.querySelector(".mem-meta").textContent = `${s.source === "learned" ? "learned" : s.source === "import" ? "imported" : "yours"} · v${s.version || 1}${s.uses ? ` · used ${s.uses}×` : ""}`;
+    (li.querySelector(".skill-name") as any).value = s.name;
+    (li.querySelector(".skill-when") as any).value = s.when || "";
+    (li.querySelector(".skill-body") as any).value = s.body;
+    li.querySelector(".mem-meta")!.textContent = `${s.source === "learned" ? "learned" : s.source === "import" ? "imported" : "yours"} · v${s.version || 1}${s.uses ? ` · used ${s.uses}×` : ""}`;
     const save = li.querySelector(".skill-save");
-    li.querySelectorAll("input, textarea").forEach(el => (el.oninput = () => { save.hidden = false; }));
-    save.onclick = async () => {
+    li.querySelectorAll("input, textarea").forEach(el => ((el as any).oninput = () => { (save as any).hidden = false; }));
+    (save as any).onclick = async () => {
       try {
-        await updateSkill(s.id, { name: li.querySelector(".skill-name").value, when: li.querySelector(".skill-when").value, body: li.querySelector(".skill-body").value });
-        save.hidden = true;
-        li.querySelector(".skill-msg").textContent = "Saved";
-      } catch (err) {
-        li.querySelector(".skill-msg").textContent = err.message;
+        await updateSkill(s.id, { name: (li.querySelector(".skill-name") as any).value, when: (li.querySelector(".skill-when") as any).value, body: (li.querySelector(".skill-body") as any).value });
+        (save as any).hidden = true;
+        li.querySelector(".skill-msg")!.textContent = "Saved";
+      } catch (err: any) {
+        li.querySelector(".skill-msg")!.textContent = err.message;
       }
     };
-    li.querySelector('button[aria-label="Delete skill"]').onclick = async () => { await deleteSkill(s.id); renderSkills(); };
+    (li.querySelector('button[aria-label="Delete skill"]') as any).onclick = async () => { await deleteSkill(s.id); renderSkills(); };
     ul.appendChild(li);
   }
 }
@@ -462,14 +466,14 @@ export async function renderDocs() {
   for (const d of index) {
     const li = document.createElement("li");
     li.innerHTML = `<div class="mem-text"></div><span class="mem-meta"></span><button class="icon-btn" type="button" aria-label="Remove document">${X_ICON}</button>`;
-    li.querySelector(".mem-text").textContent = d.name;
-    li.querySelector(".mem-meta").textContent = `${Math.round(d.chars / 1000)}k chars · ${new Date(d.added).toLocaleDateString()}`;
-    li.querySelector("button").onclick = async () => { await deleteDocument(d.id); renderDocs(); };
+    li.querySelector(".mem-text")!.textContent = d.name;
+    li.querySelector(".mem-meta")!.textContent = `${Math.round(d.chars / 1000)}k chars · ${new Date(d.added).toLocaleDateString()}`;
+    li.querySelector("button")!.onclick = async () => { await deleteDocument(d.id); renderDocs(); };
     ul.appendChild(li);
   }
 }
 
-export async function addDocs(files) {
+export async function addDocs(files: any) {
   const status = $("#docStatus");
   status.classList.remove("err");
   for (const f of files) {
@@ -479,7 +483,7 @@ export async function addDocs(files) {
       const { text } = await extractDocText(f, { maxChars: 2_000_000 });
       await addDocument(f.name, text);
       status.textContent = `Added ${f.name}.`;
-    } catch (err) {
+    } catch (err: any) {
       status.classList.add("err");
       status.textContent = err.message;
     }
@@ -492,9 +496,9 @@ export async function addDocs(files) {
 export function wire() {
   const pick = () => $("#resumeInput").click();
   $("#resumeDrop").onclick = pick;
-  $("#resumeDrop").onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } };
+  $("#resumeDrop").onkeydown = (e: any) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } };
   $("#resumeReplace").onclick = pick;
-  $("#resumeInput").onchange = e => { handleResume(e.target.files[0]); e.target.value = ""; };
+  $("#resumeInput").onchange = (e: any) => { handleResume(e.target.files[0]); e.target.value = ""; };
   $("#resumeFill").onclick = fillFromResume;
   $("#resumeRemove").onclick = async () => {
     profile.resume = null;
@@ -504,11 +508,11 @@ export function wire() {
     $("#fillStatus").textContent = "";
   };
   const drop = $("#resumeDrop");
-  drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragover = (e: any) => { e.preventDefault(); drop.classList.add("over"); };
   drop.ondragleave = () => drop.classList.remove("over");
-  drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); handleResume(e.dataTransfer.files[0]); };
+  drop.ondrop = (e: any) => { e.preventDefault(); drop.classList.remove("over"); handleResume(e.dataTransfer.files[0]); };
 
-  $("#useInChat").onchange = e => { profile.useInChat = e.target.checked; scheduleSave(); };
+  $("#useInChat").onchange = (e: any) => { profile.useInChat = e.target.checked; scheduleSave(); };
 
   $("#memAdd").onclick = async () => {
     const v = $("#memNew").value.trim();
@@ -516,12 +520,12 @@ export function wire() {
     try {
       await addMemory(v, "user");
       $("#memNew").value = "";
-    } catch (err) {
+    } catch (err: any) {
       $("#saveState").textContent = err.message;
     }
     renderMemories();
   };
-  $("#memNew").onkeydown = e => { if (e.key === "Enter") $("#memAdd").click(); };
+  $("#memNew").onkeydown = (e: any) => { if (e.key === "Enter") $("#memAdd").click(); };
   $("#memSearch").oninput = renderMemories;
   $("#memClear").onclick = async () => {
     if (!confirm("Delete all memories and the 'How Sidekick sees you' summary? This can't be undone.")) return;
@@ -530,7 +534,7 @@ export function wire() {
     $("#userModel").value = "";
     renderMemories();
   };
-  let umTimer;
+  let umTimer: ReturnType<typeof setTimeout> | undefined;
   $("#userModel").oninput = () => {
     clearTimeout(umTimer);
     $("#saveState").textContent = "Saving…";
@@ -539,12 +543,12 @@ export function wire() {
 
   const pickDocs = () => $("#docInput").click();
   $("#docDrop").onclick = pickDocs;
-  $("#docDrop").onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickDocs(); } };
-  $("#docInput").onchange = e => { addDocs([...e.target.files]); e.target.value = ""; };
+  $("#docDrop").onkeydown = (e: any) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickDocs(); } };
+  $("#docInput").onchange = (e: any) => { addDocs([...e.target.files]); e.target.value = ""; };
   const dd = $("#docDrop");
-  dd.ondragover = e => { e.preventDefault(); dd.classList.add("over"); };
+  dd.ondragover = (e: any) => { e.preventDefault(); dd.classList.add("over"); };
   dd.ondragleave = () => dd.classList.remove("over");
-  dd.ondrop = e => { e.preventDefault(); dd.classList.remove("over"); addDocs([...e.dataTransfer.files]); };
+  dd.ondrop = (e: any) => { e.preventDefault(); dd.classList.remove("over"); addDocs([...e.dataTransfer.files]); };
 
   $("#keySave").onclick = async () => {
     const key = $("#keyValue").value.trim();
@@ -560,8 +564,8 @@ export function wire() {
   $("#exportApps").onclick = async () => {
     const apps = await getApplications();
     const cols = ["date", "company", "role", "status", "url", "notes"];
-    const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const csv = [cols.join(","), ...apps.map(a => cols.map(c => esc(a[c])).join(","))].join("\n");
+    const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = [cols.join(","), ...apps.map(a => cols.map(c => esc((a as unknown as Record<string, unknown>)[c])).join(","))].join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = Object.assign(document.createElement("a"), { href: url, download: "sidekick-applications.csv" });
     a.click();
@@ -574,7 +578,7 @@ export function wire() {
       $("#skillNewName").value = $("#skillNewWhen").value = $("#skillNewBody").value = "";
       $("#skillState").textContent = "Added";
       renderSkills();
-    } catch (err) {
+    } catch (err: any) {
       $("#skillState").textContent = err.message;
     }
   };
@@ -587,17 +591,17 @@ export function wire() {
     URL.revokeObjectURL(url);
     $("#memIoState").textContent = "Exported.";
   };
-  $("#memImport").onchange = async e => {
+  $("#memImport").onchange = async (e: any) => {
     const f = e.target.files[0];
     if (!f) return;
     try {
       if (f.size > 2_000_000) throw new Error("That file is over 2 MB.");
       const r = await importMemoryMarkdown(await f.text());
-      const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+      const n = (k: any, one: any, many: any) => `${k} ${k === 1 ? one : many}`;
       $("#memIoState").textContent = `Imported ${n(r.memories, "memory", "memories")}, ${n(r.skills, "skill", "skills")}, ${n(r.notes, "site note", "site notes")}${r.about ? ", and how Sidekick sees you" : ""}.${r.skipped.length ? ` Skipped ${r.skipped.length}: ${r.skipped.slice(0, 2).join("; ")}` : ""}`;
       renderMemories(); renderSkills(); renderSites();
       $("#userModel").value = (await getUserModel()).text;
-    } catch (err) {
+    } catch (err: any) {
       $("#memIoState").textContent = err.message;
     }
     e.target.value = "";

@@ -39,7 +39,7 @@ export interface TurnUI {
   screenFromTab?: boolean;
   sessionNotes?: string[];
   memoryStore?: ChatMemoryStore;
-  runAgent?(task: string): Promise<string>;
+  runAgent?(task: string): Promise<string | null>;
   onText?(chunk: string): void;
   onThinking?(text: string, label?: string): void;
   onStatus?(text: string): void;
@@ -66,7 +66,7 @@ export interface Review { kind: "corrected" | "conflict"; original?: string; rea
 export interface ReviewResult { text: string; review?: Review; verification: Verification; chip: { ok?: string; fixed?: string; warn?: string } }
 export interface TurnTrace { route: Route & { model: string; effort: string }; rounds: RoundTrace[]; usage: Usage; started: number; ms?: number; verification?: Verification }
 export interface TurnResult { text: string; citations: Citation[]; trace: TurnTrace; corrected: boolean; review: Review | null; held: boolean }
-export interface ChatToolEnv { memory: ChatMemoryStore; onMemory?: TurnUI["onMemory"]; runAgent?: (task: string) => Promise<string>; signal?: AbortSignal; addCitations(list: Citation[]): void }
+export interface ChatToolEnv { memory: ChatMemoryStore; onMemory?: TurnUI["onMemory"]; runAgent?: (task: string) => Promise<string | null>; signal?: AbortSignal; addCitations(list: Citation[]): void }
 export interface ChatToolResult { text: string; summary?: string; images?: string[]; isError?: boolean }
 // An answer to compare: its final values (if any) and its text without the setup block.
 interface Answer { values?: Values | null; text: string }
