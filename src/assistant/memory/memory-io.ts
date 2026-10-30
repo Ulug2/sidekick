@@ -2,19 +2,19 @@
 // it back (or into Sidekick on another computer, or into the Mac app later).
 import { getSiteNotes, saveSiteNotes } from "../../agent/skills/adapters.js";
 import { redactSecrets } from "../../core/security/guard.js";
-import { addMemory, getMemories } from "./memory.js";
+import { addMemory, getMemories, type Memory, type MemoryFields } from "./memory.js";
 import { getUserModel, setUserModel } from "../session.js";
 import { addSkill, getSkills } from "../skills.js";
 
-export const KIND_SECTIONS = [
+export const KIND_SECTIONS: [string, string][] = [
   ["preference", "How you like answers"],
   ["pattern", "Habits"],
   ["fact", "Facts"],
   ["goal", "Goals"]
 ];
 
-export function memoryTags(m) {
-  const t = [];
+export function memoryTags(m: Memory): string {
+  const t: string[] = [];
   if (m.due) t.push(`{due: ${m.due}}`);
   if (m.status === "done") t.push("{done}");
   if (m.origin === "inferred") t.push("{inferred}");
@@ -22,7 +22,7 @@ export function memoryTags(m) {
   return t.length ? " " + t.join(" ") : "";
 }
 
-export async function exportMemoryMarkdown() {
+export async function exportMemoryMarkdown(): Promise<string> {
   const [memories, about, skills, notes] = await Promise.all([getMemories(), getUserModel(), getSkills(), getSiteNotes()]);
   const out = [
     "# Sidekick memory",
@@ -52,17 +52,17 @@ export async function exportMemoryMarkdown() {
 
 // Parses an exported file and merges it in. Existing items with nearly the same text are
 // updated, not duplicated. Returns counts, and what was skipped (with why).
-export async function importMemoryMarkdown(md) {
+export async function importMemoryMarkdown(md: string): Promise<{ memories: number; skills: number; notes: number; about: boolean; skipped: string[] }> {
   const text = String(md || "").replace(/\r\n/g, "\n");
   if (!/^# Sidekick memory/m.test(text)) throw new Error("This doesn't look like a Sidekick memory file (it should start with \"# Sidekick memory\").");
-  const sections = {};
-  let current = null;
+  const sections: Record<string, string[]> = {};
+  let current: string | null = null;
   for (const line of text.split("\n")) {
     const h = line.match(/^## (.+?)\s*$/);
     if (h) { current = h[1].trim(); sections[current] = []; continue; }
     if (current) sections[current].push(line);
   }
-  const result = { memories: 0, skills: 0, notes: 0, about: false, skipped: [] };
+  const result = { memories: 0, skills: 0, notes: 0, about: false, skipped: [] as string[] };
 
   const about = (sections["How Sidekick sees you"] || []).join("\n").trim();
   if (about && about !== "(nothing yet)") {
@@ -75,17 +75,17 @@ export async function importMemoryMarkdown(md) {
       const m = line.match(/^\s*[-*]\s+(.+)$/);
       if (!m) continue;
       let body = m[1];
-      const extra = {};
-      body = body.replace(/\{due:\s*([0-9-]+)\}/i, (_, d) => { extra.due = d; return ""; })
+      const extra: MemoryFields = {};
+      body = body.replace(/\{due:\s*([0-9-]+)\}/i, (_, d: string) => { extra.due = d; return ""; })
         .replace(/\{done\}/i, () => { extra.status = "done"; return ""; })
         .replace(/\{inferred\}/i, () => { extra.origin = "inferred"; return ""; })
-        .replace(/\{source:\s*([^}]+)\}/i, (_, u) => { extra.url = u.trim(); return ""; })
+        .replace(/\{source:\s*([^}]+)\}/i, (_, u: string) => { extra.url = u.trim(); return ""; })
         .trim();
       if (!body || body === "(none)") continue;
       try {
         await addMemory(body, "import", kind, extra);
         result.memories++;
-      } catch (err) {
+      } catch (err: any) {
         result.skipped.push(`"${body.slice(0, 50)}": ${err.message}`);
       }
     }
@@ -93,13 +93,13 @@ export async function importMemoryMarkdown(md) {
 
   // Skills: "### Name", a "When:" line, then the steps.
   const skillLines = sections["Skills"] || [];
-  let sk = null;
+  let sk: { name: string; when: string; lines: string[] } | null = null;
   const flush = async () => {
     if (!sk) return;
     const body = sk.lines.join("\n").trim();
     if (body && body !== "(none)") {
-      try { const r = await addSkill({ name: sk.name, when: sk.when, body, source: "import" }); if (!r.unchanged) result.skills++; }
-      catch (err) { result.skipped.push(`skill "${sk.name}": ${err.message}`); }
+      try { const r = await addSkill({ name: sk!.name, when: sk!.when, body, source: "import" }); if (!r.unchanged) result.skills++; }
+      catch (err: any) { result.skipped.push(`skill "${sk!.name}": ${err.message}`); }
     }
     sk = null;
   };
@@ -114,8 +114,8 @@ export async function importMemoryMarkdown(md) {
   await flush();
 
   // Site notes: "### site", then "- note" lines.
-  let site = null;
-  const add = {};
+  let site: string | null = null;
+  const add: Record<string, string[]> = {};
   for (const line of sections["Site notes"] || []) {
     const h = line.match(/^### (.+?)\s*$/);
     if (h) { site = h[1].trim().toLowerCase(); continue; }

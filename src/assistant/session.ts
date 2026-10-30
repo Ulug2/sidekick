@@ -8,34 +8,50 @@
 import { modelCall } from "../core/llm/ai.js";
 import { redactSecrets } from "../core/security/guard.js";
 import { addMemory, deleteMemory, getMemories, updateMemory } from "./memory/memory.js";
-import { applySkillOps, getSkills } from "./skills.js";
+import { applySkillOps, getSkills, type Skill } from "./skills.js";
+import { readLocal, type Chat, type ChatMessage } from "../core/storage/schema.js";
+import type { Memory } from "./memory/memory.js";
+
+export interface UserModel { text: string; updated: number }
+// Where the end-of-chat review reads and writes long-term memory (the eval runner passes a temporary one).
+export interface LongTermStore {
+  list(): Promise<Memory[]>;
+  add(text: string, kind: string, extra?: Record<string, any>): Promise<unknown>;
+  update(id: string, text: string, kind: string, extra?: Record<string, any>): Promise<unknown>;
+  skills?(): Promise<Skill[]>;
+  applySkills?(ops: unknown): Promise<{ op: string; name: string }[]>;
+  remove(id: string): Promise<unknown>;
+  getAbout(): Promise<string>;
+  setAbout(text: string): Promise<unknown>;
+}
+export interface Reflection { added: string[]; updated: string[]; removed: string[]; aboutChanged: boolean; skills: { op: string; name: string }[] }
 
 export const MAX_NOTES = 10;
 
-export function parseJSONReply(text) {
+export function parseJSONReply(text: unknown): any {
   const s = String(text || "");
   const start = s.indexOf("{"), end = s.lastIndexOf("}");
   if (start < 0 || end <= start) throw new Error("No JSON in reply");
   return JSON.parse(s.slice(start, end + 1));
 }
 
-export const clean1 = t => String(t || "").replace(/\s+/g, " ").trim();
+export const clean1 = (t: unknown) => String(t || "").replace(/\s+/g, " ").trim();
 
 // ---------- user model ----------
 
-export async function getUserModel() {
-  const { userModel } = await chrome.storage.local.get("userModel");
+export async function getUserModel(): Promise<UserModel> {
+  const { userModel } = await readLocal("userModel");
   return userModel?.text ? userModel : { text: "", updated: 0 };
 }
 
-export async function setUserModel(text) {
+export async function setUserModel(text: unknown): Promise<void> {
   await chrome.storage.local.set({ userModel: { text: String(text || "").trim().slice(0, 1200), updated: Date.now() } });
 }
 
 // ---------- pinned notes for one chat ----------
 
 // Returns the updated notes array (or the old one if nothing should change).
-export async function updateSessionNotes({ notes = [], userText, replyText, userName = "the user", signal }) {
+export async function updateSessionNotes({ notes = [], userText, replyText, userName = "the user", signal }: { notes?: string[]; userText?: string; replyText?: string; userName?: string; signal?: AbortSignal }): Promise<string[]> {
   const prompt = `Current pinned notes:
 ${notes.length ? notes.map(n => `- ${n}`).join("\n") : "(none yet)"}
 
@@ -67,8 +83,8 @@ Reply with JSON only: {"notes": ["...", "..."]}`;
   });
   const out = parseJSONReply(r.text);
   if (!Array.isArray(out.notes)) return notes;
-  const seen = new Set();
-  return out.notes.map(clean1)
+  const seen = new Set<string>();
+  return (out.notes as unknown[]).map(clean1)
     .filter(n => n && !redactSecrets(n).count && !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()))
     .slice(0, MAX_NOTES);
 }
@@ -78,7 +94,7 @@ Reply with JSON only: {"notes": ["...", "..."]}`;
 export const KINDS = ["preference", "pattern", "fact", "goal"];
 
 // Real long-term storage; the eval runner passes a temporary one.
-export const realLongTermStore = {
+export const realLongTermStore: LongTermStore = {
   list: () => getMemories(),
   add: (text, kind, extra) => addMemory(text, "learned", kind, extra),
   update: (id, text, kind, extra) => updateMemory(id, text, kind, extra),
@@ -91,17 +107,17 @@ export const realLongTermStore = {
 
 // Web pages, files and search results never reach the review: only what the user typed and a
 // short version of each reply, plus a few signals about how the reply went.
-export const withoutUntrusted = t => String(t || "").replace(/<untrusted_content[\s\S]*?(<\/untrusted_content>|$)/g, "[outside content omitted]");
+export const withoutUntrusted = (t: unknown) => String(t || "").replace(/<untrusted_content[\s\S]*?(<\/untrusted_content>|$)/g, "[outside content omitted]");
 
-export function replySignals(m) {
-  const out = [];
+export function replySignals(m: ChatMessage): string {
+  const out: string[] = [];
   const v = m.trace?.verification;
   if (v?.outcome === "corrected") out.push(`double-check fixed this answer: ${String(v.reason || v.evidence || "").slice(0, 120)}`);
   else if (v?.outcome === "conflict") out.push("double-check and a third solve disagreed with this answer");
   else if (v?.outcome === "kept-by-evidence" || v?.outcome === "kept-by-vote") out.push("double-check doubted this answer, but it held up");
-  const tools = (m.trace?.rounds || []).flatMap(r => r.tools || []);
+  const tools: { name: string; error?: unknown }[] = (m.trace?.rounds || []).flatMap((r: any) => r.tools || []);
   if (tools.length) {
-    const counts = {};
+    const counts: Record<string, number> = {};
     for (const t of tools) counts[t.name] = (counts[t.name] || 0) + 1;
     const errors = tools.filter(t => t.error).length;
     out.push(`used tools: ${Object.entries(counts).map(([k, n]) => `${k}×${n}`).join(", ")}${errors ? ` (${errors} failed)` : ""}`);
@@ -109,11 +125,11 @@ export function replySignals(m) {
   return out.length ? ` [${out.join("; ")}]` : "";
 }
 
-export function transcriptForReflection(messages, fromIndex = 0) {
-  const lines = [];
+export function transcriptForReflection(messages: ChatMessage[], fromIndex = 0): string {
+  const lines: string[] = [];
   let budget = 24000;
   for (const m of messages.slice(fromIndex)) {
-    let t;
+    let t: string;
     if (m.role === "user") t = `USER: ${withoutUntrusted(m.display?.prompt || m.text || "").slice(0, 2500)}${m.display?.quote ? `\n  (about selected text: "${m.display.quote.slice(0, 200)}")` : ""}`;
     else t = `ASSISTANT: ${withoutUntrusted(m.text).replace(/\s+/g, " ").slice(0, 350)}${(m.text || "").length > 350 ? "…" : ""}${replySignals(m)}`;
     if (budget - t.length < 0) break;
@@ -124,8 +140,8 @@ export function transcriptForReflection(messages, fromIndex = 0) {
 }
 
 // Returns { added: [...], updated: [...], removed: [...], aboutChanged } or null if skipped.
-export async function reflectOnChat(chat, { store = realLongTermStore, userName = "the user", signal } = {}) {
-  const from = chat.reflectedUpTo || 0;
+export async function reflectOnChat(chat: Chat, { store = realLongTermStore, userName = "the user", signal }: { store?: LongTermStore; userName?: string; signal?: AbortSignal } = {}): Promise<Reflection | null> {
+  const from = (chat.reflectedUpTo as number) || 0;
   const newUserText = chat.messages.slice(from).filter(m => m.role === "user").map(m => m.display?.prompt || m.text || "").join(" ");
   if (newUserText.trim().length < 12) return null; // nothing new worth reviewing
 
@@ -185,11 +201,11 @@ Reply with JSON only:
   });
   const out = parseJSONReply(r.text);
   // Ids are shown as the first 8 characters; anything shorter or malformed matches nothing.
-  const byShort = id => {
+  const byShort = (id: unknown) => {
     const short = String(id || "").trim().toLowerCase().slice(0, 8);
     return /^[0-9a-z-]{8}$/.test(short) ? memories.find(m => m.id.toLowerCase().startsWith(short)) : undefined;
   };
-  const result = { added: [], updated: [], removed: [], aboutChanged: false, skills: [] };
+  const result: Reflection = { added: [], updated: [], removed: [], aboutChanged: false, skills: [] };
 
   for (const id of Array.isArray(out.remove) ? out.remove : []) {
     const m = byShort(id);

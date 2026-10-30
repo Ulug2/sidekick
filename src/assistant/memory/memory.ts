@@ -1,29 +1,37 @@
 // Personal knowledge: long-term memories, your document library, and past chats.
 // Retrieval is local (BM25 keyword ranking), so it works with any provider and costs nothing.
 import { redactSecrets } from "../../core/security/guard.js";
+import { readLocal, type Chat } from "../../core/storage/schema.js";
+
+export type MemoryKind = "preference" | "pattern" | "fact" | "goal";
+export interface MemoryFields { due?: string; status?: "active" | "done"; origin?: "stated" | "inferred"; url?: string }
+export interface Memory extends MemoryFields { id: string; text: string; created: number; updated: number; source: string; kind: MemoryKind | string }
+export interface DocIndexEntry { id: string; name: string; added: number; chars: number; chunks: number }
+export interface DocChunks { chunks: string[] }
+export interface SearchHit { kind: "memory" | "document" | "chat"; id: string; title: string; text: string; score?: number }
 
 // ---------- text search ----------
 
 export const STOP = new Set("a an and are as at be but by can could did do does for from had has have he her his how i if in into is it its just me my of on or our she so than that the their them then there these they this to too up us was we were what when where which who why will with would you your yours i'm i've it's don't".split(" "));
 
-export function tokenize(text) {
+export function tokenize(text: unknown): string[] {
   return (String(text).toLowerCase().normalize("NFKD").match(/[\p{L}\p{N}]+/gu) || [])
     .filter(t => t.length > 1 && !STOP.has(t))
     .map(t => t.length > 4 ? t.replace(/(ies|es|s|ing|ed|ly)$/, "") : t);
 }
 
 // docs: [{ id, text, ...anything }] → ranked [{ ...doc, score }]
-export function bm25(docs, query, limit = 10) {
+export function bm25<T extends { text: string }>(docs: T[], query: string, limit = 10): (T & { score: number })[] {
   const q = [...new Set(tokenize(query))];
   if (!q.length || !docs.length) return [];
   const toks = docs.map(d => tokenize(d.text));
   const avg = toks.reduce((a, t) => a + t.length, 0) / toks.length || 1;
-  const df = {};
+  const df: Record<string, number> = {};
   for (const t of toks) for (const w of new Set(t)) df[w] = (df[w] || 0) + 1;
   const N = docs.length, k1 = 1.2, b = 0.75;
   return docs
     .map((d, i) => {
-      const tf = {};
+      const tf: Record<string, number> = {};
       for (const w of toks[i]) tf[w] = (tf[w] || 0) + 1;
       let score = 0;
       for (const w of q) {
@@ -42,16 +50,16 @@ export function bm25(docs, query, limit = 10) {
 
 export const MAX_MEMORIES = 500;
 
-export async function getMemories() {
-  const { memories = [] } = await chrome.storage.local.get("memories");
+export async function getMemories(): Promise<Memory[]> {
+  const { memories = [] } = await readLocal("memories");
   return memories;
 }
 
-export async function setMemories(list) {
+export async function setMemories(list: Memory[]): Promise<void> {
   await chrome.storage.local.set({ memories: list.slice(0, MAX_MEMORIES) });
 }
 
-export function similarity(a, b) {
+export function similarity(a: string, b: string): number {
   const A = new Set(tokenize(a)), B = new Set(tokenize(b));
   if (!A.size || !B.size) return 0;
   let inter = 0;
@@ -67,8 +75,8 @@ export function similarity(a, b) {
 //   origin: "stated" (they said it) | "inferred" (Sidekick concluded it)
 //   url: the page it came from
 export const DUE_RE = /^\d{4}-\d{2}-\d{2}$/;
-export function memoryFields(extra = {}) {
-  const f = {};
+export function memoryFields(extra: Record<string, any> = {}): MemoryFields {
+  const f: MemoryFields = {};
   if (extra.due && DUE_RE.test(String(extra.due).trim()) && !Number.isNaN(Date.parse(extra.due))) f.due = String(extra.due).trim();
   if (extra.status === "done" || extra.status === "active") f.status = extra.status;
   if (extra.origin === "stated" || extra.origin === "inferred") f.origin = extra.origin;
@@ -77,7 +85,7 @@ export function memoryFields(extra = {}) {
 }
 
 // Adds a memory, or updates a near-duplicate. Returns { memory, updated }.
-export async function addMemory(text, source = "chat", kind = "fact", extra = {}) {
+export async function addMemory(text: string, source = "chat", kind: string = "fact", extra: Record<string, any> = {}): Promise<{ memory: Memory; updated: boolean }> {
   text = String(text || "").trim().replace(/\s+/g, " ").slice(0, 500);
   if (!text) throw new Error("Nothing to remember.");
   const { count } = redactSecrets(text);
@@ -94,12 +102,12 @@ export async function addMemory(text, source = "chat", kind = "fact", extra = {}
     await setMemories([dup, ...list.filter(m => m !== dup)]);
     return { memory: dup, updated: true };
   }
-  const memory = { id: crypto.randomUUID(), text, created: now, updated: now, source, kind, status: "active", origin: kind === "pattern" ? "inferred" : "stated", ...fields };
+  const memory: Memory = { id: crypto.randomUUID(), text, created: now, updated: now, source, kind, status: "active", origin: kind === "pattern" ? "inferred" : "stated", ...fields };
   await setMemories([memory, ...list]);
   return { memory, updated: false };
 }
 
-export async function updateMemory(id, text, kind, extra = {}) {
+export async function updateMemory(id: string, text?: string | null, kind?: string, extra: Record<string, any> = {}): Promise<Memory | null> {
   const list = await getMemories();
   const m = list.find(x => x.id === id);
   if (!m) return null;
@@ -112,7 +120,7 @@ export async function updateMemory(id, text, kind, extra = {}) {
   return m;
 }
 
-export async function deleteMemory(id) {
+export async function deleteMemory(id: string): Promise<Memory | null> {
   const list = await getMemories();
   const gone = list.find(m => m.id === id);
   await setMemories(list.filter(m => m.id !== id));
@@ -120,16 +128,16 @@ export async function deleteMemory(id) {
 }
 
 // How they like to work: always part of the system prompt.
-export async function standingMemories(limit = 25) {
+export async function standingMemories(limit = 25): Promise<Memory[]> {
   return (await getMemories()).filter(m => m.kind === "preference" || m.kind === "pattern").slice(0, limit);
 }
 
 export const todayISO = () => new Date().toLocaleDateString("en-CA");
-export const daysUntil = due => Math.round((Date.parse(due + "T12:00:00") - Date.parse(todayISO() + "T12:00:00")) / 864e5);
+export const daysUntil = (due: string) => Math.round((Date.parse(due + "T12:00:00") - Date.parse(todayISO() + "T12:00:00")) / 864e5);
 
 // How a memory looks to the model: "[ab12cd34] Calculus exam in Glatfelter 101 (due Wed, Nov 12 — in 5 days)".
-export function memoryLine(m) {
-  const bits = [];
+export function memoryLine(m: Memory): string {
+  const bits: string[] = [];
   if (m.due) {
     const d = daysUntil(m.due);
     const when = new Date(m.due + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
@@ -141,21 +149,21 @@ export function memoryLine(m) {
 }
 
 // Deadlines in the next two weeks (not done), soonest first. Always shown in the context.
-export async function upcomingMemories(days = 14) {
+export async function upcomingMemories(days = 14): Promise<Memory[]> {
   return (await getMemories())
     .filter(m => m.due && m.status !== "done" && daysUntil(m.due) >= 0 && daysUntil(m.due) <= days)
-    .sort((a, b) => a.due.localeCompare(b.due))
+    .sort((a, b) => a.due!.localeCompare(b.due!))
     .slice(0, 8);
 }
 
 // Facts for the current message: the most relevant ones plus the newest few. Finished items
 // and old deadlines stay out unless they're clearly relevant.
-export async function memoriesFor(query, { relevant = 8, recent = 4 } = {}) {
+export async function memoriesFor(query: string, { relevant = 8, recent = 4 } = {}): Promise<Memory[]> {
   const list = (await getMemories()).filter(m => m.kind !== "preference" && m.kind !== "pattern");
   if (!list.length) return [];
-  const stale = m => m.status === "done" || (m.due && daysUntil(m.due) < -7);
+  const stale = (m: Memory) => m.status === "done" || (m.due && daysUntil(m.due) < -7);
   // Finished items and old deadlines come back only when they match the message.
-  const picked = bm25(list, query, relevant);
+  const picked: Memory[] = bm25(list, query, relevant);
   for (const m of list.filter(x => !stale(x)).slice(0, recent)) if (!picked.some(p => p.id === m.id)) picked.push(m);
   return picked;
 }
@@ -165,9 +173,9 @@ export async function memoriesFor(query, { relevant = 8, recent = 4 } = {}) {
 export const CHUNK = 1400;
 export const OVERLAP = 200;
 
-export function chunkText(text) {
+export function chunkText(text: string): string[] {
   const paras = String(text).split(/\n{2,}/);
-  const chunks = [];
+  const chunks: string[] = [];
   let cur = "";
   for (const p of paras) {
     if ((cur + "\n\n" + p).length > CHUNK && cur) {
@@ -185,12 +193,12 @@ export function chunkText(text) {
   return chunks;
 }
 
-export async function getDocIndex() {
-  const { docIndex = [] } = await chrome.storage.local.get("docIndex");
+export async function getDocIndex(): Promise<DocIndexEntry[]> {
+  const { docIndex = [] } = await readLocal("docIndex");
   return docIndex;
 }
 
-export async function addDocument(name, text) {
+export async function addDocument(name: string, text: string): Promise<DocIndexEntry> {
   const { text: clean } = redactSecrets(text);
   const chunks = chunkText(clean);
   if (!chunks.length) throw new Error(`${name} has no readable text.`);
@@ -201,7 +209,7 @@ export async function addDocument(name, text) {
   return entry;
 }
 
-export async function deleteDocument(id) {
+export async function deleteDocument(id: string): Promise<void> {
   const index = (await getDocIndex()).filter(d => d.id !== id);
   await chrome.storage.local.set({ docIndex: index });
   await chrome.storage.local.remove("doc:" + id);
@@ -210,25 +218,25 @@ export async function deleteDocument(id) {
 // ---------- unified search ----------
 
 // scopes: any of "memories", "documents", "chats". Returns [{ kind, title, text, id, score }].
-export async function searchPersonal(query, { scopes = ["memories", "documents", "chats"], limit = 8, excludeChatId } = {}) {
-  const pool = [];
+export async function searchPersonal(query: string, { scopes = ["memories", "documents", "chats"], limit = 8, excludeChatId }: { scopes?: string[]; limit?: number; excludeChatId?: string } = {}): Promise<SearchHit[]> {
+  const pool: SearchHit[] = [];
   if (scopes.includes("memories")) {
     for (const m of await getMemories()) pool.push({ kind: "memory", id: m.id, title: "Memory", text: m.text });
   }
   if (scopes.includes("documents")) {
     const index = await getDocIndex();
     if (index.length) {
-      const stored = await chrome.storage.local.get(index.map(d => "doc:" + d.id));
+      const stored = await chrome.storage.local.get(index.map(d => "doc:" + d.id)) as Record<string, DocChunks | undefined>;
       for (const d of index) {
-        (stored["doc:" + d.id]?.chunks || []).forEach((c, i) => pool.push({ kind: "document", id: `${d.id}#${i}`, title: d.name, text: c }));
+        (stored["doc:" + d.id]?.chunks || []).forEach((c: string, i: number) => pool.push({ kind: "document", id: `${d.id}#${i}`, title: d.name, text: c }));
       }
     }
   }
   if (scopes.includes("chats")) {
-    const { chatIndex = [] } = await chrome.storage.local.get("chatIndex");
+    const { chatIndex = [] } = await readLocal("chatIndex");
     const recent = chatIndex.filter(c => c.id !== excludeChatId).slice(0, 60);
     if (recent.length) {
-      const stored = await chrome.storage.local.get(recent.map(c => "chat:" + c.id));
+      const stored = await chrome.storage.local.get(recent.map(c => "chat:" + c.id)) as Record<string, Chat | undefined>;
       for (const c of recent) {
         const msgs = stored["chat:" + c.id]?.messages || [];
         for (let i = 0; i < msgs.length; i += 2) {

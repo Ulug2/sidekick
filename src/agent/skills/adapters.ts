@@ -8,6 +8,9 @@
 // Stored only in this browser (chrome.storage.local "adapters" and "siteNotes").
 import { modelCall } from "../../core/llm/ai.js";
 import { redactSecrets } from "../../core/security/guard.js";
+import { readLocal } from "../../core/storage/schema.js";
+import type { Profile } from "../../assistant/profile-core.js";
+import type { ActionLogEntry, ElementInfo, Shortcut, ShortcutStep, SiteNote } from "../types.js";
 
 export const ADAPTERS_MAX = 40;
 export const ADAPTER_STEPS_MAX = 60;
@@ -27,7 +30,7 @@ export const SHARED_HOSTS = new Set(["github.io", "gitlab.io", "bitbucket.io", "
 // "boards.greenhouse.io" and "job-boards.greenhouse.io" are the same site: greenhouse.io.
 // Keeps three labels for country domains like "jobs.example.co.uk", and one more label on
 // shared hosting domains ("alice.github.io").
-export function siteOf(url) {
+export function siteOf(url: string): string {
   let host = "";
   try { host = new URL(url).hostname.toLowerCase(); } catch { host = String(url || "").toLowerCase(); }
   host = host.replace(/^www\./, "").replace(/^\[|\]$/g, "").replace(/\.$/, "");
@@ -37,32 +40,35 @@ export function siteOf(url) {
     if (SHARED_HOSTS.has(parts.slice(-n).join("."))) return parts.slice(-(n + 1)).join(".");
   }
   if (parts.length <= 2) return host;
-  const sld = parts.at(-2);
-  const keep = /^(co|com|ac|edu|gov|org|net)$/.test(sld) && parts.at(-1).length === 2 ? 3 : 2;
+  const sld = parts.at(-2)!;
+  const keep = /^(co|com|ac|edu|gov|org|net)$/.test(sld) && parts.at(-1)!.length === 2 ? 3 : 2;
   return parts.slice(-keep).join(".");
 }
 
-export async function getAdapters() {
-  const { adapters = [] } = await chrome.storage.local.get("adapters");
+export async function getAdapters(): Promise<Shortcut[]> {
+  const { adapters = [] } = await readLocal("adapters");
   return adapters;
 }
-export async function saveAdapters(list) {
+export async function saveAdapters(list: Shortcut[]): Promise<void> {
   await chrome.storage.local.set({ adapters: list.slice(0, ADAPTERS_MAX) });
 }
-export async function deleteAdapter(id) {
+export async function deleteAdapter(id: string): Promise<void> {
   await saveAdapters((await getAdapters()).filter(a => a.id !== id));
 }
-export async function adaptersFor(url) {
+export async function adaptersFor(url: string): Promise<Shortcut[]> {
   const site = siteOf(url);
   return (await getAdapters()).filter(a => a.site === site);
 }
 
-export async function getSiteNotes(site) {
-  const { siteNotes = {} } = await chrome.storage.local.get("siteNotes");
+// With a site: that site's notes. Without: every site's notes.
+export async function getSiteNotes(site: string): Promise<SiteNote[]>;
+export async function getSiteNotes(): Promise<Record<string, SiteNote[]>>;
+export async function getSiteNotes(site?: string): Promise<SiteNote[] | Record<string, SiteNote[]>> {
+  const { siteNotes = {} } = await readLocal("siteNotes");
   return site ? siteNotes[site] || [] : siteNotes;
 }
-export async function saveSiteNotes(site, notes) {
-  const { siteNotes = {} } = await chrome.storage.local.get("siteNotes");
+export async function saveSiteNotes(site: string, notes: SiteNote[]): Promise<void> {
+  const { siteNotes = {} } = await readLocal("siteNotes");
   if (notes.length) siteNotes[site] = notes.slice(-SITE_NOTES_MAX);
   else delete siteNotes[site];
   await chrome.storage.local.set({ siteNotes });
@@ -70,9 +76,9 @@ export async function saveSiteNotes(site, notes) {
 
 // ---------- matching elements by meaning, not by id ----------
 
-export const normLabel = t => String(t || "").toLowerCase().replace(/[*:•✱]+/g, " ").replace(/\(required\)|\brequired\b/g, " ").replace(/\s+/g, " ").trim();
+export const normLabel = (t: unknown) => String(t || "").toLowerCase().replace(/[*:•✱]+/g, " ").replace(/\(required\)|\brequired\b/g, " ").replace(/\s+/g, " ").trim();
 
-export function roleFamily(role) {
+export function roleFamily(role: string): "text" | "choice" | "check" | "radio" | "file" | "click" {
   const r = String(role || "");
   if (/^(textbox|textarea|searchbox|spinbutton)/.test(r)) return "text";
   if (/^(select|combobox|listbox)$/.test(r)) return "choice";
@@ -82,18 +88,18 @@ export function roleFamily(role) {
   return "click"; // button, link, clickable, tab, option, menuitem, summary…
 }
 
-export function questionOfLine(line) {
+export function questionOfLine(line: string): string {
   const m = String(line || "").match(/question: "([^"]*)"/);
   return m ? m[1] : "";
 }
 
 // Which element in the current snapshot is this step's target? Returns an id or null.
 // elements: { id: { role, label, line, section } }
-export function findTarget(elements, step) {
+export function findTarget(elements: Record<string, Pick<ElementInfo, "role" | "label" | "line" | "section">>, step: Pick<ShortcutStep, "role" | "label" | "question" | "section" | "nth">): string | null {
   const want = normLabel(step.label);
   const fam = roleFamily(step.role);
   const q = normLabel(step.question);
-  const scored = [];
+  const scored: { id: string; score: number }[] = [];
   for (const [id, e] of Object.entries(elements || {})) {
     if (roleFamily(e.role) !== fam) continue;
     const got = normLabel(e.label);
@@ -117,10 +123,10 @@ export function findTarget(elements, step) {
   const top = scored.filter(s => s.score === best).sort((a, b) => idOrder(a.id) - idOrder(b.id));
   return top[Math.min(step.nth || 0, top.length - 1)].id;
 }
-export const idOrder = id => { const [f, n] = String(id).includes(":") ? String(id).split(":").map(Number) : [0, Number(id)]; return f * 1e6 + n; };
+export const idOrder = (id: string) => { const [f, n] = String(id).includes(":") ? String(id).split(":").map(Number) : [0, Number(id)]; return f * 1e6 + n; };
 
 // Position of an element among same-looking ones (same role family and label), for findTarget.
-export function nthOf(elements, id) {
+export function nthOf(elements: Record<string, Pick<ElementInfo, "role" | "label" | "line">>, id: string): number {
   const e = elements[id];
   if (!e) return 0;
   const same = Object.keys(elements).filter(k => roleFamily(elements[k].role) === roleFamily(e.role) && normLabel(elements[k].label) === normLabel(e.label) && questionOfLine(elements[k].line) === questionOfLine(e.line)).sort((a, b) => idOrder(a) - idOrder(b));
@@ -129,9 +135,9 @@ export function nthOf(elements, id) {
 
 // ---------- profile values, for {{templates}} ----------
 
-export function profileValues(p = {}) {
+export function profileValues(p: Partial<Profile> = {}): Record<string, string> {
   const parts = String(p.fullName || "").trim().split(/\s+/).filter(Boolean);
-  const v = {
+  const v: Record<string, unknown> = {
     firstName: parts[0] || "", lastName: parts.length > 1 ? parts.at(-1) : "", fullName: p.fullName,
     preferredName: p.preferredName, pronouns: p.pronouns, email: p.email, phone: p.phone,
     address: p.address, city: p.city, state: p.state, zip: p.zip, country: p.country,
@@ -143,12 +149,12 @@ export function profileValues(p = {}) {
     eeoGender: p.eeoGender, eeoRace: p.eeoRace, eeoVeteran: p.eeoVeteran, eeoDisability: p.eeoDisability
   };
   for (const k of Object.keys(v)) v[k] = String(v[k] || "").trim();
-  return v;
+  return v as Record<string, string>;
 }
 
 // Which of your personal details (name, email, phone, address, links…) appear in this text?
 // Used to stop data leaving through a URL or a site's tool without your OK.
-export function personalDetailsIn(text, profile) {
+export function personalDetailsIn(text: unknown, profile: Partial<Profile> | null | undefined): string[] {
   const t = String(text || "").toLowerCase();
   let decoded = t;
   try { decoded = decodeURIComponent(t.replace(/\+/g, " ")); } catch {}
@@ -158,12 +164,12 @@ export function personalDetailsIn(text, profile) {
     .filter(([, v]) => t.includes(v.toLowerCase()) || decoded.includes(v.toLowerCase()) || (v.includes("@") && decoded.includes(encodeURIComponent(v).toLowerCase())))
     .map(([k]) => PERSONAL_LABELS[k] || k);
 }
-export const PROFILE_FIELD_NAMES = { workAuthorized: "work authorization", needsSponsorship: "sponsorship", willingToRelocate: "relocation", workMode: "work mode", eeoGender: "gender (self-ID)", eeoRace: "race/ethnicity (self-ID)", eeoVeteran: "veteran status", eeoDisability: "disability status" };
-export const PERSONAL_LABELS = { firstName: "first name", lastName: "last name", fullName: "full name", preferredName: "preferred name", email: "email", phone: "phone number", address: "street address", city: "city", state: "state", zip: "ZIP code", country: "country", location: "location", linkedin: "LinkedIn", github: "GitHub", portfolio: "portfolio link", citizenship: "citizenship", salaryExpectation: "salary expectation", startDate: "start date", howHeard: "referral source", pronouns: "pronouns" };
+export const PROFILE_FIELD_NAMES: Record<string, string> = { workAuthorized: "work authorization", needsSponsorship: "sponsorship", willingToRelocate: "relocation", workMode: "work mode", eeoGender: "gender (self-ID)", eeoRace: "race/ethnicity (self-ID)", eeoVeteran: "veteran status", eeoDisability: "disability status" };
+export const PERSONAL_LABELS: Record<string, string> = { firstName: "first name", lastName: "last name", fullName: "full name", preferredName: "preferred name", email: "email", phone: "phone number", address: "street address", city: "city", state: "state", zip: "ZIP code", country: "country", location: "location", linkedin: "LinkedIn", github: "GitHub", portfolio: "portfolio link", citizenship: "citizenship", salaryExpectation: "salary expectation", startDate: "start date", howHeard: "referral source", pronouns: "pronouns" };
 
 // Words in a question that tell profile fields with the same value apart ("Yes" for
 // authorization vs. "Yes" for relocation).
-export const KEY_HINTS = {
+export const KEY_HINTS: Record<string, RegExp> = {
   firstName: /first|given/, lastName: /last|family|surname/, fullName: /full name|^name$|your name/,
   email: /e-?mail/, phone: /phone|mobile/, city: /city|town/, state: /state|province|region/, zip: /zip|postal/,
   country: /country/, location: /location|where.*(live|based)/, linkedin: /linkedin/, github: /github/, portfolio: /portfolio|website/,
@@ -174,7 +180,7 @@ export const KEY_HINTS = {
 };
 
 // Which profile field produced this value? Null if none, or if it's ambiguous.
-export function profileKeyFor(value, vals, context) {
+export function profileKeyFor(value: unknown, vals: Record<string, string>, context: string): string | null {
   const want = normLabel(value);
   if (!want) return null;
   const keys = Object.keys(vals).filter(k => vals[k] && normLabel(vals[k]) === want);
@@ -195,11 +201,11 @@ export const OPTIONAL_CLICK = /\b(cookie|accept all|accept cookies|got it|dismis
 
 // One successful action → a replayable step (or a step the model must do).
 // entry: { tool, role, label, question, section, nth, value, final, description, host }
-export function compileStep(entry, vals) {
+export function compileStep(entry: ActionLogEntry, vals: Record<string, string>): ShortcutStep | null {
   // Click descriptions are kept for ordinary clicks only ("Open the application form"); a final
   // click's description summarizes your answers, so it isn't stored.
   const description = entry.tool === "click" && !entry.final ? redactSecrets(String(entry.description || "")).text.slice(0, 80) : "";
-  const s = { tool: entry.tool, role: entry.role, label: entry.label, question: entry.question || "", section: entry.section || "", nth: entry.nth || 0, description };
+  const s: ShortcutStep = { tool: entry.tool, role: entry.role, label: entry.label, question: entry.question || "", section: entry.section || "", nth: entry.nth || 0, description };
   const context = [entry.label, entry.question, entry.section].join(" ");
   if (entry.final) return { ...s, final: true };
   switch (entry.tool) {
@@ -232,13 +238,13 @@ export function compileStep(entry, vals) {
 }
 
 // A finished run's action log → a shortcut for the site where most of the work happened.
-export function compileFlow(log, profile, goal) {
+export function compileFlow(log: ActionLogEntry[], profile: Profile, goal: string): Pick<Shortcut, "site" | "goal" | "title" | "steps"> | null {
   if (!log?.length) return null;
-  const bySite = {};
+  const bySite: Record<string, number> = {};
   for (const e of log) bySite[e.site] = (bySite[e.site] || 0) + 1;
   const site = Object.entries(bySite).sort((a, b) => b[1] - a[1])[0][0];
   const vals = profileValues(profile);
-  const steps = [];
+  const steps: ShortcutStep[] = [];
   for (const e of log.filter(x => x.site === site)) {
     const s = compileStep(e, vals);
     if (!s) continue;
@@ -257,28 +263,28 @@ export function compileFlow(log, profile, goal) {
   };
 }
 
-export function titleFor(goal, site) {
+export function titleFor(goal: string, site: string): string {
   const g = String(goal || "").replace(/\s+/g, " ").trim();
   const short = g.length > 70 ? g.slice(0, 67).replace(/\s+\S*$/, "") + "…" : g;
   return short || `Routine on ${site}`;
 }
 
 // How alike two step lists are (share of targets in common), to update instead of duplicate.
-export function flowSimilarity(a, b) {
-  const key = s => `${s.tool}|${roleFamily(s.role)}|${normLabel(s.label)}`;
+export function flowSimilarity(a: ShortcutStep[], b: ShortcutStep[]): number {
+  const key = (s: ShortcutStep) => `${s.tool}|${roleFamily(s.role)}|${normLabel(s.label)}`;
   const A = new Set(a.map(key)), B = new Set(b.map(key));
   const inter = [...A].filter(x => B.has(x)).length;
   return inter / Math.max(1, Math.min(A.size, B.size));
 }
 
 // Saves or updates the shortcut for a finished run. Returns the saved adapter (or null).
-export async function learnFlow(log, profile, goal) {
+export async function learnFlow(log: ActionLogEntry[], profile: Profile, goal: string): Promise<Shortcut | null> {
   const flow = compileFlow(log, profile, goal);
   if (!flow) return null;
   const list = await getAdapters();
   const same = list.find(a => a.site === flow.site && flowSimilarity(a.steps, flow.steps) >= 0.6);
   const now = Date.now();
-  let saved;
+  let saved: Shortcut;
   if (same) {
     Object.assign(same, { steps: flow.steps, updated: now, runs: (same.runs || 1) + 1 });
     saved = same;
@@ -294,7 +300,7 @@ export async function learnFlow(log, profile, goal) {
 
 // Learns 1–4 short, reusable notes about a site from a run that hit problems (errors, retries,
 // your corrections). Uses the fast model; costs a fraction of a cent.
-export async function learnSiteNotes({ site, goal, steps, errors, answers, signal }) {
+export async function learnSiteNotes({ site, goal, steps, errors, answers, signal }: { site: string; goal: string; steps: string[]; errors: string[]; answers: string[]; signal?: AbortSignal }): Promise<string[]> {
   if (!site || (!errors.length && !answers.length)) return [];
   const existing = await getSiteNotes(site);
   const log = steps.slice(-40).map((s, i) => `${i + 1}. ${redactSecrets(s).text}`).join("\n");
@@ -313,16 +319,16 @@ ${existing.map(n => `- ${n.text}`).join("\n") || "- none"}
 Write up to 3 NEW short notes (one sentence each) that would help an agent do tasks on ${site} faster next time: how tricky widgets work, where things are, what failed and what worked instead. Only lasting facts about the site, not about this one task. Never include personal data (names, emails, answers, numbers). If nothing new is worth saving, return an empty list.
 Reply with only JSON: {"notes": ["...", "..."]}`;
   const r = await modelCall({ tier: "fast", system: "You write short, reusable operating notes about websites for a browser agent. Reply with JSON only.", messages: [{ role: "user", text: prompt }], signal, maxTokens: 600 });
-  let notes = [];
-  try { notes = JSON.parse(r.text.match(/\{[\s\S]*\}/)[0]).notes || []; } catch { return []; }
+  let notes: string[] = [];
+  try { notes = JSON.parse(r.text.match(/\{[\s\S]*\}/)![0]).notes || []; } catch { return []; }
   notes = notes.map(n => String(n).trim().slice(0, 240)).filter(n => n && !redactSecrets(n).count && !existing.some(e => normLabel(e.text) === normLabel(n))).slice(0, 3);
   if (notes.length) await saveSiteNotes(site, [...existing, ...notes.map(text => ({ text, added: Date.now() }))]);
   return notes;
 }
 
 // The short text the agent sees for a site: shortcuts it can run and notes from earlier runs.
-export function siteKnowledgeText(adapters, notes) {
-  const out = [];
+export function siteKnowledgeText(adapters: Shortcut[], notes: SiteNote[]): string {
+  const out: string[] = [];
   if (adapters.length) {
     out.push("Sidekick's learned shortcuts for this site (use_shortcut runs the routine steps instantly; it stops for written answers, choices that aren't in the profile, and before any final action):");
     for (const a of adapters.slice(0, 5)) {

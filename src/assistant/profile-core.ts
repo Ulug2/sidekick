@@ -1,5 +1,7 @@
 // Your profile: everything Sidekick knows about you. Stored only in this browser.
 
+import { readLocal } from "../core/storage/schema.js";
+
 export const DECLINE = "Decline to self-identify";
 
 export const DEFAULT_PROFILE = {
@@ -23,24 +25,28 @@ export const DEFAULT_PROFILE = {
   aboutMe: "",
   // settings
   useInChat: true,
-  // { name, type, size, dataUrl, text, updatedAt }
-  resume: null
+  resume: null as Resume | null
 };
 
-export async function getProfile() {
-  const { profile } = await chrome.storage.local.get("profile");
+export interface Resume { name: string; type: string; size?: number; dataUrl: string; text?: string; updatedAt?: number }
+export type Profile = typeof DEFAULT_PROFILE;
+// One logged job application (the agent's log_application tool, or added by hand).
+export interface Application { id: string; date: string; company: string; role: string; status: string; notes?: string; url?: string }
+
+export async function getProfile(): Promise<Profile> {
+  const { profile } = await readLocal("profile");
   return { ...DEFAULT_PROFILE, ...(profile || {}) };
 }
 
-export async function saveProfile(profile) {
+export async function saveProfile(profile: Partial<Profile>): Promise<void> {
   await chrome.storage.local.set({ profile: { ...DEFAULT_PROFILE, ...profile } });
 }
 
-export function profileIsEmpty(p) {
+export function profileIsEmpty(p: Profile): boolean {
   return !p.fullName && !p.email && !p.resume && !p.aboutMe && !p.experience;
 }
 
-export const PROFILE_SECTIONS = [
+export const PROFILE_SECTIONS: [string, [string, keyof Profile][]][] = [
   ["Basics", [
     ["Full name", "fullName"], ["Preferred name", "preferredName"], ["Pronouns", "pronouns"],
     ["Email", "email"], ["Phone", "phone"], ["Street address", "address"], ["City", "city"],
@@ -69,8 +75,8 @@ export const PROFILE_SECTIONS = [
 ];
 
 // Turns the profile into readable text for the model. Empty fields are left out.
-export function profileToPrompt(p, { includeResume = false } = {}) {
-  const parts = [];
+export function profileToPrompt(p: Profile, { includeResume = false } = {}): string {
+  const parts: string[] = [];
   for (const [section, fields] of PROFILE_SECTIONS) {
     const lines = fields
       .filter(([, key]) => String(p[key] || "").trim())
@@ -86,12 +92,12 @@ export function profileToPrompt(p, { includeResume = false } = {}) {
 
 // ---------- applications log ----------
 
-export async function getApplications() {
-  const { applications = [] } = await chrome.storage.local.get("applications");
+export async function getApplications(): Promise<Application[]> {
+  const { applications = [] } = await readLocal("applications");
   return applications;
 }
 
-export async function logApplication(entry) {
+export async function logApplication(entry: Omit<Application, "id" | "date" | "status"> & { status?: string }): Promise<Application> {
   const list = await getApplications();
   list.unshift({ id: crypto.randomUUID(), date: new Date().toISOString(), status: "submitted", ...entry });
   await chrome.storage.local.set({ applications: list.slice(0, 1000) });
