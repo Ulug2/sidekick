@@ -1,22 +1,23 @@
 // Web access for the assistant: search (used with OpenAI; Claude has built-in search)
 // and reading a web page or PDF by URL. Results are fenced as untrusted content.
+import { extractDocText } from "./docs.js";
 
-const UA_FETCH = { credentials: "omit", redirect: "follow" };
-const WEB_TIMEOUT_MS = 20000;
+export const UA_FETCH = { credentials: "omit", redirect: "follow" };
+export const WEB_TIMEOUT_MS = 20000;
 
 // Fetch options that give up after a while and also stop when you press Stop.
-function webFetchOpts(signal, ms = globalThis.SK_WEB_MS || WEB_TIMEOUT_MS) {
+export function webFetchOpts(signal, ms = globalThis.SK_WEB_MS || WEB_TIMEOUT_MS) {
   const limit = AbortSignal.timeout(ms);
   return { ...UA_FETCH, signal: signal ? AbortSignal.any([signal, limit]) : limit };
 }
 // A timeout reads as "the site was slow", never as a crash; Stop stays a Stop.
-function webError(err, what, signal) {
+export function webError(err, what, signal) {
   if (signal?.aborted) return signal.reason instanceof Error ? signal.reason : new DOMException("Stopped", "AbortError");
   if (err?.name === "TimeoutError" || err?.name === "AbortError") return new Error(`${what} didn't answer within ${Math.round((globalThis.SK_WEB_MS || WEB_TIMEOUT_MS) / 1000)} s. Try again, or try another source.`);
   return err;
 }
 
-function htmlToText(doc) {
+export function htmlToText(doc) {
   doc.querySelectorAll("script, style, noscript, svg, iframe, nav, footer, header, aside, form, [aria-hidden=true], [hidden]").forEach(e => e.remove());
   const root = doc.querySelector("article, main, [role=main]") || doc.body;
   if (!root) return "";
@@ -35,7 +36,7 @@ function htmlToText(doc) {
 
 // Your own machine and local network: routers, printers, NAS boxes, dev servers.
 // (URL parsing already turns tricks like http://2130706433/ into 127.0.0.1.)
-function isPrivateHost(host) {
+export function isPrivateHost(host) {
   const h = String(host || "").toLowerCase().replace(/^\[|\]$/g, "");
   return /^(localhost|.*\.localhost|.*\.local|.*\.internal|.*\.lan|.*\.home\.arpa)$/.test(h)
     || /^(0|127|10)\./.test(h) || /^192\.168\./.test(h) || /^169\.254\./.test(h)
@@ -44,12 +45,12 @@ function isPrivateHost(host) {
     || /^\d+$/.test(h);
 }
 
-async function fetchUrlText(url, { max = 15000, signal } = {}) {
+export async function fetchUrlText(url, { max = 15000, signal } = {}) {
   try { return await fetchUrlTextInner(url, { max, signal }); }
   catch (err) { throw webError(err, "The site", signal); }
 }
 
-async function fetchUrlTextInner(url, { max, signal }) {
+export async function fetchUrlTextInner(url, { max, signal }) {
   let u;
   try { u = new URL(url); } catch { throw new Error("That isn't a valid URL."); }
   if (!/^https?:$/.test(u.protocol)) throw new Error("Only http(s) links can be read.");
@@ -78,7 +79,7 @@ async function fetchUrlTextInner(url, { max, signal }) {
 }
 
 // Keyless web search through DuckDuckGo's HTML page, with Bing as a fallback.
-async function webSearchFallback(query, limit = 6, { signal } = {}) {
+export async function webSearchFallback(query, limit = 6, { signal } = {}) {
   const tries = [
     async () => {
       const res = await fetch("https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query), webFetchOpts(signal));

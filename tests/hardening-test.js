@@ -64,7 +64,7 @@ const pick = a => a[Math.floor(rnd() * a.length)];
       prep(w);
       // Shadow DOM hosts
       w.document.querySelectorAll('[class^=host]').forEach(h => { const r = h.attachShadow({ mode: 'open' }); r.innerHTML = `<button>${pick(labels)}</button><input aria-label="${pick(['a', 'b'])}">`; });
-      w.eval(fs.readFileSync(DIR + 'page-agent.js', 'utf8'));
+      loadScripts(w, ['page-agent.js']);
       try {
         const t0 = Date.now();
         const snap = w.skPageSnapshot({});

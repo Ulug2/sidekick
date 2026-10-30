@@ -6,14 +6,14 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const H = require(require('path').join(__dirname, 'helpers.js'));
-const EXT = require('path').join(__dirname, '..', 'extension');
+const EXT = require('path').join(__dirname, '..', 'dist'); // npm run test:chrome builds it first
 const OUT = process.env.SHOTS || require('path').join(__dirname, '..', '.artifacts', 'shots');
 fs.mkdirSync(OUT, { recursive: true });
 const results = []; const check = (n, ok, x = '') => { results.push(`${ok ? 'PASS' : 'FAIL'}  ${n}${x && !ok ? '\n        ' + String(x).slice(0, 900).replace(/\n/g, '\n        ') : ''}`); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ---------- test web server ----------
-const JOB = fs.readFileSync(require('path').join(__dirname, 'sites-test.js'), 'utf8').match(/const JOB = `([\s\S]*?)`;/)[1];
+const JOB = fs.readFileSync(require('path').join(__dirname, 'fixtures', 'job.html'), 'utf8');
 const hits = [];
 const PAGES = {
   '/airline': fs.readFileSync(require('path').join(__dirname, 'fixtures', 'airline.html'), 'utf8'),
@@ -58,6 +58,7 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   let [sw] = ctx.serviceWorkers();
   if (!sw) sw = await ctx.waitForEvent('serviceworker');
   const id = sw.url().split('/')[2];
+  check('The extension ID is fixed by the manifest key (data survives moving or re-cloning the folder)', id === 'nhnafciagehpkiaighdpmnahdacacnfj', id);
   const url = p => `chrome-extension://${id}/${p}`;
   const problems = [];
   const watch = (page, name) => {

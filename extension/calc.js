@@ -2,7 +2,7 @@
 // symbolic derivative/simplify) plus nerdamer (integrals, limits, solving, factoring).
 // Neither library uses eval, so this runs inside the extension's strict security policy.
 
-const calcEngine = (() => {
+export const calcEngine = (() => {
   let ready = null;
 
   function load() {

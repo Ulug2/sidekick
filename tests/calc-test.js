@@ -1,7 +1,7 @@
 const { JSDOM } = require('jsdom'); const fs = require('fs');
 const dom = new JSDOM('<!doctype html><head></head>', { runScripts: 'outside-only' }); const w = dom.window;
 w.eval(fs.readFileSync(require('path').join(__dirname, '..', 'extension', 'vendor/math.js'), 'utf8')); w.eval(fs.readFileSync(require('path').join(__dirname, '..', 'extension', 'vendor/nerdamer.js'), 'utf8'));
-w.eval(fs.readFileSync(require('path').join(__dirname, '..', 'extension', 'calc.js'), 'utf8') + ';window.calcEngine = calcEngine;');
+require(require('path').join(__dirname, 'helpers.js')).loadScripts(w, ['calc.js'], ['calcEngine']);
 const results = []; const check = (n, ok, x='') => results.push(`${ok ? 'PASS' : 'FAIL'}  ${n}${x ? '\n        ' + x.replace(/\n/g, '\n        ') : ''}`);
 (async () => {
   const run = lines => w.eval('calcEngine').run(lines);

@@ -4,13 +4,24 @@
   "private": true,
   "description": "Sidekick: a personal AI assistant in a Chrome side panel (homework, deadlines, job applications, browser agent).",
   "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "build:test": "node scripts/build-test.mjs",
+    "pretest": "npm run build:test",
     "test": "node tests/run-all.js",
+    "pretest:chrome": "npm run build",
     "test:chrome": "node tests/real-chrome-test.js"
   },
   "devDependencies": {
+    "@types/chrome": "0.3.5",
+    "eslint-scope": "9.1.2",
+    "espree": "11.2.0",
+    "globals": "17.13.0",
     "jsdom": "30.1.3",
     "mammoth": "1.13.0",
     "pdfjs-dist": "6.4.299",
-    "playwright": "1.63.0"
+    "playwright": "1.63.0",
+    "typescript": "6.0.3",
+    "vite": "8.3.4"
   }
 }

@@ -1,14 +1,19 @@
 // Your memory as one readable Markdown file: export it, read or edit it in any editor, import
 // it back (or into Sidekick on another computer, or into the Mac app later).
+import { getSiteNotes, saveSiteNotes } from "./adapters.js";
+import { redactSecrets } from "./guard.js";
+import { addMemory, getMemories } from "./memory.js";
+import { getUserModel, setUserModel } from "./session.js";
+import { addSkill, getSkills } from "./skills.js";
 
-const KIND_SECTIONS = [
+export const KIND_SECTIONS = [
   ["preference", "How you like answers"],
   ["pattern", "Habits"],
   ["fact", "Facts"],
   ["goal", "Goals"]
 ];
 
-function memoryTags(m) {
+export function memoryTags(m) {
   const t = [];
   if (m.due) t.push(`{due: ${m.due}}`);
   if (m.status === "done") t.push("{done}");
@@ -17,7 +22,7 @@ function memoryTags(m) {
   return t.length ? " " + t.join(" ") : "";
 }
 
-async function exportMemoryMarkdown() {
+export async function exportMemoryMarkdown() {
   const [memories, about, skills, notes] = await Promise.all([getMemories(), getUserModel(), getSkills(), getSiteNotes()]);
   const out = [
     "# Sidekick memory",
@@ -47,7 +52,7 @@ async function exportMemoryMarkdown() {
 
 // Parses an exported file and merges it in. Existing items with nearly the same text are
 // updated, not duplicated. Returns counts, and what was skipped (with why).
-async function importMemoryMarkdown(md) {
+export async function importMemoryMarkdown(md) {
   const text = String(md || "").replace(/\r\n/g, "\n");
   if (!/^# Sidekick memory/m.test(text)) throw new Error("This doesn't look like a Sidekick memory file (it should start with \"# Sidekick memory\").");
   const sections = {};

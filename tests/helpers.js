@@ -91,13 +91,33 @@ function openaiEvents({ text = '', toolCall = null, reasoning = true, search = n
 const PANEL_SCRIPTS = ['vendor/marked.js', 'vendor/purify.min.js', 'vendor/katex.min.js', 'vendor/highlight.min.js', 'vendor/math.js', 'vendor/nerdamer.js',
   'ai.js', 'guard.js', 'profile-core.js', 'memory.js', 'skills.js', 'docs.js', 'web.js', 'screen.js', 'calc.js', 'page-agent.js', 'cdp.js', 'adapters.js', 'agent.js', 'session.js', 'brain.js', 'sidepanel.js'];
 
-// Evaluates scripts in one shared scope, like <script> tags on one page, and exposes names.
+// The extension's code is ES modules; scripts/build-test.mjs bundles it into classic scripts in
+// .test-build/ (npm test builds them first). loadScripts evaluates the vendor files listed, then
+// the bundle for the page those files belong to, and exposes the names a test asks for.
+const TEST_BUILD = require('path').join(__dirname, '..', '.test-build') + '/';
+const PAGE_BUNDLES = ['sidepanel', 'profile', 'evals', 'options', 'mic'];
+const bundleCache = {};
+function bundleFor(files) {
+  const page = PAGE_BUNDLES.find(p => files.includes(`${p}.js`)) || 'lib';
+  return (bundleCache[page] ||= fs.readFileSync(TEST_BUILD + page + '.js', 'utf8'));
+}
+
+// Script files a page loads, in order (vendor files, then its module entry).
+function pageScripts(page) {
+  return [...fs.readFileSync(DIR + page, 'utf8').matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map(m => m[1]);
+}
+
+// Same contract as when each file was a classic <script>: vendor files run as they are, every
+// function declaration of our files is on window, and `expose` names are put on window.
 function loadScripts(w, files, expose = []) {
   w.structuredClone ||= v => structuredClone(v);
   w.TextDecoder ||= TextDecoder; w.TextEncoder ||= TextEncoder;
-  const code = files.map(f => fs.readFileSync(DIR + f, 'utf8')).join('\n;\n') +
-    `\n;Object.assign(window, {${expose.join(',')}});`;
-  w.eval(code);
+  for (const f of files.filter(f => f.startsWith('vendor/'))) w.eval(fs.readFileSync(DIR + f, 'utf8'));
+  if (files.some(f => !f.startsWith('vendor/'))) w.eval(bundleFor(files));
+  for (const name of expose) {
+    if (!(name in (w.__sk || {}))) throw new w.ReferenceError(`${name} is not defined`);
+    w[name] = w.__sk[name];
+  }
 }
 
 function basicDom(w) {
@@ -114,4 +134,4 @@ function checkerReply(body, verdict = 'ok') {
   return sseResponse(anthropicEvents([{ type: 'text', text: JSON.stringify({ verdict, reason: 'Test checker.' }) }]));
 }
 
-module.exports = { checkerReply, JSDOM, fs, DIR, sleep, makeStore, sseResponse, anthropicEvents, openaiEvents, PANEL_SCRIPTS, loadScripts, basicDom };
+module.exports = { checkerReply, JSDOM, fs, DIR, sleep, makeStore, sseResponse, anthropicEvents, openaiEvents, PANEL_SCRIPTS, loadScripts, pageScripts, basicDom };

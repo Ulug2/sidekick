@@ -1,5 +1,7 @@
-const el = id => document.getElementById(id);
-const FIELDS = Object.keys(DEFAULT_SETTINGS).filter(k => el(k));
+import { DEFAULT_SETTINGS, effectiveProvider, getSettings, modelFor } from "./ai.js";
+
+export const el = id => document.getElementById(id);
+export const FIELDS = Object.keys(DEFAULT_SETTINGS).filter(k => el(k));
 
 (async () => {
   const s = await getSettings();
@@ -28,7 +30,7 @@ el("save").onclick = async () => {
   renderEvalStatus();
 };
 
-async function renderUsage() {
+export async function renderUsage() {
   const { usage = {} } = await chrome.storage.local.get("usage");
   const days = Object.keys(usage).sort().reverse();
   const today = new Date().toLocaleDateString("en-CA");
@@ -72,7 +74,7 @@ async function renderUsage() {
   }
 }
 
-async function renderEvalStatus() {
+export async function renderEvalStatus() {
   const { evalRuns = [] } = await chrome.storage.local.get("evalRuns");
   const last = evalRuns[0];
   const pill = el("evalStatus");
@@ -84,6 +86,6 @@ async function renderEvalStatus() {
 }
 
 // Same key the eval page uses to tell whether results still match the settings.
-function evalConfigKey(s) {
+export function evalConfigKey(s) {
   return [effectiveProvider(s), modelFor(s, "fast"), modelFor(s, "smart"), s.smartEffort, s.fastEffort, s.personality, s.customInstructions].join("|");
 }

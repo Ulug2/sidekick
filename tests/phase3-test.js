@@ -199,7 +199,7 @@ const userText = b => JSON.stringify(b.messages.at(-1));
     if (!w.crypto.randomUUID) w.crypto.randomUUID = () => require('crypto').randomUUID();
     let downloaded = null;
     w.URL.createObjectURL = b => { downloaded = b; return 'blob:x'; }; w.URL.revokeObjectURL = () => {};
-    const files = [...fs.readFileSync(DIR + 'profile.html', 'utf8').matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
+    const files = [...fs.readFileSync(DIR + 'profile.html', 'utf8').matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map(m => m[1]);
     loadScripts(w, files);
     await sleep(150);
     const $ = s => w.document.querySelector(s), $$ = s => [...w.document.querySelectorAll(s)];

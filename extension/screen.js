@@ -1,20 +1,20 @@
 // Seeing the current tab: screenshots and page text, with retries and clear errors.
 
-const PROTECTED_URL = /^(chrome|chrome-extension|edge|about|devtools|view-source|chrome-search):|^https:\/\/(chrome\.google\.com\/webstore|chromewebstore\.google\.com)/;
-const MAX_EDGE = 1568; // what vision models actually use; bigger only costs more
+export const PROTECTED_URL = /^(chrome|chrome-extension|edge|about|devtools|view-source|chrome-search):|^https:\/\/(chrome\.google\.com\/webstore|chromewebstore\.google\.com)/;
+export const MAX_EDGE = 1568; // what vision models actually use; bigger only costs more
 
-async function activeTab() {
+export async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) throw new Error("No active tab found. Click into a web page, then try again.");
   return tab;
 }
 
-const sleepMs = ms => new Promise(r => setTimeout(r, ms));
+export const sleepMs = ms => new Promise(r => setTimeout(r, ms));
 
 // A page showing a dialog ("Leave site?", alert()) or a frozen page never answers a script
 // call, and Chrome can stall a capture. Never wait forever: give up with a clear error.
-const PAGE_READ_MS = 15000;
-function pageTimeout(promise, ms = globalThis.SK_PAGE_MS || PAGE_READ_MS) {
+export const PAGE_READ_MS = 15000;
+export function pageTimeout(promise, ms = globalThis.SK_PAGE_MS || PAGE_READ_MS) {
   if (!ms) return promise;
   let timer;
   const limit = new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error("The page isn't responding. It may be showing a dialog (like \"Leave site?\" or an alert) or be frozen. Close the dialog and try again."), { name: "PageTimeout" })), ms); });
@@ -22,7 +22,7 @@ function pageTimeout(promise, ms = globalThis.SK_PAGE_MS || PAGE_READ_MS) {
   return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
 }
 
-function explainCaptureError(reason, url) {
+export function explainCaptureError(reason, url) {
   if (PROTECTED_URL.test(url)) return `Chrome doesn't allow extensions to see this page (${url.split("?")[0]}). Switch to a normal website.`;
   if (url.startsWith("file:")) return "To see local files, turn on 'Allow access to file URLs' in chrome://extensions → Sidekick → Details.";
   if (/permission|all_urls|activeTab|Cannot access/i.test(reason)) return "Chrome blocked Sidekick from this page. In chrome://extensions → Sidekick → Details, set Site access to 'On all sites', then reload the page.";
@@ -31,7 +31,7 @@ function explainCaptureError(reason, url) {
 }
 
 // Downscales big Retina screenshots (keeps PNG for crisp text when small enough).
-async function shrinkImage(dataUrl, maxEdge = MAX_EDGE, targetW) {
+export async function shrinkImage(dataUrl, maxEdge = MAX_EDGE, targetW) {
   const bmp = await createImageBitmap(await (await fetch(dataUrl)).blob());
   const k = targetW ? targetW / bmp.width : Math.min(1, maxEdge / Math.max(bmp.width, bmp.height));
   if (k >= 0.999) return { dataUrl, width: bmp.width, height: bmp.height };
@@ -46,7 +46,7 @@ async function shrinkImage(dataUrl, maxEdge = MAX_EDGE, targetW) {
 
 // Screenshot of the visible part of the active tab, ready to send to a model.
 // raw: full resolution (for cropping an area), otherwise downscaled for the model.
-async function captureScreen({ tab, raw = false } = {}) {
+export async function captureScreen({ tab, raw = false } = {}) {
   tab ||= await activeTab();
   const url = tab.url || tab.pendingUrl || "";
   if (PROTECTED_URL.test(url)) throw new Error(explainCaptureError("", url));
@@ -68,7 +68,7 @@ async function captureScreen({ tab, raw = false } = {}) {
 }
 
 // timeoutMs 0: no limit (for scripts that wait for you, like picking an area).
-async function runInPage(func, args = [], what = "read", tabId, timeoutMs) {
+export async function runInPage(func, args = [], what = "read", tabId, timeoutMs) {
   const tab = tabId ? await chrome.tabs.get(tabId) : await activeTab();
   const url = tab.url || tab.pendingUrl || "";
   if (PROTECTED_URL.test(url)) throw new Error(explainCaptureError("", url));
@@ -84,7 +84,7 @@ async function runInPage(func, args = [], what = "read", tabId, timeoutMs) {
   }
 }
 
-async function readPageText(limit = 60000) {
+export async function readPageText(limit = 60000) {
   return runInPage(max => {
     const main = document.querySelector("article, main, [role=main]");
     const root = main && main.innerText.trim().length > 500 ? main : document.body;
@@ -95,7 +95,7 @@ async function readPageText(limit = 60000) {
 
 // Text of the tab including its frames (MyOpenMath and other LTI tools run inside a Moodle
 // iframe from another site). Frames with the most text come first; tiny frames are skipped.
-async function readProblemText(limit = 8000) {
+export async function readProblemText(limit = 8000) {
   const tab = await activeTab();
   const url = tab.url || tab.pendingUrl || "";
   if (PROTECTED_URL.test(url)) return null;
@@ -135,7 +135,7 @@ async function readProblemText(limit = 8000) {
   return { url: parts[0].url, text: text.slice(0, limit) + blockedNote, truncated: text.length > limit, blocked };
 }
 
-async function readSelectionFromPage() {
+export async function readSelectionFromPage() {
   const text = await runInPage(() => {
     const el = document.activeElement;
     if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT") && typeof el.selectionStart === "number") {

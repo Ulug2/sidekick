@@ -1,8 +1,8 @@
 // Your profile: everything Sidekick knows about you. Stored only in this browser.
 
-const DECLINE = "Decline to self-identify";
+export const DECLINE = "Decline to self-identify";
 
-const DEFAULT_PROFILE = {
+export const DEFAULT_PROFILE = {
   // basics
   fullName: "", preferredName: "", pronouns: "", email: "", phone: "",
   address: "", city: "", state: "", zip: "", country: "",
@@ -27,20 +27,20 @@ const DEFAULT_PROFILE = {
   resume: null
 };
 
-async function getProfile() {
+export async function getProfile() {
   const { profile } = await chrome.storage.local.get("profile");
   return { ...DEFAULT_PROFILE, ...(profile || {}) };
 }
 
-async function saveProfile(profile) {
+export async function saveProfile(profile) {
   await chrome.storage.local.set({ profile: { ...DEFAULT_PROFILE, ...profile } });
 }
 
-function profileIsEmpty(p) {
+export function profileIsEmpty(p) {
   return !p.fullName && !p.email && !p.resume && !p.aboutMe && !p.experience;
 }
 
-const PROFILE_SECTIONS = [
+export const PROFILE_SECTIONS = [
   ["Basics", [
     ["Full name", "fullName"], ["Preferred name", "preferredName"], ["Pronouns", "pronouns"],
     ["Email", "email"], ["Phone", "phone"], ["Street address", "address"], ["City", "city"],
@@ -69,7 +69,7 @@ const PROFILE_SECTIONS = [
 ];
 
 // Turns the profile into readable text for the model. Empty fields are left out.
-function profileToPrompt(p, { includeResume = false } = {}) {
+export function profileToPrompt(p, { includeResume = false } = {}) {
   const parts = [];
   for (const [section, fields] of PROFILE_SECTIONS) {
     const lines = fields
@@ -86,12 +86,12 @@ function profileToPrompt(p, { includeResume = false } = {}) {
 
 // ---------- applications log ----------
 
-async function getApplications() {
+export async function getApplications() {
   const { applications = [] } = await chrome.storage.local.get("applications");
   return applications;
 }
 
-async function logApplication(entry) {
+export async function logApplication(entry) {
   const list = await getApplications();
   list.unshift({ id: crypto.randomUUID(), date: new Date().toISOString(), status: "submitted", ...entry });
   await chrome.storage.local.set({ applications: list.slice(0, 1000) });

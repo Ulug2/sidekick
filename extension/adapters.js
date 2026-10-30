@@ -6,15 +6,17 @@
 // Each site also keeps a few short notes learned from earlier runs ("the Location field is a
 // custom dropdown: type the city, then pick the first option").
 // Stored only in this browser (chrome.storage.local "adapters" and "siteNotes").
+import { modelCall } from "./ai.js";
+import { redactSecrets } from "./guard.js";
 
-const ADAPTERS_MAX = 40;
-const ADAPTER_STEPS_MAX = 60;
-const SITE_NOTES_MAX = 8;
+export const ADAPTERS_MAX = 40;
+export const ADAPTER_STEPS_MAX = 60;
+export const SITE_NOTES_MAX = 8;
 
 // Hosting domains where every subdomain belongs to someone else (from the Public Suffix List's
 // private section): alice.github.io and evil.github.io are different sites, so approving one
 // must never cover the other.
-const SHARED_HOSTS = new Set(["github.io", "gitlab.io", "bitbucket.io", "vercel.app", "now.sh", "netlify.app", "netlify.com", "pages.dev", "workers.dev",
+export const SHARED_HOSTS = new Set(["github.io", "gitlab.io", "bitbucket.io", "vercel.app", "now.sh", "netlify.app", "netlify.com", "pages.dev", "workers.dev",
   "herokuapp.com", "herokussl.com", "web.app", "firebaseapp.com", "appspot.com", "blogspot.com", "wordpress.com", "wixsite.com", "weebly.com",
   "squarespace.com", "myshopify.com", "azurewebsites.net", "cloudapp.net", "azurestaticapps.net", "cloudfront.net", "amazonaws.com", "s3.amazonaws.com", "elasticbeanstalk.com",
   "onrender.com", "fly.dev", "railway.app", "up.railway.app", "glitch.me", "repl.co", "replit.app", "replit.dev", "surge.sh", "ngrok.io", "ngrok-free.app", "ngrok.app",
@@ -25,7 +27,7 @@ const SHARED_HOSTS = new Set(["github.io", "gitlab.io", "bitbucket.io", "vercel.
 // "boards.greenhouse.io" and "job-boards.greenhouse.io" are the same site: greenhouse.io.
 // Keeps three labels for country domains like "jobs.example.co.uk", and one more label on
 // shared hosting domains ("alice.github.io").
-function siteOf(url) {
+export function siteOf(url) {
   let host = "";
   try { host = new URL(url).hostname.toLowerCase(); } catch { host = String(url || "").toLowerCase(); }
   host = host.replace(/^www\./, "").replace(/^\[|\]$/g, "").replace(/\.$/, "");
@@ -40,26 +42,26 @@ function siteOf(url) {
   return parts.slice(-keep).join(".");
 }
 
-async function getAdapters() {
+export async function getAdapters() {
   const { adapters = [] } = await chrome.storage.local.get("adapters");
   return adapters;
 }
-async function saveAdapters(list) {
+export async function saveAdapters(list) {
   await chrome.storage.local.set({ adapters: list.slice(0, ADAPTERS_MAX) });
 }
-async function deleteAdapter(id) {
+export async function deleteAdapter(id) {
   await saveAdapters((await getAdapters()).filter(a => a.id !== id));
 }
-async function adaptersFor(url) {
+export async function adaptersFor(url) {
   const site = siteOf(url);
   return (await getAdapters()).filter(a => a.site === site);
 }
 
-async function getSiteNotes(site) {
+export async function getSiteNotes(site) {
   const { siteNotes = {} } = await chrome.storage.local.get("siteNotes");
   return site ? siteNotes[site] || [] : siteNotes;
 }
-async function saveSiteNotes(site, notes) {
+export async function saveSiteNotes(site, notes) {
   const { siteNotes = {} } = await chrome.storage.local.get("siteNotes");
   if (notes.length) siteNotes[site] = notes.slice(-SITE_NOTES_MAX);
   else delete siteNotes[site];
@@ -68,9 +70,9 @@ async function saveSiteNotes(site, notes) {
 
 // ---------- matching elements by meaning, not by id ----------
 
-const normLabel = t => String(t || "").toLowerCase().replace(/[*:•✱]+/g, " ").replace(/\(required\)|\brequired\b/g, " ").replace(/\s+/g, " ").trim();
+export const normLabel = t => String(t || "").toLowerCase().replace(/[*:•✱]+/g, " ").replace(/\(required\)|\brequired\b/g, " ").replace(/\s+/g, " ").trim();
 
-function roleFamily(role) {
+export function roleFamily(role) {
   const r = String(role || "");
   if (/^(textbox|textarea|searchbox|spinbutton)/.test(r)) return "text";
   if (/^(select|combobox|listbox)$/.test(r)) return "choice";
@@ -80,14 +82,14 @@ function roleFamily(role) {
   return "click"; // button, link, clickable, tab, option, menuitem, summary…
 }
 
-function questionOfLine(line) {
+export function questionOfLine(line) {
   const m = String(line || "").match(/question: "([^"]*)"/);
   return m ? m[1] : "";
 }
 
 // Which element in the current snapshot is this step's target? Returns an id or null.
 // elements: { id: { role, label, line, section } }
-function findTarget(elements, step) {
+export function findTarget(elements, step) {
   const want = normLabel(step.label);
   const fam = roleFamily(step.role);
   const q = normLabel(step.question);
@@ -115,10 +117,10 @@ function findTarget(elements, step) {
   const top = scored.filter(s => s.score === best).sort((a, b) => idOrder(a.id) - idOrder(b.id));
   return top[Math.min(step.nth || 0, top.length - 1)].id;
 }
-const idOrder = id => { const [f, n] = String(id).includes(":") ? String(id).split(":").map(Number) : [0, Number(id)]; return f * 1e6 + n; };
+export const idOrder = id => { const [f, n] = String(id).includes(":") ? String(id).split(":").map(Number) : [0, Number(id)]; return f * 1e6 + n; };
 
 // Position of an element among same-looking ones (same role family and label), for findTarget.
-function nthOf(elements, id) {
+export function nthOf(elements, id) {
   const e = elements[id];
   if (!e) return 0;
   const same = Object.keys(elements).filter(k => roleFamily(elements[k].role) === roleFamily(e.role) && normLabel(elements[k].label) === normLabel(e.label) && questionOfLine(elements[k].line) === questionOfLine(e.line)).sort((a, b) => idOrder(a) - idOrder(b));
@@ -127,7 +129,7 @@ function nthOf(elements, id) {
 
 // ---------- profile values, for {{templates}} ----------
 
-function profileValues(p = {}) {
+export function profileValues(p = {}) {
   const parts = String(p.fullName || "").trim().split(/\s+/).filter(Boolean);
   const v = {
     firstName: parts[0] || "", lastName: parts.length > 1 ? parts.at(-1) : "", fullName: p.fullName,
@@ -146,7 +148,7 @@ function profileValues(p = {}) {
 
 // Which of your personal details (name, email, phone, address, links…) appear in this text?
 // Used to stop data leaving through a URL or a site's tool without your OK.
-function personalDetailsIn(text, profile) {
+export function personalDetailsIn(text, profile) {
   const t = String(text || "").toLowerCase();
   let decoded = t;
   try { decoded = decodeURIComponent(t.replace(/\+/g, " ")); } catch {}
@@ -156,12 +158,12 @@ function personalDetailsIn(text, profile) {
     .filter(([, v]) => t.includes(v.toLowerCase()) || decoded.includes(v.toLowerCase()) || (v.includes("@") && decoded.includes(encodeURIComponent(v).toLowerCase())))
     .map(([k]) => PERSONAL_LABELS[k] || k);
 }
-const PROFILE_FIELD_NAMES = { workAuthorized: "work authorization", needsSponsorship: "sponsorship", willingToRelocate: "relocation", workMode: "work mode", eeoGender: "gender (self-ID)", eeoRace: "race/ethnicity (self-ID)", eeoVeteran: "veteran status", eeoDisability: "disability status" };
-const PERSONAL_LABELS = { firstName: "first name", lastName: "last name", fullName: "full name", preferredName: "preferred name", email: "email", phone: "phone number", address: "street address", city: "city", state: "state", zip: "ZIP code", country: "country", location: "location", linkedin: "LinkedIn", github: "GitHub", portfolio: "portfolio link", citizenship: "citizenship", salaryExpectation: "salary expectation", startDate: "start date", howHeard: "referral source", pronouns: "pronouns" };
+export const PROFILE_FIELD_NAMES = { workAuthorized: "work authorization", needsSponsorship: "sponsorship", willingToRelocate: "relocation", workMode: "work mode", eeoGender: "gender (self-ID)", eeoRace: "race/ethnicity (self-ID)", eeoVeteran: "veteran status", eeoDisability: "disability status" };
+export const PERSONAL_LABELS = { firstName: "first name", lastName: "last name", fullName: "full name", preferredName: "preferred name", email: "email", phone: "phone number", address: "street address", city: "city", state: "state", zip: "ZIP code", country: "country", location: "location", linkedin: "LinkedIn", github: "GitHub", portfolio: "portfolio link", citizenship: "citizenship", salaryExpectation: "salary expectation", startDate: "start date", howHeard: "referral source", pronouns: "pronouns" };
 
 // Words in a question that tell profile fields with the same value apart ("Yes" for
 // authorization vs. "Yes" for relocation).
-const KEY_HINTS = {
+export const KEY_HINTS = {
   firstName: /first|given/, lastName: /last|family|surname/, fullName: /full name|^name$|your name/,
   email: /e-?mail/, phone: /phone|mobile/, city: /city|town/, state: /state|province|region/, zip: /zip|postal/,
   country: /country/, location: /location|where.*(live|based)/, linkedin: /linkedin/, github: /github/, portfolio: /portfolio|website/,
@@ -172,7 +174,7 @@ const KEY_HINTS = {
 };
 
 // Which profile field produced this value? Null if none, or if it's ambiguous.
-function profileKeyFor(value, vals, context) {
+export function profileKeyFor(value, vals, context) {
   const want = normLabel(value);
   if (!want) return null;
   const keys = Object.keys(vals).filter(k => vals[k] && normLabel(vals[k]) === want);
@@ -187,13 +189,13 @@ function profileKeyFor(value, vals, context) {
 }
 
 // Checkboxes that agree to something are never replayed: the model must decide each time.
-const CONSENT = /\b(agree|terms|consent|certif|acknowledg|attest|privacy|policy|authori[sz]e .* to|i understand|declare)\b/i;
+export const CONSENT = /\b(agree|terms|consent|certif|acknowledg|attest|privacy|policy|authori[sz]e .* to|i understand|declare)\b/i;
 // Popups that may or may not be there next time.
-const OPTIONAL_CLICK = /\b(cookie|accept all|accept cookies|got it|dismiss|no thanks|close|maybe later|not now|skip)\b/i;
+export const OPTIONAL_CLICK = /\b(cookie|accept all|accept cookies|got it|dismiss|no thanks|close|maybe later|not now|skip)\b/i;
 
 // One successful action → a replayable step (or a step the model must do).
 // entry: { tool, role, label, question, section, nth, value, final, description, host }
-function compileStep(entry, vals) {
+export function compileStep(entry, vals) {
   // Click descriptions are kept for ordinary clicks only ("Open the application form"); a final
   // click's description summarizes your answers, so it isn't stored.
   const description = entry.tool === "click" && !entry.final ? redactSecrets(String(entry.description || "")).text.slice(0, 80) : "";
@@ -230,7 +232,7 @@ function compileStep(entry, vals) {
 }
 
 // A finished run's action log → a shortcut for the site where most of the work happened.
-function compileFlow(log, profile, goal) {
+export function compileFlow(log, profile, goal) {
   if (!log?.length) return null;
   const bySite = {};
   for (const e of log) bySite[e.site] = (bySite[e.site] || 0) + 1;
@@ -255,14 +257,14 @@ function compileFlow(log, profile, goal) {
   };
 }
 
-function titleFor(goal, site) {
+export function titleFor(goal, site) {
   const g = String(goal || "").replace(/\s+/g, " ").trim();
   const short = g.length > 70 ? g.slice(0, 67).replace(/\s+\S*$/, "") + "…" : g;
   return short || `Routine on ${site}`;
 }
 
 // How alike two step lists are (share of targets in common), to update instead of duplicate.
-function flowSimilarity(a, b) {
+export function flowSimilarity(a, b) {
   const key = s => `${s.tool}|${roleFamily(s.role)}|${normLabel(s.label)}`;
   const A = new Set(a.map(key)), B = new Set(b.map(key));
   const inter = [...A].filter(x => B.has(x)).length;
@@ -270,7 +272,7 @@ function flowSimilarity(a, b) {
 }
 
 // Saves or updates the shortcut for a finished run. Returns the saved adapter (or null).
-async function learnFlow(log, profile, goal) {
+export async function learnFlow(log, profile, goal) {
   const flow = compileFlow(log, profile, goal);
   if (!flow) return null;
   const list = await getAdapters();
@@ -292,7 +294,7 @@ async function learnFlow(log, profile, goal) {
 
 // Learns 1–4 short, reusable notes about a site from a run that hit problems (errors, retries,
 // your corrections). Uses the fast model; costs a fraction of a cent.
-async function learnSiteNotes({ site, goal, steps, errors, answers, signal }) {
+export async function learnSiteNotes({ site, goal, steps, errors, answers, signal }) {
   if (!site || (!errors.length && !answers.length)) return [];
   const existing = await getSiteNotes(site);
   const log = steps.slice(-40).map((s, i) => `${i + 1}. ${redactSecrets(s).text}`).join("\n");
@@ -319,7 +321,7 @@ Reply with only JSON: {"notes": ["...", "..."]}`;
 }
 
 // The short text the agent sees for a site: shortcuts it can run and notes from earlier runs.
-function siteKnowledgeText(adapters, notes) {
+export function siteKnowledgeText(adapters, notes) {
   const out = [];
   if (adapters.length) {
     out.push("Sidekick's learned shortcuts for this site (use_shortcut runs the routine steps instantly; it stops for written answers, choices that aren't in the profile, and before any final action):");

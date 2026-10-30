@@ -6,31 +6,7 @@ const results = []; const check = (n, ok, x = '') => results.push(`${ok ? 'PASS'
 const AGENT_SCRIPTS = ['ai.js', 'guard.js', 'profile-core.js', 'memory.js', 'skills.js', 'docs.js', 'screen.js', 'page-agent.js', 'cdp.js', 'adapters.js', 'agent.js'];
 const CAPTURE = fs.readFileSync(DIR + 'webmcp-capture.js', 'utf8');
 
-const JOB = `<!doctype html><html><head><title>Software Engineer Intern · Acme</title></head><body>
-<main><h1>Software Engineer Intern</h1><p>Acme builds apps. Requirements: TypeScript.</p>
-<button id="apply" type="button">Apply for this job</button>
-<form id="app" hidden>
-  <h2>Personal info</h2>
-  <label for="fn">First Name *</label><input id="fn" required>
-  <label for="ln">Last Name *</label><input id="ln" required>
-  <label for="em">Email *</label><input id="em" type="email" aria-describedby="emh"><span id="emh">We'll send updates here</span>
-  <label for="pw">Create a password</label><input id="pw" type="password">
-  <label for="loc">Location</label><select id="loc"><option value="">Select…</option><option>New York, NY</option><option>Boston, MA</option></select>
-  <label for="cv">Resume/CV</label><input id="cv" type="file">
-  <h2>Questions</h2>
-  <fieldset><legend>Are you legally authorized to work in the US?</legend>
-    <label><input type="radio" name="auth" id="authY" value="yes">Yes</label><label><input type="radio" name="auth" id="authN" value="no">No</label></fieldset>
-  <fieldset><legend>Will you now or in the future require visa sponsorship?</legend>
-    <label><input type="radio" name="spon" id="sponY" value="yes">Yes</label><label><input type="radio" name="spon" id="sponN" value="no">No</label></fieldset>
-  <label for="why">Why do you want to work at Acme?</label><textarea id="why"></textarea>
-  <label><input type="checkbox" id="consent">I agree to the privacy policy</label>
-  <button type="submit" id="submit">Submit application</button>
-</form></main>
-<script>
-  window.log = [];
-  document.getElementById('apply').addEventListener('click', () => { document.getElementById('app').hidden = false; log.push('apply'); });
-  document.getElementById('app').addEventListener('submit', e => { e.preventDefault(); log.push('submitted'); });
-</script></body></html>`;
+const JOB = fs.readFileSync(require('path').join(__dirname, 'fixtures', 'job.html'), 'utf8');
 
 const PROFILE = {
   fullName: 'Ulugbek Rivera', email: 'ulugbek@example.edu', city: 'New York', state: 'NY',
@@ -316,7 +292,7 @@ const toolResults = req => (req.messages.at(-1).content || []).filter(c => c.typ
   // ---------- 9. page structure ----------
   {
     const w = makePage(JOB.replace('<form id="app" hidden>', '<form id="app">'), 'https://x.example.com/');
-    w.eval(fs.readFileSync(DIR + 'page-agent.js', 'utf8'));
+    loadScripts(w, ['page-agent.js']);
     const snap = w.skPageSnapshot({});
     const L = snap.elements.join('\n');
     check('Elements listed under their section headings', /## Personal info\n\[\d+\] textbox "First Name \*"/.test(L) && /## Questions\n/.test(L), L.slice(0, 600));
@@ -330,7 +306,7 @@ const toolResults = req => (req.messages.at(-1).content || []).filter(c => c.typ
     const w = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true, url: 'chrome-extension://abc/profile.html' }).window;
     w.chrome = { storage: { local, session: makeStore(), onChanged: { addListener() {} } }, runtime: { getURL: p => p }, tabs: { query: async () => [] } };
     w.fetch = async () => { throw new Error('no network'); };
-    const files = [...fs.readFileSync(DIR + 'profile.html', 'utf8').matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
+    const files = [...fs.readFileSync(DIR + 'profile.html', 'utf8').matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map(m => m[1]);
     loadScripts(w, files);
     await sleep(150);
     const box = w.document.querySelector('#sitesList');

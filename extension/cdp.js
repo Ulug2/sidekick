@@ -2,8 +2,9 @@
 // these clicks and keystrokes apart from yours, which fixes pages that ignore simulated
 // events (React widgets, rich editors, canvas apps). Chrome shows a "Sidekick started
 // debugging this browser" bar while it's attached; cancelling that bar falls back safely.
+import { shrinkImage } from "./screen.js";
 
-class TrustedInput {
+export class TrustedInput {
   constructor(tabId) {
     this.target = { tabId };
     this.attached = false;

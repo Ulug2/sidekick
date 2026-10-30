@@ -1,7 +1,7 @@
 const H = require(require('path').join(__dirname, 'helpers.js'));
 const { JSDOM, sleep, makeStore, sseResponse, anthropicEvents, loadScripts, fs, DIR } = H;
 const results = []; const check = (n, ok, x = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  ${n}${x && !ok ? '\n        ' + String(x).slice(0, 700).replace(/\n/g, '\n        ') : ''}`);
-const scriptsOf = page => [...fs.readFileSync(DIR + page, 'utf8').matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
+const scriptsOf = page => [...fs.readFileSync(DIR + page, 'utf8').matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map(m => m[1]);
 
 function boot(page, local, fetchImpl, expose = []) {
   const html = fs.readFileSync(DIR + page, 'utf8').replace(/<script src="([^"]+)"><\/script>/g, '');
@@ -11,7 +11,7 @@ function boot(page, local, fetchImpl, expose = []) {
   w.fetch = fetchImpl || (async () => { throw new Error('no network'); });
   if (!w.crypto.randomUUID) w.crypto.randomUUID = () => require('crypto').randomUUID();
   const files = scriptsOf(page);
-  if (files.includes('calc.js')) files.unshift('vendor/math.js', 'vendor/nerdamer.js');
+  if (files.includes('evals.js')) files.unshift('vendor/math.js', 'vendor/nerdamer.js');
   loadScripts(w, files, expose);
   return { w, $: s => w.document.querySelector(s), $$: s => [...w.document.querySelectorAll(s)] };
 }

@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "Sidekick AI",
   "version": "0.9.5",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwpXdXhonGkzYyaqe8ViGWQ1VNChRwqmT4ufMrybXwCR+rvRoXHsHG/rNZY9+BvmtFp2T5pXLTKl04DZ9ld3lP41YGZ2Oz633e3F1gwid5epDs8ildPOZl8dMK9pE96Ez32OLE8zhcqgPu+gTKY3E/Jj7UszweP6JUmJoYaJNTMblWcrwgXcEv7R2VQy3i5ZPDRGOZR+lqhWdODh1xVpNTgPru/M5Wcgt95KAdcXzE5fEHIfsz+XU7Dk/qiLQpwPTMXy2WUL866S9i39vWVO2ulCi0ZM40j+jDnQahq485agwQwgo+UY64/yGPeuRJ/FzZdXnoi8cQT5NNV3bz9zpPwIDAQAB",
   "description": "Your personal AI assistant in Chrome: remembers you, calculates exactly, searches the web, and can operate pages for you.",
   "permissions": [
     "sidePanel",

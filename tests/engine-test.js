@@ -1,7 +1,6 @@
 // Tests the in-page snapshot/action engine on a realistic application form.
 const { JSDOM } = require('jsdom');
 const fs = require('fs');
-const src = fs.readFileSync(require('path').join(__dirname, '..', 'extension', 'page-agent.js'), 'utf8');
 const results = []; const check = (n, ok, x = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  ${n}${x ? '  (' + x + ')' : ''}`);
 
 const FORM = `<!doctype html><html><head><title>Apply · Acme</title></head><body>
@@ -60,7 +59,7 @@ module.exports = { FORM, prep };
 if (require.main === module) (async () => {
   const dom = new JSDOM(FORM, { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://boards.example.com/acme/jobs/1' });
   const w = dom.window; prep(w);
-  w.eval(src);
+  require(require('path').join(__dirname, 'helpers.js')).loadScripts(w, ['page-agent.js']);
   const snap = w.skPageSnapshot({});
   const L = snap.elements;
   const find = re => L.find(l => re.test(l));

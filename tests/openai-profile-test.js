@@ -40,7 +40,7 @@ function makeStore(init = {}) { let data = JSON.parse(JSON.stringify(init)); ret
     w.fetch = async (u, o) => { modelReq = JSON.parse(o.body); const json = JSON.stringify({ fullName: 'Ulugbek Rivera', email: 'ulug@example.edu', github: 'https://github.com/example', experience: 'Acme — Intern (2025): built things', skills: 'TypeScript, React Native', city: '' });
       const H = require(require('path').join(__dirname, 'helpers.js'));
       return H.sseResponse(H.anthropicEvents([{ type: 'text', text: 'Here:\n```json\n' + json + '\n```' }])); };
-    const pageScripts = [...fs.readFileSync(dir + 'profile.html', 'utf8').matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
+    const pageScripts = [...fs.readFileSync(dir + 'profile.html', 'utf8').matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map(m => m[1]);
     require(require('path').join(__dirname, 'helpers.js')).loadScripts(w, pageScripts, ['handleResume', 'renderApps', 'profileToPrompt', 'renderMemories', 'renderDocs', 'addMemory', 'getMemories']);
     await sleep(100);
     const $ = s => w.document.querySelector(s);

@@ -1,0 +1,25 @@
+<!doctype html><html><head><title>Software Engineer Intern · Acme</title></head><body>
+<main><h1>Software Engineer Intern</h1><p>Acme builds apps. Requirements: TypeScript.</p>
+<button id="apply" type="button">Apply for this job</button>
+<form id="app" hidden>
+  <h2>Personal info</h2>
+  <label for="fn">First Name *</label><input id="fn" required>
+  <label for="ln">Last Name *</label><input id="ln" required>
+  <label for="em">Email *</label><input id="em" type="email" aria-describedby="emh"><span id="emh">We'll send updates here</span>
+  <label for="pw">Create a password</label><input id="pw" type="password">
+  <label for="loc">Location</label><select id="loc"><option value="">Select…</option><option>New York, NY</option><option>Boston, MA</option></select>
+  <label for="cv">Resume/CV</label><input id="cv" type="file">
+  <h2>Questions</h2>
+  <fieldset><legend>Are you legally authorized to work in the US?</legend>
+    <label><input type="radio" name="auth" id="authY" value="yes">Yes</label><label><input type="radio" name="auth" id="authN" value="no">No</label></fieldset>
+  <fieldset><legend>Will you now or in the future require visa sponsorship?</legend>
+    <label><input type="radio" name="spon" id="sponY" value="yes">Yes</label><label><input type="radio" name="spon" id="sponN" value="no">No</label></fieldset>
+  <label for="why">Why do you want to work at Acme?</label><textarea id="why"></textarea>
+  <label><input type="checkbox" id="consent">I agree to the privacy policy</label>
+  <button type="submit" id="submit">Submit application</button>
+</form></main>
+<script>
+  window.log = [];
+  document.getElementById('apply').addEventListener('click', () => { document.getElementById('app').hidden = false; log.push('apply'); });
+  document.getElementById('app').addEventListener('submit', e => { e.preventDefault(); log.push('submitted'); });
+</script></body></html>

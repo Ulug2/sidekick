@@ -3,7 +3,7 @@
 
 // Builds a numbered list of everything you can interact with in this frame, plus some page
 // text. Each element gets a stable data-sk-id attribute so actions can find it again.
-function skPageSnapshot(opts = {}) {
+export function skPageSnapshot(opts = {}) {
   const MAX_ELEMENTS = opts.maxElements || 300;
   const MAX_TEXT = opts.maxText || 2500;
   if (window.innerWidth < 40 || window.innerHeight < 40) return null; // tiny frames (ads, trackers)
@@ -300,7 +300,7 @@ function skPageSnapshot(opts = {}) {
 }
 
 // Performs one action on the element with the given data-sk-id, after briefly highlighting it.
-async function skPageAct(a) {
+export async function skPageAct(a) {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const deepFind = (root, sel) => {
     const hit = root.querySelector(sel);
@@ -779,7 +779,7 @@ async function skPageAct(a) {
 // These run in the page's own JavaScript world (world: "MAIN"), where the site registered its
 // tools with navigator.modelContext. webmcp-capture.js records them as they're registered.
 
-async function skWebMCPList() {
+export async function skWebMCPList() {
   const out = [];
   const seen = new Set();
   const add = (t, source) => {
@@ -803,7 +803,7 @@ async function skWebMCPList() {
   return out.slice(0, 30);
 }
 
-async function skWebMCPCall(req) {
+export async function skWebMCPCall(req) {
   const name = req && req.name;
   const args = (req && req.args) || {};
   try {

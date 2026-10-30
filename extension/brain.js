@@ -1,7 +1,17 @@
 // The assistant's "brain": persona and system prompt, model routing, chat tools, and the
 // tool-use loop. Used by the side panel and by the eval runner.
+import { personalDetailsIn } from "./adapters.js";
+import { effectiveProvider, getSettings, modelCall, modelFor } from "./ai.js";
+import { calcEngine } from "./calc.js";
+import { stripWrappers, untrusted } from "./guard.js";
+import { addMemory, deleteMemory, getMemories, memoriesFor, memoryLine, searchPersonal, standingMemories, upcomingMemories } from "./memory.js";
+import { getProfile, profileIsEmpty, profileToPrompt } from "./profile-core.js";
+import { captureScreen, readPageText, readProblemText } from "./screen.js";
+import { getUserModel } from "./session.js";
+import { getSkills, markSkillUsed, skillFor, skillsIndexText } from "./skills.js";
+import { fetchUrlText, webSearchFallback } from "./web.js";
 
-const PERSONALITIES = {
+export const PERSONALITIES = {
   concise: "Terse and efficient. Give the answer in as few words as it takes, no pleasantries. Expand only when asked.",
   balanced: "Calm, capable and direct, with quiet warmth, like a trusted chief of staff who happens to be brilliant. Confident when you know, candid when you don't.",
   warm: "Friendly, encouraging and supportive, while staying honest and efficient. Celebrate progress briefly; never gush.",
@@ -13,15 +23,15 @@ const PERSONALITIES = {
 // Cheap fast model for everyday messages; the smart model for anything that needs real
 // reasoning. Local heuristics, so routing itself costs nothing.
 
-const SMART_SIGNALS = [
+export const SMART_SIGNALS = [
   [/\b(derivative|differentiat|integra(l|te)|limit|solve|equation|proof|prove|theorem|lemma|matrix|matrices|eigen|determinant|probabilit|statistic|variance|regression|calculus|differential|optimi[sz]|discriminant|gradient|hessian|series|converge|critical point|extrema|maxim|minim|polynomial|logarithm|trig|vector|physics|chemistry)\w*/i, "math or science"],
   [/[∫∑∏√π≤≥≠∞∂Δ]|\\(frac|int|sum|lim|sqrt)|\b[a-z]\s*\^\s*\d|\d\s*[\+\-\*\/\^]\s*\d|\bf\s*\(\s*x/i, "math notation"],
   [/```|\b(function|class|def|const|import|SELECT|typescript|javascript|python|java|c\+\+|sql|regex|algorithm|big[- ]?o|complexity|stack ?trace|exception|segfault|compile|refactor|debug)\b/i, "code"],
   [/\b(why|explain|analy[sz]e|compare|trade-?offs?|plan|strategy|step[- ]by[- ]step|pros and cons|evaluate|design|review|critique|recommend|decide|which should)\b/i, "reasoning"]
 ];
-const FAST_ONLY = /^(hi|hey|hello|yo|thanks?|thank you|thx|ok(ay)?|cool|nice|great|good (morning|afternoon|evening|night)|bye|lol|haha)[\s!.?]*$/i;
+export const FAST_ONLY = /^(hi|hey|hello|yo|thanks?|thank you|thx|ok(ay)?|cool|nice|great|good (morning|afternoon|evening|night)|bye|lol|haha)[\s!.?]*$/i;
 
-function routeMessage(text, { attachments = [], previousTier, quickAction } = {}) {
+export function routeMessage(text, { attachments = [], previousTier, quickAction } = {}) {
   const t = String(text || "").trim();
   if (FAST_ONLY.test(t)) return { tier: "fast", reason: "small talk" };
   if (quickAction && ["rewrite", "shorten", "grammar"].includes(quickAction)) return { tier: "fast", reason: "text edit" };
@@ -35,7 +45,7 @@ function routeMessage(text, { attachments = [], previousTier, quickAction } = {}
 
 // ---------- system prompt ----------
 
-async function buildSystemPrompt(s, { model, provider, hasAgent, builtInSearch, memoryStore }) {
+export async function buildSystemPrompt(s, { model, provider, hasAgent, builtInSearch, memoryStore }) {
   const profile = typeof getProfile === "function" ? await getProfile() : {};
   const userModel = memoryStore?.about ? await memoryStore.about() : (await getUserModel()).text;
   const standing = await (memoryStore?.standing || standingMemories)();
@@ -126,7 +136,7 @@ ${skills.length ? `\n## Your skills (procedures you learned with ${userName}; wh
 
 // Per-message context: time, open tab, relevant memories. Prepended to the latest message
 // (not the system prompt) so the system prompt stays identical and cacheable.
-async function buildTurnContext(query, { tabInfo, memoryStore, sessionNotes = [] } = {}) {
+export async function buildTurnContext(query, { tabInfo, memoryStore, sessionNotes = [] } = {}) {
   const now = new Date();
   const lines = [
     `Now: ${now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}, ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`
@@ -149,7 +159,7 @@ async function buildTurnContext(query, { tabInfo, memoryStore, sessionNotes = []
 
 // ---------- tools ----------
 
-function chatTools({ provider, webSearchServer, hasTab, hasAgent }) {
+export function chatTools({ provider, webSearchServer, hasTab, hasAgent }) {
   const tools = [
     {
       name: "calculate",
@@ -217,9 +227,9 @@ function chatTools({ provider, webSearchServer, hasTab, hasAgent }) {
   return tools;
 }
 
-const clip = (s, n = 400) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n) + "…" : s; };
+export const clip = (s, n = 400) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n) + "…" : s; };
 
-async function executeChatTool(call, env) {
+export async function executeChatTool(call, env) {
   const a = call.args || {};
   switch (call.name) {
     case "calculate": {
@@ -286,7 +296,7 @@ async function executeChatTool(call, env) {
 }
 
 // Real memory store (the eval runner swaps in a temporary one).
-const realMemoryStore = {
+export const realMemoryStore = {
   add: (text, extra = {}) => addMemory(text, "chat", extra.kind || "fact", extra),
   remove: async shortId => {
     const m = (await getMemories()).find(x => x.id.startsWith(shortId.replace(/[\[\]\s]/g, "")));
@@ -302,9 +312,9 @@ const realMemoryStore = {
 
 // Very long chats: keep the most recent messages word for word. Older ones are covered by the
 // pinned notes, so the context window never overflows. Always starts on a user message.
-const HISTORY_MAX_MESSAGES = 40;
-const HISTORY_MAX_CHARS = 120000;
-function capHistory(past) {
+export const HISTORY_MAX_MESSAGES = 40;
+export const HISTORY_MAX_CHARS = 120000;
+export function capHistory(past) {
   let start = Math.max(0, past.length - HISTORY_MAX_MESSAGES);
   const size = i => past.slice(i).reduce((n, m) => n + (m.text || "").length, 0);
   while (start < past.length - 2 && size(start) > HISTORY_MAX_CHARS) start += 2;
@@ -321,19 +331,19 @@ function capHistory(past) {
 // (objective value or equation residuals). If that can't decide, a third independent solve on
 // the strongest model breaks the tie. If even that disagrees, both answers are shown.
 
-const SOLVE_WORDS = /\b(solve|answer|find|compute|calculate|evaluate|determine|derivative|integral|limit|prove|simplify|how (much|many|long|far)|probability|homework|exercise|problem|question)\b/i;
+export const SOLVE_WORDS = /\b(solve|answer|find|compute|calculate|evaluate|determine|derivative|integral|limit|prove|simplify|how (much|many|long|far)|probability|homework|exercise|problem|question)\b/i;
 
 // Replies that don't actually answer ("an approximation with a numerical tool would be ideal").
-const GAVE_UP = /(would be ideal|use (a |an )?(numerical|graphing|computer|software|online|calculator|tool)|unable to (solve|compute|find)|can(no|')t (solve|compute|find|be solved)|too complex|beyond (my|the)|estimate the solution manually|encountered an error)/i;
+export const GAVE_UP = /(would be ideal|use (a |an )?(numerical|graphing|computer|software|online|calculator|tool)|unable to (solve|compute|find)|can(no|')t (solve|compute|find|be solved)|too complex|beyond (my|the)|estimate the solution manually|encountered an error)/i;
 
 // "Just give me the answer": the reply is held until the double-check finishes.
-const JUST_ANSWER = /\b(just|only)\s+(give\s+(me\s+)?)?(the\s+|an?\s+)?(final\s+)?answers?\b|\b(give|tell)\s+me\s+(just|only)\s+(the\s+|an?\s+)?(final\s+)?answers?\b|\bno\s+(explanation|solution|steps|work)\b|\b(don'?t|do not)\s+need\s+(the\s+|a\s+|any\s+)?(solution|explanation|steps|work)\b/i;
+export const JUST_ANSWER = /\b(just|only)\s+(give\s+(me\s+)?)?(the\s+|an?\s+)?(final\s+)?answers?\b|\b(give|tell)\s+me\s+(just|only)\s+(the\s+|an?\s+)?(final\s+)?answers?\b|\bno\s+(explanation|solution|steps|work)\b|\b(don'?t|do not)\s+need\s+(the\s+|a\s+|any\s+)?(solution|explanation|steps|work)\b/i;
 
 // A checker that failed or hedged ("no real solution was found", "a re-evaluation might be
 // needed") never overrides an answer.
-const HEDGE = /\b(fail(ed|s|ure)?\b|unable\b|could ?n['o]?t\b|can(no|')t (compute|solve|find|determine|verify|confirm)|no (real |valid |consistent )?solutions? (was |were )?(found|exists?)|not (sure|certain|confident)|uncertain|unclear|might be (needed|wrong|required)|may be (needed|required)|re-?evaluat)/i;
+export const HEDGE = /\b(fail(ed|s|ure)?\b|unable\b|could ?n['o]?t\b|can(no|')t (compute|solve|find|determine|verify|confirm)|no (real |valid |consistent )?solutions? (was |were )?(found|exists?)|not (sure|certain|confident)|uncertain|unclear|might be (needed|wrong|required)|may be (needed|required)|re-?evaluat)/i;
 
-function isMathAsk({ route, userText, images = [], reply = "" }) {
+export function isMathAsk({ route, userText, images = [], reply = "" }) {
   const text = String(userText || "");
   const mathRoute = route.reason === "math or science" || route.reason === "math notation" || route.reason === "math on screen";
   const problemOnScreen = images.length > 0 && (SOLVE_WORDS.test(text) || (text.length < 120 && /\b(again|this|it|that|retry|redo)\b/i.test(text)));
@@ -341,20 +351,20 @@ function isMathAsk({ route, userText, images = [], reply = "" }) {
   return { mathRoute, problemOnScreen, any: mathRoute || problemOnScreen || mathyAsk };
 }
 
-function needsCheck({ route, userText, images = [], reply, usedCalc = false }) {
+export function needsCheck({ route, userText, images = [], reply, usedCalc = false }) {
   if (!reply || reply.length > 8000) return false;
   if (!(isMathAsk({ route, userText, images, reply }).any || usedCalc)) return false;
   const numeric = /\d|\$|\\(frac|sqrt)|√/.test(reply);
   return numeric || GAVE_UP.test(reply);
 }
 
-function tagged(text, tag) {
+export function tagged(text, tag) {
   const m = String(text).match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "i"));
   return m ? m[1].trim() : "";
 }
 
 // Exact verdict word: "incorrect" or "not correct" must never read as "correct".
-function parseVerdict(text) {
+export function parseVerdict(text) {
   const v = tagged(text, "verdict").toLowerCase().replace(/[^a-z ]/g, " ").trim();
   if (/\b(incorrect|wrong|not correct)\b/.test(v)) return "incorrect";
   if (/\b(unsure|uncertain|unknown|not sure)\b/.test(v)) return "unsure";
@@ -371,9 +381,9 @@ function parseVerdict(text) {
 // answer: x = 4.1295, y = 1.2572
 // ```
 
-const SETUP_FORMAT = "```setup\nvariables: x = what x means (units), y = …\ngoal: minimize <objective> | maximize <objective> | solve [equation 1, equation 2] | other\nconstraints: 0 <= x <= 10, … (or none)\nanswer: x = 2.5, y = 0.75\n```";
+export const SETUP_FORMAT = "```setup\nvariables: x = what x means (units), y = …\ngoal: minimize <objective> | maximize <objective> | solve [equation 1, equation 2] | other\nconstraints: 0 <= x <= 10, … (or none)\nanswer: x = 2.5, y = 0.75\n```";
 
-function splitTop(s) {
+export function splitTop(s) {
   const out = []; let depth = 0, cur = "";
   for (const c of String(s || "")) {
     if ("([{".includes(c)) depth++;
@@ -386,7 +396,7 @@ function splitTop(s) {
 }
 
 // "x = 4.1295, y ≈ 1.2572" → { x: 4.1295, y: 1.2572 }. Null when a name repeats (several solutions).
-function parseValues(text) {
+export function parseValues(text) {
   const vals = {};
   for (const m of String(text || "").replace(/[−–]/g, "-").matchAll(/(?:^|[^\w.])([A-Za-z][A-Za-z0-9_]*)\s*(?:=|≈|\\approx)\s*\$?\s*(-?\d+(?:\.\d+)?(?:e-?\d+)?)/g)) {
     if (m[1] in vals) return null;
@@ -395,11 +405,11 @@ function parseValues(text) {
   return Object.keys(vals).length ? vals : null;
 }
 
-function stripSetup(text) {
+export function stripSetup(text) {
   return String(text || "").replace(/```setup[\s\S]*?(```|$)/gi, "").trim();
 }
 
-function parseSetup(text) {
+export function parseSetup(text) {
   const blocks = [...String(text || "").matchAll(/```setup[^\n]*\n([\s\S]*?)```/gi)];
   if (!blocks.length) return null;
   const body = blocks.at(-1)[1];
@@ -427,7 +437,7 @@ function parseSetup(text) {
 
 // The final numbers of a reply when it has no setup block: look at its last lines only, so
 // intermediate values in the working don't count.
-function answerValues(text) {
+export function answerValues(text) {
   const lines = stripSetup(text).split("\n").map(l => l.trim()).filter(Boolean);
   for (let k = 1; k <= Math.min(4, lines.length); k++) {
     const v = parseValues(lines.slice(-k).join("\n"));
@@ -436,21 +446,21 @@ function answerValues(text) {
   return null;
 }
 
-const close = (a, b, rel = 5e-3) => Math.abs(a - b) <= rel * Math.max(1, Math.abs(a), Math.abs(b));
+export const close = (a, b, rel = 5e-3) => Math.abs(a - b) <= rel * Math.max(1, Math.abs(a), Math.abs(b));
 
-function numbersIn(text) {
+export function numbersIn(text) {
   return (stripSetup(text).replace(/[−–]/g, "-").match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
 }
-const plain = t => stripSetup(t).replace(/[\s$*`\\{}]/g, "").replace(/[−–]/g, "-").toLowerCase();
+export const plain = t => stripSetup(t).replace(/[\s$*`\\{}]/g, "").replace(/[−–]/g, "-").toLowerCase();
 
 // LaTeX-ish math → something math.js can evaluate: \sqrt{10} → sqrt(10), \frac{a}{b} → (a)/(b).
-function delatex(t) {
+export function delatex(t) {
   let s = String(t).replace(/\$/g, "").replace(/\\left|\\right|\\,|\\!/g, "").replace(/\\cdot|\\times/g, "*").replace(/\\pi/g, "pi");
   for (let k = 0; k < 4; k++) s = s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, "(($1)/($2))").replace(/\\sqrt\{([^{}]*)\}/g, "sqrt($1)");
   return calcEngine.normalize ? calcEngine.normalize(s) : s;
 }
-const numKey = v => (Math.abs(v) < 1e-9 ? "0" : Number(v.toPrecision(3)).toString());
-function evalNum(expr) {
+export const numKey = v => (Math.abs(v) < 1e-9 ? "0" : Number(v.toPrecision(3)).toString());
+export function evalNum(expr) {
   try {
     const v = window.math.evaluate(expr);
     const n = typeof v === "number" ? v : v && typeof v.re === "number" && Math.abs(v.im || 0) < 1e-12 ? v.re : NaN;
@@ -458,7 +468,7 @@ function evalNum(expr) {
   } catch { return null; }
 }
 // Points and tuples in an answer, e.g. "(3, 1, \sqrt{10}) and (3, 1, -\sqrt{10})" → {"3,1,3.16", "3,1,-3.16"}.
-function tuplesIn(text) {
+export function tuplesIn(text) {
   const set = new Set();
   if (!window.math) return set;
   const s = delatex(stripSetup(text));
@@ -474,7 +484,7 @@ function tuplesIn(text) {
 // Do two final answers say the same thing? Values by name, else the same points, else the
 // same short list of numbers, else the same text. Points that only restate the question
 // (like the given point (6, 2, 0)) don't count.
-function answersMatch(a, b, question = "") {
+export function answersMatch(a, b, question = "") {
   if (!a || !b) return false;
   if (a.values && b.values) {
     const ka = Object.keys(a.values).sort(), kb = Object.keys(b.values).sort();
@@ -494,14 +504,14 @@ function answersMatch(a, b, question = "") {
 
 // ---------- deciding with code, not with a model's opinion ----------
 
-async function evalSafe(expr, values) {
+export async function evalSafe(expr, values) {
   try {
     const v = await calcEngine.evaluate(expr, values);
     return typeof v === "number" && !Number.isFinite(v) ? NaN : v;
   } catch { return NaN; }
 }
 
-async function feasible(constraints, values) {
+export async function feasible(constraints, values) {
   for (const c of constraints) {
     const ok = await evalSafe(c, values);
     if (ok === false) return false;
@@ -509,7 +519,7 @@ async function feasible(constraints, values) {
   return true;
 }
 
-async function residualsOk(equations, values) {
+export async function residualsOk(equations, values) {
   for (const eq of equations) {
     const r = await evalSafe(eq, values);
     if (typeof r === "boolean") { if (!r) return false; continue; } // a condition like x > 0
@@ -520,14 +530,14 @@ async function residualsOk(equations, values) {
   return true;
 }
 
-const fmtNum = v => (typeof v === "number" ? (Math.abs(v) >= 1e4 || Math.abs(v) < 1e-3 ? v.toPrecision(6) : String(+v.toFixed(4))) : String(v));
-const fmtPoint = vals => Object.entries(vals).map(([k, v]) => `${k} = ${fmtNum(v)}`).join(", ");
+export const fmtNum = v => (typeof v === "number" ? (Math.abs(v) >= 1e4 || Math.abs(v) < 1e-3 ? v.toPrecision(6) : String(+v.toFixed(4))) : String(v));
+export const fmtPoint = vals => Object.entries(vals).map(([k, v]) => `${k} = ${fmtNum(v)}`).join(", ");
 
 // Compares the original answer (p) with the checker's (c).
 // Returns { decision: "keep" | "replace" | "undecided", evidence }.
 // "replace" needs decisive evidence under BOTH setups (or a setup they agree on); a checker's
 // own setup alone can only confirm the original, never overturn it.
-async function arbitrate({ pSetup, cSetup, pValues, cValues }) {
+export async function arbitrate({ pSetup, cSetup, pValues, cValues }) {
   const setups = [pSetup, cSetup].filter(st => st && st.type !== "other");
   if (!pValues || !cValues || !setups.length) return { decision: "undecided", evidence: "no comparable numeric answers" };
   const keys = Object.keys(pValues).sort().join();
@@ -573,7 +583,7 @@ async function arbitrate({ pSetup, cSetup, pValues, cValues }) {
 // Does an answer pass its OWN setup's check? For optimization: it's feasible and no small step
 // in any variable makes the objective better (a real local optimum). For equations: plugging it
 // in works. Returns { ok: true | false | null (can't tell), evidence }.
-async function confirmAnswer(setup, values) {
+export async function confirmAnswer(setup, values) {
   if (!setup || !values || setup.type === "other") return { ok: null, evidence: "" };
   const vars = Object.keys(values);
   if (setup.type === "equations") {
@@ -603,7 +613,7 @@ async function confirmAnswer(setup, values) {
 // A question asking for both the maximum and the minimum, answered with the same value for both
 // (or only one of them, with no DNE) is almost always a Lagrange candidate reported twice.
 // Returns a reason string, or "".
-function extremaProblem(question, answer) {
+export function extremaProblem(question, answer) {
   const q = String(question || ""), a = stripSetup(answer).replace(/[*$`\\]/g, " ");
   if (!/\bmax(imum|ima)?\b[\s\S]*\bmin(imum|ima)?\b|\bmin(imum|ima)?\b[\s\S]*\bmax(imum|ima)?\b/i.test(q)) return "";
   if (/\bDNE\b|does not exist|doesn['’]t exist|not attained|no (maximum|minimum)/i.test(a)) return "";
@@ -618,7 +628,7 @@ function extremaProblem(question, answer) {
 
 // ---------- the solver loops (checker and tie-breaker) ----------
 
-function problemPrompt({ question, images, context = [], notes = [] }) {
+export function problemPrompt({ question, images, context = [], notes = [] }) {
   const prior = context.slice(-4).map(m => `${m.role === "user" ? "User" : "Assistant"}: ${String(m.text || "").slice(0, 1500)}`).join("\n\n");
   return `${prior ? `Earlier in the conversation (for context):\n${prior}\n\n` : ""}${notes.length ? `Pinned notes for this chat:\n${notes.map(n => `- ${n}`).join("\n")}\n\n` : ""}The user's request${images.length ? " (the problem may be in the attached image; any page text below is the same problem as text)" : ""}:
 """
@@ -626,7 +636,7 @@ ${question}
 """`;
 }
 
-async function solverLoop({ system, text, images = [], tier, model, signal, onThinking }) {
+export async function solverLoop({ system, text, images = [], tier, model, signal, onThinking }) {
   const calcTool = chatTools({ hasTab: false, hasAgent: false, webSearchServer: true }).filter(t => t.name === "calculate");
   const transcript = [{ role: "user", images, text }];
   const env = { memory: realMemoryStore, addCitations() {}, signal };
@@ -650,7 +660,7 @@ async function solverLoop({ system, text, images = [], tier, model, signal, onTh
   return { text: out, tools, model: model_ };
 }
 
-async function verifyAnswer({ question, images = [], context = [], answer, notes = [], signal, onThinking }) {
+export async function verifyAnswer({ question, images = [], context = [], answer, notes = [], signal, onThinking }) {
   const text = `${problemPrompt({ question, images, context, notes })}
 
 Proposed answer:
@@ -686,7 +696,7 @@ ${SETUP_FORMAT}
 
 // Third, independent solve on the strongest model. It never sees either earlier answer, so it
 // can't be anchored by them.
-async function independentSolve({ question, images = [], context = [], notes = [], signal, onThinking }) {
+export async function independentSolve({ question, images = [], context = [], notes = [], signal, onThinking }) {
   const text = `${problemPrompt({ question, images, context, notes })}
 
 Solve this from scratch, carefully. First write down the setup: what each variable means (read every label, length and condition in the problem or image), the objective or equations, and the constraints. Answer every part asked. For max/min with a constraint, decide whether each extreme exists (closed and bounded → both exist; unbounded → check with scanCurve; only approached → DNE). Use the calculate tool for every computation (exact methods first; minimize, maximize, nsolve or nsolveSystem when exact ones fail). Check your answer against every condition.
@@ -702,7 +712,7 @@ ${SETUP_FORMAT}
 
 // Runs the double-check (and the tie-break when needed) and decides what the user sees.
 // Returns { text, review?, verification, chip }.
-async function reviewAnswer({ text, question, images, context, notes, signal, onTieBreak, onThinking }) {
+export async function reviewAnswer({ text, question, images, context, notes, signal, onTieBreak, onThinking }) {
   await calcEngine.load(); // math.js is needed to compare answers
   const v = await verifyAnswer({ question, images, context, notes, answer: text, signal, onThinking: t => onThinking?.(t, "Double-check") });
   const verification = { verdict: v.verdict, reason: v.reason, tools: v.tools, model: v.model };
@@ -828,15 +838,15 @@ async function reviewAnswer({ text, question, images, context, notes, signal, on
 
 // ---------- one turn ----------
 
-const MAX_TOOL_ROUNDS = 10;
-const serverSearchBroken = {}; // built-in web search can be disabled by an org admin or unsupported by a model
+export const MAX_TOOL_ROUNDS = 10;
+export const serverSearchBroken = {}; // built-in web search can be disabled by an org admin or unsupported by a model
 
 // history: earlier messages [{ role: "user"|"assistant", text, images? }]
 // user: { text, images?, attachments?, quickAction? }
 // ui: { onText(chunk), onToolStart(name, args) -> { done(summary), fail(msg) }, onMemory(evt),
 //       runAgent?(task) -> summary, signal, tier?, previousTier?, tabInfo?, hasTab?, memoryStore? }
 // Returns { text, citations, trace }.
-async function runTurn(history, user, ui) {
+export async function runTurn(history, user, ui) {
   const s = await getSettings();
   const provider = effectiveProvider(s);
   let route = ui.tier ? { tier: ui.tier, reason: "chosen by you" } : routeMessage(user.text, { attachments: user.attachments, previousTier: ui.previousTier, quickAction: user.quickAction });

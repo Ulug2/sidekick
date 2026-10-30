@@ -1,7 +1,7 @@
 const { JSDOM } = require('jsdom'); const fs = require('fs');
 const w = new JSDOM('<!doctype html><head></head>', { runScripts: 'outside-only' }).window;
 w.eval(fs.readFileSync(require('path').join(__dirname, '..', 'extension', 'vendor/math.js'), 'utf8')); w.eval(fs.readFileSync(require('path').join(__dirname, '..', 'extension', 'vendor/nerdamer.js'), 'utf8'));
-w.eval(fs.readFileSync(require('path').join(__dirname, '..', 'extension', 'calc.js'), 'utf8') + ';window.calcEngine = calcEngine;');
+require(require('path').join(__dirname, 'helpers.js')).loadScripts(w, ['calc.js'], ['calcEngine']);
 const results = []; const check = (n, ok, x = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  ${n}\n        ${String(x).replace(/\n/g, '\n        ')}`);
 const run = l => w.calcEngine.run(l);
 const near = (txt, name, val, tol = 5e-6) => { const m = txt.match(new RegExp(`${name} = (-?[\\d.e-]+)`)); return m && Math.abs(+m[1] - val) < tol; };

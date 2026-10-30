@@ -1,31 +1,41 @@
-const $ = sel => document.querySelector(sel);
-const scroller = $("#scroller");
-const messagesEl = $("#messages");
-const input = $("#input");
-const sendBtn = $("#send");
-const toBottomBtn = $("#toBottom");
-const tray = $("#tray");
+import { runAgent } from "./agent.js";
+import { getSettings, modelFor } from "./ai.js";
+import { FAST_ONLY, runTurn } from "./brain.js";
+import { extractDocText, isDocFile } from "./docs.js";
+import { redactSecrets, stripWrappers, untrusted } from "./guard.js";
+import { deleteMemory } from "./memory.js";
+import { getProfile, profileIsEmpty } from "./profile-core.js";
+import { activeTab, captureScreen, readPageText, readSelectionFromPage, runInPage } from "./screen.js";
+import { reflectOnChat, updateSessionNotes } from "./session.js";
+
+export const $ = sel => document.querySelector(sel);
+export const scroller = $("#scroller");
+export const messagesEl = $("#messages");
+export const input = $("#input");
+export const sendBtn = $("#send");
+export const toBottomBtn = $("#toBottom");
+export const tray = $("#tray");
 
 // A chat is saved as { id, title, createdAt, updatedAt, messages }.
 // User message:      { role: "user", text, images: [dataURL], display: { prompt, quote, page, files, images }, canReplace }
 // Assistant message: { role: "assistant", text, stopped?, canReplace? }
-let chat = newChat();
-let attachments = [];      // pending for the next message: { kind: "selection"|"page"|"image"|"file", ... }
-let includeScreen = false; // "Screen" toggle: attach a screenshot to every message
-let busy = false;
-let controller = null;     // AbortController for the running request
-let currentTw = null;      // typewriter for the running reply
-let agentMode = false;     // "Agent" toggle: Sidekick acts on the page instead of only chatting
-let agentRun = null;       // the running agent: { answer?: fn, approve?: fn, el }
-let lastTier = null;       // tier of the previous reply, so short follow-ups stay on the smart model
-let lastInputWasVoice = false;
+export let chat = newChat();
+export let attachments = [];      // pending for the next message: { kind: "selection"|"page"|"image"|"file", ... }
+export let includeScreen = false; // "Screen" toggle: attach a screenshot to every message
+export let busy = false;
+export let controller = null;     // AbortController for the running request
+export let currentTw = null;      // typewriter for the running reply
+export let agentMode = false;     // "Agent" toggle: Sidekick acts on the page instead of only chatting
+export let agentRun = null;       // the running agent: { answer?: fn, approve?: fn, el }
+export let lastTier = null;       // tier of the previous reply, so short follow-ups stay on the smart model
+export let lastInputWasVoice = false;
 
-const MAX_IMAGES = 6;
-const MAX_TEXT_FILE = 100_000; // characters
-const MAX_PAGE_TEXT = 60_000;  // characters
-const MAX_CHATS = 200;
+export const MAX_IMAGES = 6;
+export const MAX_TEXT_FILE = 100_000; // characters
+export const MAX_PAGE_TEXT = 60_000;  // characters
+export const MAX_CHATS = 200;
 
-const PROMPTS = {
+export const PROMPTS = {
   rewrite: "Rewrite the selected text so it is clearer and more natural. Keep the meaning, tone, and language.",
   shorten: "Make the selected text noticeably shorter while keeping the key points.",
   grammar: "Fix grammar, spelling, and punctuation in the selected text. Change nothing else.",
@@ -35,11 +45,11 @@ const PROMPTS = {
   fillform: "Fill out the form on this page with my information from my profile. Ask me about anything my profile doesn't cover, and ask before submitting.",
   findjobs: "Look through the job listings on this page and tell me which ones fit my profile best and why. Open the most promising ones in new tabs. Don't apply to anything."
 };
-const AGENT_ACTIONS = new Set(["apply", "fillform", "findjobs"]);
-const TEXT_ACTIONS = new Set(["rewrite", "shorten", "grammar"]);
+export const AGENT_ACTIONS = new Set(["apply", "fillform", "findjobs"]);
+export const TEXT_ACTIONS = new Set(["rewrite", "shorten", "grammar"]);
 
-const LOGO = `<svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="12" rx="9" ry="4.2"/><ellipse cx="12" cy="12" rx="9" ry="4.2" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="9" ry="4.2" transform="rotate(120 12 12)"/></g></svg>`;
-const ICON = {
+export const LOGO = `<svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="12" rx="9" ry="4.2"/><ellipse cx="12" cy="12" rx="9" ry="4.2" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="9" ry="4.2" transform="rotate(120 12 12)"/></g></svg>`;
+export const ICON = {
   copy: `<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>`,
   check: `<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`,
   replace: `<svg viewBox="0 0 24 24"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg>`,
@@ -60,7 +70,7 @@ const ICON = {
   eye: `<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>`
 };
 
-const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+export const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 // ---------- markdown ----------
 
@@ -76,9 +86,9 @@ DOMPurify.addHook("afterSanitizeAttributes", node => {
 // Markdown would mangle LaTeX (it eats the backslash in \( and treats _ as italics), so math
 // is swapped for placeholders before parsing and rendered with KaTeX afterwards.
 // Supports $$…$$ and \[…\] (display) and \(…\) and $…$ (inline). Code is left alone.
-const MATH_RE = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?![\s$])([^$\n]+?)(?<!\s)\$(?!\d)/g;
+export const MATH_RE = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?![\s$])([^$\n]+?)(?<!\s)\$(?!\d)/g;
 
-function extractMath(text) {
+export function extractMath(text) {
   const math = [];
   const parts = text.split(/(```[\s\S]*?(?:```|$)|`[^`\n]+`)/); // odd indexes are code
   const out = parts
@@ -94,7 +104,7 @@ function extractMath(text) {
   return { text: out, math };
 }
 
-function renderTex({ tex, display }) {
+export function renderTex({ tex, display }) {
   try {
     const html = katex.renderToString(tex.trim(), { displayMode: display, throwOnError: false, output: "htmlAndMathml" });
     return display ? `<span class="math-display">${html}</span>` : html;
@@ -110,9 +120,9 @@ function renderTex({ tex, display }) {
 // model into writing an image or style whose URL carries your data out (zero-click leak). So
 // images become plain links, and tags/attributes that fetch things are removed. Links open in
 // a new tab (never inside the panel) and only http(s)/mailto links are kept.
-const NO_FETCH_TAGS = ["style", "form", "input", "button", "textarea", "select", "img", "picture", "source", "video", "audio", "track", "iframe", "frame", "object", "embed", "svg", "math", "link", "meta", "base", "image"];
-const NO_FETCH_ATTRS = ["style", "srcset", "src", "background", "poster", "action", "formaction", "xlink:href", "ping"];
-function renderMarkdown(el, text) {
+export const NO_FETCH_TAGS = ["style", "form", "input", "button", "textarea", "select", "img", "picture", "source", "video", "audio", "track", "iframe", "frame", "object", "embed", "svg", "math", "link", "meta", "base", "image"];
+export const NO_FETCH_ATTRS = ["style", "srcset", "src", "background", "poster", "action", "formaction", "xlink:href", "ping"];
+export function renderMarkdown(el, text) {
   const { text: mdText0, math } = extractMath(stripWrappers(text));
   const mdText = mdText0.replace(/!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g, (_, alt, url) => `[🖼 ${alt || "image"}](${url})`);
   const safe = DOMPurify.sanitize(marked.parse(mdText), { FORBID_TAGS: NO_FETCH_TAGS, FORBID_ATTR: NO_FETCH_ATTRS });
@@ -158,7 +168,7 @@ function renderMarkdown(el, text) {
 
 // The model's setup for a math problem (variables, objective, constraints, answer), collapsed,
 // so a misread problem is easy to spot even when you asked for just the answer.
-function setupBlock(text) {
+export function setupBlock(text) {
   const d = document.createElement("details");
   d.className = "setup-block";
   const sum = document.createElement("summary");
@@ -188,7 +198,7 @@ function setupBlock(text) {
 // What the double-check changed, shown next to the answer instead of silently swapping it:
 // a corrected answer is labeled, with the original kept (collapsed) underneath; when the
 // solves still disagree, the other answers are listed with a warning.
-function renderReview(aiEl, review) {
+export function renderReview(aiEl, review) {
   if (!review) return;
   const md = aiEl.querySelector(":scope > .md");
   aiEl.querySelectorAll(":scope > .review-label, :scope > .review-box").forEach(n => n.remove());
@@ -244,16 +254,16 @@ function renderReview(aiEl, review) {
 // user (wheel, trackpad, scrollbar drag, touch) unsticks it immediately, so the panel never
 // fights you. Scrolling back to the very bottom, or the arrow button, re-sticks it.
 
-let stick = true;
-let prevTop = 0;
-let lastAutoTop = 0;
-let smoothing = false; // true while the jump-to-bottom button's smooth scroll is running
+export let stick = true;
+export let prevTop = 0;
+export let lastAutoTop = 0;
+export let smoothing = false; // true while the jump-to-bottom button's smooth scroll is running
 
-function distanceFromBottom() {
+export function distanceFromBottom() {
   return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
 }
 
-function autoScroll() {
+export function autoScroll() {
   if (stick && !smoothing) {
     scroller.scrollTop = scroller.scrollHeight;
     lastAutoTop = scroller.scrollTop;
@@ -261,7 +271,7 @@ function autoScroll() {
   updateToBottom();
 }
 
-function updateToBottom() {
+export function updateToBottom() {
   toBottomBtn.classList.toggle("show", distanceFromBottom() > 120);
 }
 
@@ -301,7 +311,7 @@ toBottomBtn.onclick = () => {
 
 // ---------- page helpers ----------
 
-async function replaceSelectionOnPage(text) {
+export async function replaceSelectionOnPage(text) {
   try {
     return !!(await runInPage(t => {
       const el = document.activeElement;
@@ -326,7 +336,7 @@ async function replaceSelectionOnPage(text) {
 
 // Shows a crosshair overlay on the page; resolves with the dragged box (CSS pixels) or null.
 // Runs inside the page, in a shadow root so the page's CSS can't interfere.
-function pickRegionInPage() {
+export function pickRegionInPage() {
   return new Promise(resolve => {
     const host = document.createElement("div");
     host.style.cssText = "all:initial;position:fixed;inset:0;z-index:2147483647;";
@@ -383,7 +393,7 @@ function pickRegionInPage() {
   });
 }
 
-async function cropDataUrl(dataUrl, rect) {
+export async function cropDataUrl(dataUrl, rect) {
   const bmp = await createImageBitmap(await (await fetch(dataUrl)).blob());
   const scale = bmp.width / rect.vw; // screenshot pixels per CSS pixel (handles Retina and zoom)
   const sx = Math.round(rect.x * scale), sy = Math.round(rect.y * scale);
@@ -393,7 +403,7 @@ async function cropDataUrl(dataUrl, rect) {
   return blobToDataUrl(await canvas.convertToBlob({ type: "image/png" }));
 }
 
-function blobToDataUrl(blob) {
+export function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(r.result);
@@ -404,7 +414,7 @@ function blobToDataUrl(blob) {
 
 // Large photos are scaled down (long edge 1568px, what vision models actually use) to keep
 // requests fast and cheap. Small images are kept exactly as they are.
-async function prepareImage(blob) {
+export async function prepareImage(blob) {
   const bmp = await createImageBitmap(blob);
   const longEdge = Math.max(bmp.width, bmp.height);
   if (longEdge <= 1568 && blob.size <= 3_500_000) return blobToDataUrl(blob);
@@ -416,7 +426,7 @@ async function prepareImage(blob) {
 
 // ---------- attachments ----------
 
-function addAttachment(att) {
+export function addAttachment(att) {
   if (att.kind === "selection" || att.kind === "page") {
     attachments = attachments.filter(a => a.kind !== att.kind); // only one of each
   }
@@ -428,12 +438,12 @@ function addAttachment(att) {
   renderTray();
 }
 
-function removeAttachment(att) {
+export function removeAttachment(att) {
   attachments = attachments.filter(a => a !== att);
   renderTray();
 }
 
-function renderTray() {
+export function renderTray() {
   tray.innerHTML = "";
   tray.classList.toggle("hidden", attachments.length === 0);
   for (const att of attachments) {
@@ -462,7 +472,7 @@ function renderTray() {
   refreshSend();
 }
 
-async function addFiles(files) {
+export async function addFiles(files) {
   for (const file of files) {
     try {
       if (/^image\/(png|jpeg|webp|gif)$/.test(file.type)) {
@@ -485,23 +495,23 @@ async function addFiles(files) {
   }
 }
 
-const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|js|mjs|ts|tsx|jsx|py|java|c|cpp|cc|h|hpp|cs|go|rs|rb|php|swift|kt|sql|html?|css|scss|xml|ya?ml|toml|ini|cfg|sh|bash|zsh|tex|log|r|m|lua|dart|vue|svelte)$/i;
-const isTextFile = f => f.type.startsWith("text/") || /json|xml|javascript|x-sh|x-tex/.test(f.type) || TEXT_EXT.test(f.name);
+export const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|js|mjs|ts|tsx|jsx|py|java|c|cpp|cc|h|hpp|cs|go|rs|rb|php|swift|kt|sql|html?|css|scss|xml|ya?ml|toml|ini|cfg|sh|bash|zsh|tex|log|r|m|lua|dart|vue|svelte)$/i;
+export const isTextFile = f => f.type.startsWith("text/") || /json|xml|javascript|x-sh|x-tex/.test(f.type) || TEXT_EXT.test(f.name);
 
-async function attachSelection({ quiet = false } = {}) {
+export async function attachSelection({ quiet = false } = {}) {
   const text = await readSelectionFromPage();
   if (text) addAttachment({ kind: "selection", text });
   else if (!quiet) addError("Nothing is selected on the page.");
   return !!text;
 }
 
-async function attachPage() {
+export async function attachPage() {
   const page = await readPageText(MAX_PAGE_TEXT);
   if (!page?.text) throw new Error("This page has no readable text. Try Screen or the region tool instead.");
   addAttachment({ kind: "page", ...page });
 }
 
-async function captureRegion() {
+export async function captureRegion() {
   const rect = await runInPage(pickRegionInPage, [], "captured", undefined, 0); // waits for you to drag
   if (!rect) return; // cancelled
   const shot = await captureScreen({ raw: true });
@@ -510,7 +520,7 @@ async function captureRegion() {
 }
 
 // Builds what the model sees: your prompt plus each attachment, clearly labeled.
-function buildUserText(prompt, atts) {
+export function buildUserText(prompt, atts) {
   // Card numbers, SSNs and API keys you type are masked too (and you're told), so they never
   // reach the model, chat history or memory.
   const typed = redactSecrets(prompt);
@@ -528,17 +538,17 @@ function buildUserText(prompt, atts) {
 // ---------- chat storage ----------
 // Chats live in chrome.storage.local: an index ("chatIndex") plus one key per chat.
 
-function newChat() {
+export function newChat() {
   const now = Date.now();
   return { id: crypto.randomUUID(), title: "", createdAt: now, updatedAt: now, messages: [] };
 }
 
-async function loadIndex() {
+export async function loadIndex() {
   const { chatIndex = [] } = await chrome.storage.local.get("chatIndex");
   return chatIndex;
 }
 
-async function saveChat(c = chat) {
+export async function saveChat(c = chat) {
   if (!c.messages.length) return;
   c.updatedAt = Date.now();
   if (!c.title) {
@@ -555,7 +565,7 @@ async function saveChat(c = chat) {
 }
 
 // Updates a stored chat's fields without moving it in the history list.
-async function patchStoredChat(id, fields) {
+export async function patchStoredChat(id, fields) {
   const key = "chat:" + id;
   const data = await chrome.storage.local.get(key);
   if (data[key]) await chrome.storage.local.set({ [key]: { ...data[key], ...fields } });
@@ -565,9 +575,9 @@ async function patchStoredChat(id, fields) {
 // Pinned notes are refreshed in the background after each reply (one cheap call), and the
 // next message waits for them, so instructions are never missed.
 
-const notesPending = new Map(); // chat id → promise
+export const notesPending = new Map(); // chat id → promise
 
-function refreshNotes(c, userMsg, replyText) {
+export function refreshNotes(c, userMsg, replyText) {
   const prompt = userMsg?.display?.prompt || userMsg?.text || "";
   if (!prompt.trim() || FAST_ONLY.test(prompt.trim())) return;
   const prev = notesPending.get(c.id) || Promise.resolve();
@@ -590,14 +600,14 @@ function refreshNotes(c, userMsg, replyText) {
   p.finally(() => { if (notesPending.get(c.id) === p) notesPending.delete(c.id); });
 }
 
-async function waitForNotes(c) {
+export async function waitForNotes(c) {
   const p = notesPending.get(c.id);
   if (p) await Promise.race([p, new Promise(r => setTimeout(r, 6000))]);
 }
 
 // When a chat ends, keep what matters about you long-term (in the background).
-const reflecting = new Set();
-async function reflectChat(c, { quiet = false } = {}) {
+export const reflecting = new Set();
+export async function reflectChat(c, { quiet = false } = {}) {
   if (!c?.messages?.length || reflecting.has(c.id)) return;
   const s = await getSettings();
   if (!s.memoryAuto) return;
@@ -639,7 +649,7 @@ window.addEventListener("pagehide", () => {
 });
 
 // Chats that ended without a review (e.g. Chrome was closed) are reviewed on next start.
-async function reflectStaleChats() {
+export async function reflectStaleChats() {
   const index = (await loadIndex()).slice(0, 5);
   const idle = 30 * 60 * 1000;
   for (const entry of index) {
@@ -652,7 +662,7 @@ async function reflectStaleChats() {
 
 // ---------- pinned notes UI ----------
 
-function renderPin() {
+export function renderPin() {
   const n = (chat.notes || []).length;
   const btn = $("#pinBtn");
   btn.classList.toggle("hidden", !n);
@@ -661,7 +671,7 @@ function renderPin() {
   if (!$("#pinPop").classList.contains("hidden")) renderPinList();
 }
 
-function renderPinList() {
+export function renderPinList() {
   const ul = $("#pinList");
   ul.innerHTML = "";
   for (const [i, note] of (chat.notes || []).entries()) {
@@ -678,7 +688,7 @@ function renderPinList() {
   }
 }
 
-function togglePin(open) {
+export function togglePin(open) {
   const pop = $("#pinPop");
   const show = open ?? pop.classList.contains("hidden");
   pop.classList.toggle("hidden", !show);
@@ -687,7 +697,7 @@ function togglePin(open) {
 
 // ---------- toasts ----------
 
-function showToast(text, action) {
+export function showToast(text, action) {
   const t = $("#toast");
   t.innerHTML = `<span></span>`;
   t.firstChild.textContent = text;
@@ -703,7 +713,7 @@ function showToast(text, action) {
   showToast.timer = setTimeout(() => t.classList.remove("show"), 8000);
 }
 
-async function openChat(id) {
+export async function openChat(id) {
   if (busy) stop();
   const data = await chrome.storage.local.get("chat:" + id);
   const saved = data["chat:" + id];
@@ -748,7 +758,7 @@ async function openChat(id) {
 
 }
 
-async function deleteChat(id) {
+export async function deleteChat(id) {
   const index = (await loadIndex()).filter(c => c.id !== id);
   await chrome.storage.local.set({ chatIndex: index });
   await chrome.storage.local.remove("chat:" + id);
@@ -756,7 +766,7 @@ async function deleteChat(id) {
   renderChatList();
 }
 
-function startNewChat() {
+export function startNewChat() {
   if (busy) stop();
   reflectChat(chat); // the old chat's details are left behind; what matters about you is kept
   chat = newChat();
@@ -771,9 +781,9 @@ function startNewChat() {
 
 // ---------- history drawer ----------
 
-let drawerOpen = false;
+export let drawerOpen = false;
 
-function setDrawer(open) {
+export function setDrawer(open) {
   drawerOpen = open;
   $("#drawer").classList.toggle("open", open);
   $("#drawer").setAttribute("aria-hidden", String(!open));
@@ -785,7 +795,7 @@ function setDrawer(open) {
   }
 }
 
-async function renderChatList() {
+export async function renderChatList() {
   const list = $("#chatList");
   const q = $("#chatSearch").value.trim().toLowerCase();
   const index = (await loadIndex()).filter(c => !q || c.title.toLowerCase().includes(q));
@@ -829,7 +839,7 @@ async function renderChatList() {
 
 // ---------- messages ----------
 
-function showEmpty() {
+export function showEmpty() {
   messagesEl.innerHTML = `
     <div class="empty">
       ${LOGO}
@@ -841,7 +851,7 @@ function showEmpty() {
 }
 
 // "Good evening, Ulugbek" plus suggestions that fit the page you're on.
-async function renderGreeting() {
+export async function renderGreeting() {
   const [s, profile] = await Promise.all([getSettings(), getProfile()]);
   const first = (s.addressAs || profile.preferredName || profile.fullName || "").trim().split(/\s+/)[0];
   const h = new Date().getHours();
@@ -862,7 +872,7 @@ async function renderGreeting() {
   }
 }
 
-function suggestionsFor(tab, noProfile) {
+export function suggestionsFor(tab, noProfile) {
   const url = (tab?.url || "").toLowerCase();
   const title = (tab?.title || "").toLowerCase();
   const out = [];
@@ -888,7 +898,7 @@ function suggestionsFor(tab, noProfile) {
   return out.slice(0, 4);
 }
 
-async function runSuggestion(sug) {
+export async function runSuggestion(sug) {
   if (busy) return;
   if (sug.openProfile) return chrome.tabs.create({ url: chrome.runtime.getURL("profile.html") });
   if (sug.agent) return sendAgent(sug.agent);
@@ -898,11 +908,11 @@ async function runSuggestion(sug) {
   send(sug.prompt, { forceScreen: !!sug.screen });
 }
 
-function clearEmpty() {
+export function clearEmpty() {
   messagesEl.querySelector(".empty")?.remove();
 }
 
-function addUserMessage(d) {
+export function addUserMessage(d) {
   clearEmpty();
   const div = document.createElement("div");
   div.className = "msg user";
@@ -953,7 +963,7 @@ function addUserMessage(d) {
 // The live status at the top of a reply: what Sidekick is doing right now, a preview of its
 // latest thought and the time so far. Click it to read the full thinking. When the reply is
 // done it collapses into "Thought for 12s" (kept with the chat), or disappears for quick replies.
-function createStatus(ai) {
+export function createStatus(ai) {
   const d = ai.thinking;
   const label = d.querySelector(".st-label"), preview = d.querySelector(".st-preview"), time = d.querySelector(".st-time"), body = d.querySelector(".thought-text");
   const t0 = Date.now();
@@ -1003,7 +1013,7 @@ function createStatus(ai) {
 }
 
 // A finished reply's saved thinking, collapsed (for reopened chats).
-function restoreThoughts(ai, thoughts) {
+export function restoreThoughts(ai, thoughts) {
   const d = ai.thinking;
   if (!thoughts?.text) { d.remove(); return; }
   d.classList.remove("live");
@@ -1015,7 +1025,7 @@ function restoreThoughts(ai, thoughts) {
   d.querySelector(".thought-text").appendChild(p);
 }
 
-function addAiMessage() {
+export function addAiMessage() {
   clearEmpty();
   const div = document.createElement("div");
   div.className = "msg ai";
@@ -1024,7 +1034,7 @@ function addAiMessage() {
   return { el: div, md: div.querySelector(":scope > .md"), thinking: div.querySelector(".thinking"), chips: div.querySelector(".tool-chips") };
 }
 
-function addError(text) {
+export function addError(text) {
   clearEmpty();
   const div = document.createElement("div");
   div.className = "msg error";
@@ -1036,7 +1046,7 @@ function addError(text) {
   autoScroll();
 }
 
-function addSources(div, citations) {
+export function addSources(div, citations) {
   if (!citations?.length) return;
   const box = document.createElement("div");
   box.className = "sources";
@@ -1057,10 +1067,10 @@ function addSources(div, citations) {
   div.appendChild(box);
 }
 
-function fmtTokens(n) { return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k" : String(n || 0); }
+export function fmtTokens(n) { return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k" : String(n || 0); }
 
 // "Details": which model answered and why, each tool call, tokens and time.
-function traceView(trace) {
+export function traceView(trace) {
   const box = document.createElement("div");
   box.className = "trace hidden";
   const u = trace.usage || {};
@@ -1099,7 +1109,7 @@ function traceView(trace) {
   return box;
 }
 
-function actButton(icon, label, title, onclick) {
+export function actButton(icon, label, title, onclick) {
   const b = document.createElement("button");
   b.type = "button";
   b.className = "act";
@@ -1110,7 +1120,7 @@ function actButton(icon, label, title, onclick) {
   return b;
 }
 
-function addActions(div, text, canReplace, stopped, extra = {}) {
+export function addActions(div, text, canReplace, stopped, extra = {}) {
   addSources(div, extra.citations);
   const actions = document.createElement("div");
   actions.className = "actions";
@@ -1180,7 +1190,7 @@ messagesEl.addEventListener("click", async e => {
 // Network chunks arrive in uneven bursts. This releases text a few characters per
 // animation frame and speeds up when far behind, so it reads like very fast typing
 // that flows top to bottom. Markdown is re-rendered on each frame.
-function createTypewriter(el) {
+export function createTypewriter(el) {
   let target = "";
   let shown = 0;
   let ended = false;
@@ -1229,12 +1239,12 @@ function createTypewriter(el) {
 
 // ---------- composer ----------
 
-function resizeInput() {
+export function resizeInput() {
   input.style.height = "auto";
   input.style.height = Math.min(input.scrollHeight, 200) + "px";
 }
 
-function refreshSend() {
+export function refreshSend() {
   const answering = !!agentRun?.answer; // the agent asked a question; the composer sends the reply
   const showStop = busy && !answering;
   sendBtn.classList.toggle("stop", showStop);
@@ -1243,39 +1253,39 @@ function refreshSend() {
   sendBtn.disabled = !showStop && !input.value.trim();
 }
 
-function setBusy(v) {
+export function setBusy(v) {
   busy = v;
   document.querySelectorAll(".chip").forEach(b => (b.disabled = v));
   refreshSend();
 }
 
-function stop() {
+export function stop() {
   controller?.abort();
   currentTw?.flush();
 }
 
-function setAgentMode(v) {
+export function setAgentMode(v) {
   agentMode = v;
   $("#agentToggle").setAttribute("aria-pressed", String(v));
   document.body.classList.toggle("agent-mode", v);
   input.placeholder = v ? "Tell Sidekick what to do on this page" : "Ask anything";
 }
 
-async function updateBadge() {
+export async function updateBadge() {
   const s = await getSettings();
   const b = $("#modelBadge");
   b.textContent = s.routing === "auto" ? "Auto" : s.routing === "smart" ? "Smart" : "Fast";
   b.title = `Model: ${s.routing === "auto" ? `automatic (fast: ${modelFor(s, "fast")}, smart: ${modelFor(s, "smart")})` : modelFor(s, s.routing)}. Click to change.`;
 }
 
-async function cycleMode() {
+export async function cycleMode() {
   const s = await getSettings();
   const next = { auto: "fast", fast: "smart", smart: "auto" }[s.routing] || "auto";
   await chrome.storage.local.set({ routing: next });
   updateBadge();
 }
 
-async function currentTabInfo() {
+export async function currentTabInfo() {
   try {
     const t = await activeTab();
     return /^https?:/.test(t.url || "") ? { title: t.title, url: t.url } : null;
@@ -1283,7 +1293,7 @@ async function currentTabInfo() {
 }
 
 // Runs an async tool action and shows any error in the chat.
-async function tryTool(fn) {
+export async function tryTool(fn) {
   try {
     await fn();
   } catch (err) {
@@ -1293,7 +1303,7 @@ async function tryTool(fn) {
 
 // ---------- sending ----------
 
-const TOOL_LABEL = {
+export const TOOL_LABEL = {
   calculate: [ICON.calc, "Calculating", "Calculated"],
   web_search: [ICON.search, "Searching the web", "Searched the web"],
   read_url: [ICON.link, "Reading a page", "Read"],
@@ -1307,7 +1317,7 @@ const TOOL_LABEL = {
   tiebreak: [ICON.check, "Solving it a third time to break the tie", "Third solve"]
 };
 
-function addToolChip(container, name, args) {
+export function addToolChip(container, name, args) {
   const [icon, running, done] = TOOL_LABEL[name] || [ICON.info, name, name];
   const chip = document.createElement("div");
   chip.className = "tool-chip running";
@@ -1343,7 +1353,7 @@ function addToolChip(container, name, args) {
 }
 
 // Memory chips get an Undo.
-function memoryChip(container, evt) {
+export function memoryChip(container, evt) {
   const chip = [...container.querySelectorAll(".tool-chip")].pop();
   if (!chip || evt.type !== "saved") return;
   const undo = document.createElement("button");
@@ -1359,7 +1369,7 @@ function memoryChip(container, evt) {
   chip.appendChild(undo);
 }
 
-async function send(prompt, { forceScreen = false, quickAction, tier, retryOf } = {}) {
+export async function send(prompt, { forceScreen = false, quickAction, tier, retryOf } = {}) {
   prompt = prompt.trim();
   if (agentRun?.answer && prompt) return agentRun.answer(prompt);
   if (busy || !prompt) return;
@@ -1504,7 +1514,7 @@ async function send(prompt, { forceScreen = false, quickAction, tier, retryOf } 
 }
 
 // Re-asks the same question (optionally with the smart model), replacing the old answer.
-async function regenerate(aiEl, userMsg, oldMsg, tier) {
+export async function regenerate(aiEl, userMsg, oldMsg, tier) {
   if (busy) return;
   if (chat.messages[chat.messages.length - 1] !== oldMsg) {
     addError("Only the latest answer can be retried. Ask again below instead.");
@@ -1516,7 +1526,7 @@ async function regenerate(aiEl, userMsg, oldMsg, tier) {
   await send(userMsg.display?.prompt || userMsg.text, { tier, retryOf: userMsg });
 }
 
-async function runAction(action) {
+export async function runAction(action) {
   if (busy) return;
   try {
     if (TEXT_ACTIONS.has(action) && !attachments.some(a => a.kind === "selection")) {
@@ -1532,7 +1542,7 @@ async function runAction(action) {
 
 // ---------- agent mode ----------
 
-const STEP_ICON = {
+export const STEP_ICON = {
   running: `<span class="spin"></span>`,
   waiting: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
   ok: `<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`,
@@ -1540,7 +1550,7 @@ const STEP_ICON = {
 };
 
 // The live card for one agent run: a header, the list of steps, and the final summary.
-function addAgentRun(parent) {
+export function addAgentRun(parent) {
   clearEmpty();
   const el = document.createElement("div");
   el.className = parent ? "agent-run nested" : "msg ai agent-run";
@@ -1656,7 +1666,7 @@ function addAgentRun(parent) {
   };
 }
 
-async function sendAgent(goal) {
+export async function sendAgent(goal) {
   if (busy) return;
   if (listening) stopDictation();
   const atts = attachments;
@@ -1701,8 +1711,8 @@ async function sendAgent(goal) {
 // ---------- notifications ----------
 // While the agent works you're often in another tab or app. When it needs you or finishes, a
 // Chrome notification says so (only when the panel isn't what you're looking at).
-const notifyIds = new Set();
-async function notifyUser(kind, title, message) {
+export const notifyIds = new Set();
+export async function notifyUser(kind, title, message) {
   try {
     if (!chrome.notifications?.create) return null;
     const s = await getSettings();
@@ -1714,7 +1724,7 @@ async function notifyUser(kind, title, message) {
     return id;
   } catch { return null; }
 }
-function clearNotice(id) { if (id) { chrome.notifications?.clear?.(id); notifyIds.delete(id); } }
+export function clearNotice(id) { if (id) { chrome.notifications?.clear?.(id); notifyIds.delete(id); } }
 try {
   chrome.notifications?.onClicked?.addListener(async id => {
     if (!notifyIds.has(id)) return;
@@ -1724,12 +1734,12 @@ try {
   });
 } catch {}
 
-const INTERRUPTED = "Interrupted: Sidekick was closed or reloaded before this finished. The steps above were done; the page may be part-way through.";
+export const INTERRUPTED = "Interrupted: Sidekick was closed or reloaded before this finished. The steps above were done; the page may be part-way through.";
 
 // The chat so far, for the agent: follow-ups ("apply for the backend one", "you know which
 // position") only make sense with it. Recent messages, shortened; replies may quote web pages,
 // so the whole thing is fenced as data.
-function agentHistory(messages, notes = []) {
+export function agentHistory(messages, notes = []) {
   const lines = [];
   for (const m of messages.slice(-12)) {
     if (m.role === "user") lines.push(`User: ${String(m.display?.prompt ?? m.text ?? "").slice(0, 600)}`);
@@ -1748,7 +1758,7 @@ function agentHistory(messages, notes = []) {
 // Runs the browser agent with a live card. Used by Agent mode and by the chat's
 // operate_browser tool (then the card sits inside the chat reply). Returns { summary, steps, state, plan }.
 // opts: { history, progress(partial) } — progress gets the steps and checklist as they change.
-async function runAgentCard(goal, parent, opts = {}) {
+export async function runAgentCard(goal, parent, opts = {}) {
   const run = addAgentRun(parent);
   const signal = controller.signal;
   agentRun = { el: run.el };
@@ -1878,7 +1888,7 @@ async function runAgentCard(goal, parent, opts = {}) {
 
 // ---------- reading aloud ----------
 
-function plainForSpeech(md) {
+export function plainForSpeech(md) {
   return String(md)
     .replace(/```[\s\S]*?```/g, " (code omitted) ")
     .replace(/\$\$[\s\S]*?\$\$/g, " (equation) ")
@@ -1893,8 +1903,8 @@ function plainForSpeech(md) {
     .trim();
 }
 
-let speakingToggle = false;
-function speak(text, toggle = false) {
+export let speakingToggle = false;
+export function speak(text, toggle = false) {
   if (!("speechSynthesis" in window)) return;
   if (toggle && speechSynthesis.speaking) { stopSpeaking(); return; }
   stopSpeaking();
@@ -1905,7 +1915,7 @@ function speak(text, toggle = false) {
   u.rate = 1.05;
   speechSynthesis.speak(u);
 }
-function stopSpeaking() {
+export function stopSpeaking() {
   if ("speechSynthesis" in window) speechSynthesis.cancel();
 }
 
@@ -1913,23 +1923,23 @@ function stopSpeaking() {
 // Uses Chrome's built-in speech recognition. The side panel can't show the microphone
 // permission prompt itself, so the first time it opens a small tab that asks for it.
 
-const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognizer = null;
-let listening = false;
+export const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+export let recognizer = null;
+export let listening = false;
 
-function setListening(v) {
+export function setListening(v) {
   listening = v;
   $("#micBtn").setAttribute("aria-pressed", String(v));
   $("#micBtn").classList.toggle("listening", v);
   $("#micBtn").title = v ? "Stop dictating" : "Dictate";
 }
 
-function stopDictation() {
+export function stopDictation() {
   recognizer?.stop();
   setListening(false);
 }
 
-function startDictation() {
+export function startDictation() {
   if (!Recognition) return addError("Voice input isn't available in this browser.");
   const base = input.value.trim();
   recognizer = new Recognition();
@@ -1965,8 +1975,8 @@ if (!Recognition) $("#micBtn").classList.add("hidden");
 
 // ---------- drag and drop, paste ----------
 
-let dragDepth = 0;
-const hasFiles = e => [...(e.dataTransfer?.types || [])].includes("Files");
+export let dragDepth = 0;
+export const hasFiles = e => [...(e.dataTransfer?.types || [])].includes("Files");
 document.addEventListener("dragenter", e => {
   if (!hasFiles(e)) return;
   e.preventDefault();
@@ -1994,7 +2004,7 @@ input.addEventListener("paste", e => {
 
 // ---------- context-menu hand-off ----------
 
-async function checkPending() {
+export async function checkPending() {
   const { pending } = await chrome.storage.session.get("pending");
   if (!pending || Date.now() - pending.ts > 15000) return;
   await chrome.storage.session.remove("pending");

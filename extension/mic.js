@@ -1,4 +1,4 @@
-const status = document.getElementById("status");
+export const status = document.getElementById("status");
 
 document.getElementById("allow").onclick = async () => {
   try {

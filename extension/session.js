@@ -5,33 +5,37 @@
 //  2. Reflection: when a chat ends (you start a new one), Sidekick reviews it and keeps only
 //     durable things about you in long-term memory. The rest of the chat is left behind.
 //  3. User model: a short "how you like to work" summary, refined after each session.
+import { modelCall } from "./ai.js";
+import { redactSecrets } from "./guard.js";
+import { addMemory, deleteMemory, getMemories, updateMemory } from "./memory.js";
+import { applySkillOps, getSkills } from "./skills.js";
 
-const MAX_NOTES = 10;
+export const MAX_NOTES = 10;
 
-function parseJSONReply(text) {
+export function parseJSONReply(text) {
   const s = String(text || "");
   const start = s.indexOf("{"), end = s.lastIndexOf("}");
   if (start < 0 || end <= start) throw new Error("No JSON in reply");
   return JSON.parse(s.slice(start, end + 1));
 }
 
-const clean1 = t => String(t || "").replace(/\s+/g, " ").trim();
+export const clean1 = t => String(t || "").replace(/\s+/g, " ").trim();
 
 // ---------- user model ----------
 
-async function getUserModel() {
+export async function getUserModel() {
   const { userModel } = await chrome.storage.local.get("userModel");
   return userModel?.text ? userModel : { text: "", updated: 0 };
 }
 
-async function setUserModel(text) {
+export async function setUserModel(text) {
   await chrome.storage.local.set({ userModel: { text: String(text || "").trim().slice(0, 1200), updated: Date.now() } });
 }
 
 // ---------- pinned notes for one chat ----------
 
 // Returns the updated notes array (or the old one if nothing should change).
-async function updateSessionNotes({ notes = [], userText, replyText, userName = "the user", signal }) {
+export async function updateSessionNotes({ notes = [], userText, replyText, userName = "the user", signal }) {
   const prompt = `Current pinned notes:
 ${notes.length ? notes.map(n => `- ${n}`).join("\n") : "(none yet)"}
 
@@ -71,10 +75,10 @@ Reply with JSON only: {"notes": ["...", "..."]}`;
 
 // ---------- end-of-session reflection ----------
 
-const KINDS = ["preference", "pattern", "fact", "goal"];
+export const KINDS = ["preference", "pattern", "fact", "goal"];
 
 // Real long-term storage; the eval runner passes a temporary one.
-const realLongTermStore = {
+export const realLongTermStore = {
   list: () => getMemories(),
   add: (text, kind, extra) => addMemory(text, "learned", kind, extra),
   update: (id, text, kind, extra) => updateMemory(id, text, kind, extra),
@@ -87,9 +91,9 @@ const realLongTermStore = {
 
 // Web pages, files and search results never reach the review: only what the user typed and a
 // short version of each reply, plus a few signals about how the reply went.
-const withoutUntrusted = t => String(t || "").replace(/<untrusted_content[\s\S]*?(<\/untrusted_content>|$)/g, "[outside content omitted]");
+export const withoutUntrusted = t => String(t || "").replace(/<untrusted_content[\s\S]*?(<\/untrusted_content>|$)/g, "[outside content omitted]");
 
-function replySignals(m) {
+export function replySignals(m) {
   const out = [];
   const v = m.trace?.verification;
   if (v?.outcome === "corrected") out.push(`double-check fixed this answer: ${String(v.reason || v.evidence || "").slice(0, 120)}`);
@@ -105,7 +109,7 @@ function replySignals(m) {
   return out.length ? ` [${out.join("; ")}]` : "";
 }
 
-function transcriptForReflection(messages, fromIndex = 0) {
+export function transcriptForReflection(messages, fromIndex = 0) {
   const lines = [];
   let budget = 24000;
   for (const m of messages.slice(fromIndex)) {
@@ -120,7 +124,7 @@ function transcriptForReflection(messages, fromIndex = 0) {
 }
 
 // Returns { added: [...], updated: [...], removed: [...], aboutChanged } or null if skipped.
-async function reflectOnChat(chat, { store = realLongTermStore, userName = "the user", signal } = {}) {
+export async function reflectOnChat(chat, { store = realLongTermStore, userName = "the user", signal } = {}) {
   const from = chat.reflectedUpTo || 0;
   const newUserText = chat.messages.slice(from).filter(m => m.role === "user").map(m => m.display?.prompt || m.text || "").join(" ");
   if (newUserText.trim().length < 12) return null; // nothing new worth reviewing

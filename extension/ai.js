@@ -1,7 +1,7 @@
 // Model layer: settings, and one streaming call for Claude and OpenAI with tool use.
 // Everything else (persona, routing, tools) lives in brain.js.
 
-const DEFAULT_SETTINGS = {
+export const DEFAULT_SETTINGS = {
   provider: "anthropic",
   anthropicKey: "",
   openaiKey: "",
@@ -40,7 +40,7 @@ const DEFAULT_SETTINGS = {
 };
 
 // Settings from earlier versions are carried over once.
-async function migrateSettings(raw) {
+export async function migrateSettings(raw) {
   const patch = {};
   if (raw.anthropicModel && !raw.anthropicSmart && !/haiku/.test(raw.anthropicModel)) patch.anthropicSmart = raw.anthropicModel;
   if (raw.openaiModel && !raw.openaiSmart && raw.openaiModel !== "gpt-4o-mini" && raw.openaiModel !== "gpt-5.6-luna") patch.openaiSmart = raw.openaiModel;
@@ -57,7 +57,7 @@ async function migrateSettings(raw) {
   return patch;
 }
 
-async function getSettings() {
+export async function getSettings() {
   const raw = await chrome.storage.local.get([...Object.keys(DEFAULT_SETTINGS), "systemPrompt", "anthropicModel", "openaiModel", "reasoning"]);
   const patch = ("systemPrompt" in raw || "anthropicModel" in raw || "openaiModel" in raw || "reasoning" in raw) ? await migrateSettings(raw) : {};
   const s = { ...DEFAULT_SETTINGS };
@@ -68,13 +68,13 @@ async function getSettings() {
 }
 
 // The chosen provider, or whichever one actually has a key.
-function effectiveProvider(s) {
+export function effectiveProvider(s) {
   if (s.provider === "anthropic" && !s.anthropicKey && s.openaiKey) return "openai";
   if (s.provider === "openai" && !s.openaiKey && s.anthropicKey) return "anthropic";
   return s.provider;
 }
 
-function modelFor(s, tier) {
+export function modelFor(s, tier) {
   const p = effectiveProvider(s);
   if (tier === "best") return p === "openai" ? s.openaiBest : s.anthropicBest;
   return p === "openai" ? (tier === "smart" ? s.openaiSmart : s.openaiFast) : tier === "smart" ? s.anthropicSmart : s.anthropicFast;
@@ -90,7 +90,7 @@ function modelFor(s, tier) {
 // tools: [{ name, description, parameters }] plus, for Claude, optional server tools.
 // Returns { text, toolCalls, raw, stop, usage, citations, model, provider, ms }.
 // ---------------------------------------------------------------------------------------
-async function modelCall({ tier = "fast", model, effort, system, messages, tools = [], serverTools = [], maxTokens, signal, onText, onThinking, parallelTools = false }) {
+export async function modelCall({ tier = "fast", model, effort, system, messages, tools = [], serverTools = [], maxTokens, signal, onText, onThinking, parallelTools = false }) {
   const s = await getSettings();
   if (!s.anthropicKey && !s.openaiKey) throw new Error("Add an API key in Settings (Anthropic or OpenAI).");
   const provider = effectiveProvider(s);
@@ -130,16 +130,16 @@ async function modelCall({ tier = "fast", model, effort, system, messages, tools
   recordUsage(model, result.usage).catch(() => {});
   return result;
 }
-const STALL_MS = 90000;
+export const STALL_MS = 90000;
 
 // Kept for the profile page's resume parsing: plain text in, text out.
-async function callModel(messages, onText = () => {}, signal, opts = {}) {
+export async function callModel(messages, onText = () => {}, signal, opts = {}) {
   const r = await modelCall({ tier: opts.tier || "fast", system: opts.system || "You are a helpful assistant.", messages, signal, onText });
   return r.text;
 }
 
 // Used by agent mode.
-async function callAgentModel({ system, transcript, tools, signal, onThinking }) {
+export async function callAgentModel({ system, transcript, tools, signal, onThinking }) {
   const s = await getSettings();
   // The agent may batch several sure actions in one turn (e.g. type, then click Next).
   return modelCall({ tier: "smart", effort: s.agentEffort, system, messages: transcript, tools, signal, maxTokens: 16000, parallelTools: true, onThinking });
@@ -147,7 +147,7 @@ async function callAgentModel({ system, transcript, tools, signal, onThinking })
 
 // ---------- streaming helpers ----------
 
-async function readSSE(res, onData, activity = res._activity) {
+export async function readSSE(res, onData, activity = res._activity) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -169,7 +169,7 @@ async function readSSE(res, onData, activity = res._activity) {
   }
 }
 
-async function errorFrom(res, name) {
+export async function errorFrom(res, name) {
   let msg = `${name} error ${res.status}`;
   try {
     const data = await res.json();
@@ -181,14 +181,14 @@ async function errorFrom(res, name) {
   return new Error(msg);
 }
 
-const parseDataUrl = url => {
+export const parseDataUrl = url => {
   const m = String(url).match(/^data:([^;]+);base64,(.*)$/s);
   return m ? { mediaType: m[1], data: m[2] } : null;
 };
 
 // ---------- Claude ----------
 
-function toAnthropicMessages(messages) {
+export function toAnthropicMessages(messages) {
   const img = u => { const d = parseDataUrl(u); return d && { type: "image", source: { type: "base64", media_type: d.mediaType, data: d.data } }; };
   const out = [];
   for (const m of messages) {
@@ -222,11 +222,11 @@ function toAnthropicMessages(messages) {
   return merged;
 }
 
-let openaiNoSummary = false;
+export let openaiNoSummary = false;
 // Models that rejected the thinking setting (older ones); they're asked without it from then on.
-const noThinkingModels = new Set();
+export const noThinkingModels = new Set();
 
-async function streamAnthropic({ s, model, effort, system, messages, tools, serverTools, maxTokens, signal, onText, onThinking, parallelTools = false, activity }) {
+export async function streamAnthropic({ s, model, effort, system, messages, tools, serverTools, maxTokens, signal, onText, onThinking, parallelTools = false, activity }) {
   const body = {
     model,
     max_tokens: maxTokens,
@@ -340,7 +340,7 @@ async function streamAnthropic({ s, model, effort, system, messages, tools, serv
 // gpt-5.x models (Chat Completions rejects that combination), and has built-in web search.
 // Requests are stateless (store: false); reasoning is passed back encrypted between rounds.
 
-function toResponsesInput(messages) {
+export function toResponsesInput(messages) {
   const input = [];
   const userContent = (text, images = []) => [{ type: "input_text", text: text || " " }, ...images.map(url => ({ type: "input_image", image_url: url }))];
   for (const m of messages) {
@@ -364,7 +364,7 @@ function toResponsesInput(messages) {
   return input;
 }
 
-async function streamOpenAI({ s, model, effort, system, messages, tools, serverTools = [], maxTokens, signal, onText, onThinking, parallelTools = false, activity }) {
+export async function streamOpenAI({ s, model, effort, system, messages, tools, serverTools = [], maxTokens, signal, onText, onThinking, parallelTools = false, activity }) {
   const build = ({ withReasoning = true, withServerTools = true, withSummary = !openaiNoSummary } = {}) => ({
     model,
     instructions: system,
@@ -480,8 +480,8 @@ async function streamOpenAI({ s, model, effort, system, messages, tools, serverT
 
 // ---------- usage tracking ----------
 
-let usageQueue = Promise.resolve();
-function recordUsage(model, u) {
+export let usageQueue = Promise.resolve();
+export function recordUsage(model, u) {
   if (!u) return Promise.resolve();
   usageQueue = usageQueue.then(async () => {
     const { usage = {} } = await chrome.storage.local.get("usage");

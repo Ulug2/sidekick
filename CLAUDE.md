@@ -44,11 +44,12 @@ docs/                 product plan, architecture, lessons, security, research, u
 ```
 npm install
 npx playwright install chromium      # once, for the real-Chrome suite
-npm test                             # all jsdom suites (about 546 checks, ~3 min)
+npm run build                        # build the extension into dist/ (npm run dev: rebuild on change)
+npm test                             # builds .test-build/, then all jsdom suites (about 556 checks, ~3 min)
 node tests/run-all.js forms safety   # selected suites
-npm run test:chrome                  # real Chromium with the real extension (about 55 checks); screenshots in .artifacts/shots
+npm run test:chrome                  # real Chromium with the real extension (about 56 checks; builds dist/ first); screenshots in .artifacts/shots
 ```
-Load in Chrome: chrome://extensions → Developer mode → Load unpacked → `extension/`. After code changes: reload the extension, then reopen the side panel.
+Load in Chrome: chrome://extensions → Developer mode → Load unpacked → `dist/` (run `npm run build` first). After code changes: rebuild, reload the extension, then reopen the side panel. The manifest has a fixed `key`, so the extension ID is always `nhnafciagehpkiaighdpmnahdacacnfj`.
 
 How the jsdom tests work: `tests/helpers.js` `loadScripts()` concatenates extension files into one jsdom window (same as the side panel's `<script>` tags) and fakes `chrome.*` and `fetch` (fake SSE streams from Claude/OpenAI). Fixtures in `tests/fixtures/` (for example `airline.html`, a copy of turkishairlines.com's booking form) reproduce real-site behavior. jsdom has no layout: tests stub `getBoundingClientRect`, `elementFromPoint`, and CSS clip.
 

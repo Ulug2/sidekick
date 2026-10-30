@@ -1,7 +1,6 @@
 import fs from 'fs';
 const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-const src = fs.readFileSync(new URL('../extension/docs.js', import.meta.url).pathname, 'utf8');
-const pdfItemsToText = new Function(src.slice(src.indexOf('function pdfItemsToText'), src.indexOf('async function extractDocText')) + '; return pdfItemsToText;')();
+const { pdfItemsToText } = await import('../extension/docs.js');
 const doc = await pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync(new URL('./fixtures/resume.pdf', import.meta.url).pathname)) }).promise;
 const pages = [];
 for (let i = 1; i <= doc.numPages; i++) pages.push(pdfItemsToText((await (await doc.getPage(i)).getTextContent()).items));

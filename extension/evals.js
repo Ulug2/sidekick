@@ -1,30 +1,36 @@
 // Quality checks ("evals"): a fixed set of conversations run through the real pipeline with
 // automatic grading. Run them after changing models or instructions; aim for ≥ 85% passing.
+import { effectiveProvider, getSettings, modelFor } from "./ai.js";
+import { routeMessage, runTurn } from "./brain.js";
+import { calcEngine } from "./calc.js";
+import { redactSecrets, untrusted } from "./guard.js";
+import { bm25 } from "./memory.js";
+import { reflectOnChat, updateSessionNotes } from "./session.js";
 
-const GATE = 0.85;
+export const GATE = 0.85;
 
 // Math answers come back in LaTeX or plain text; compare them in one normalized form.
-const norm = t => String(t)
+export const norm = t => String(t)
   .replace(/\\(cdot|times|left|right|,|;|!|quad)/g, "")
   .replace(/\\(sin|cos|tan|ln|log|exp)/g, "$1")
   .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, "($1)/($2)")
   .replace(/[\s{}$*·\\]/g, "")
   .replace(/−/g, "-")
   .toLowerCase();
-const hasNumber = (text, n) => {
+export const hasNumber = (text, n) => {
   const t = String(text).replace(/(\d),(?=\d{3})/g, "$1");
   return new RegExp(`(^|[^\\d.])${String(n).replace(".", "\\.")}0*(?!\\d)`).test(t);
 };
 // Both (3, 1, ±√10) and nothing like (−3, −1, …), in LaTeX or plain text.
-function coneCheck(r) {
+export function coneCheck(r) {
   const t = norm(r.text).replace(/√\((\d+)\)|√(\d+)/g, "sqrt$1$2").replace(/sqrt\((\d+)\)/g, "sqrt$1").replace(/10\^\(1\/2\)/g, "sqrt10");
   const plus = /\(3,1,sqrt10\)/.test(t), minus = /\(3,1,-sqrt10\)/.test(t), wrong = /\(-3,-1,/.test(t);
   const checked = r.trace?.verification ? ` (double-check: ${r.trace.verification.verdict}${r.trace.verification.corrected ? ", corrected" : ""})` : "";
   return { pass: plus && minus && !wrong, note: (plus && minus && !wrong ? "(3,1,√10) and (3,1,−√10)" : `Got: ${r.text.slice(0, 140)}`) + checked };
 }
-const usedTool = (r, name) => (r.trace?.rounds || []).some(x => (x.tools || []).some(t => t.name === name));
+export const usedTool = (r, name) => (r.trace?.rounds || []).some(x => (x.tools || []).some(t => t.name === name));
 
-function tempMemoryStore(seed = []) {
+export function tempMemoryStore(seed = []) {
   const items = seed.map(x => ({ id: crypto.randomUUID(), created: Date.now(), updated: Date.now(), ...(typeof x === "string" ? { text: x, kind: "fact" } : x) }));
   let about = "";
   return {
@@ -54,9 +60,9 @@ function tempMemoryStore(seed = []) {
   };
 }
 
-const pageBlock = (title, url, text) => `\n\nPage content from "${title}":\n${untrusted(url, text)}`;
+export const pageBlock = (title, url, text) => `\n\nPage content from "${title}":\n${untrusted(url, text)}`;
 
-const CASES = [
+export const CASES = [
   // ---------- offline checks (no API calls) ----------
   {
     id: "router", title: "Routing picks the right model tier", category: "Cost", offline: true,
@@ -282,14 +288,14 @@ const CASES = [
 
 // ---------- runner ----------
 
-const $ = s => document.querySelector(s);
-let running = false;
+export const $ = s => document.querySelector(s);
+export let running = false;
 
-function configKey(s) {
+export function configKey(s) {
   return [effectiveProvider(s), modelFor(s, "fast"), modelFor(s, "smart"), s.smartEffort, s.fastEffort, s.personality, s.customInstructions].join("|");
 }
 
-function render(results = {}) {
+export function render(results = {}) {
   const tbody = $("#cases");
   tbody.innerHTML = "";
   for (const c of CASES) {
@@ -317,7 +323,7 @@ function render(results = {}) {
   }
 }
 
-async function runAll() {
+export async function runAll() {
   if (running) return;
   running = true;
   $("#run").disabled = true;
@@ -373,14 +379,14 @@ async function runAll() {
   $("#run").disabled = false;
 }
 
-function showSummary(run) {
+export function showSummary(run) {
   const ok = run.passed / run.total >= GATE;
   const box = $("#summary");
   box.className = "summary " + (ok ? "good" : "bad");
   box.textContent = `${run.passed} of ${run.total} passed. ${ok ? "Good to go." : `Below the ${Math.round(GATE * 100)}% bar: check the failures before relying on these settings.`}`;
 }
 
-async function renderHistory() {
+export async function renderHistory() {
   const { evalRuns = [] } = await chrome.storage.local.get("evalRuns");
   const ul = $("#history");
   ul.innerHTML = "";

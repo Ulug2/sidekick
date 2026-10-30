@@ -1,10 +1,19 @@
-const $ = s => document.querySelector(s);
-const params = new URLSearchParams(location.search);
-const isOnboarding = params.get("welcome") === "1";
+import { PERSONAL_LABELS, PROFILE_FIELD_NAMES, deleteAdapter, getAdapters, getSiteNotes, saveSiteNotes } from "./adapters.js";
+import { callModel, getSettings } from "./ai.js";
+import { extractDocText, isDocFile } from "./docs.js";
+import { exportMemoryMarkdown, importMemoryMarkdown } from "./memory-io.js";
+import { addDocument, addMemory, bm25, deleteDocument, deleteMemory, getDocIndex, getMemories, updateMemory } from "./memory.js";
+import { DECLINE, DEFAULT_PROFILE, PROFILE_SECTIONS, getApplications, getProfile, saveProfile } from "./profile-core.js";
+import { getUserModel, setUserModel } from "./session.js";
+import { addSkill, deleteSkill, getSkills, updateSkill } from "./skills.js";
 
-let profile = { ...DEFAULT_PROFILE };
+export const $ = s => document.querySelector(s);
+export const params = new URLSearchParams(location.search);
+export const isOnboarding = params.get("welcome") === "1";
 
-const FIELD_UI = {
+export let profile = { ...DEFAULT_PROFILE };
+
+export const FIELD_UI = {
   fullName: { autocomplete: "name" }, preferredName: {}, pronouns: { placeholder: "e.g. he/him" },
   email: { type: "email", autocomplete: "email" }, phone: { type: "tel", autocomplete: "tel" },
   address: { wide: true, autocomplete: "street-address" }, city: {}, state: {}, zip: {}, country: {},
@@ -37,18 +46,18 @@ const FIELD_UI = {
   aboutMe: { type: "textarea", wide: true, tall: true, placeholder: "Anything else Sidekick should know: where you're from, your story, interests, what you're looking for, how you like to write." }
 };
 
-const SECTION_HINTS = {
+export const SECTION_HINTS = {
   "Work eligibility": "Asked on most US applications. Answer exactly as you would on the form.",
   "Voluntary self-identification (use these exact answers)": "US employers ask these optionally. Sidekick uses exactly what you pick here; 'Decline' is always safe.",
   "Saved answers to common questions": "Sidekick reuses these instead of writing new ones, and adapts them to each company.",
   "More about me": "Free-form context. The more you write, the more Sidekick sounds like you."
 };
 
-const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+export const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
 // ---------- render ----------
 
-function renderFields() {
+export function renderFields() {
   const wrap = $("#fieldSections");
   wrap.innerHTML = "";
   for (const [title, fields] of PROFILE_SECTIONS) {
@@ -94,7 +103,7 @@ function renderFields() {
   }
 }
 
-function renderToc() {
+export function renderToc() {
   const items = [
     ...(!$("#sec-key").hidden ? [["AI model", "sec-key"]] : []),
     ["Resume", "sec-resume"],
@@ -115,7 +124,7 @@ function renderToc() {
   }
 }
 
-function renderResume() {
+export function renderResume() {
   const r = profile.resume;
   $("#resumeDrop").hidden = !!r;
   $("#resumeInfo").hidden = !r;
@@ -126,7 +135,7 @@ function renderResume() {
   }
 }
 
-async function renderSteps() {
+export async function renderSteps() {
   if (!isOnboarding) return;
   $("#onboardSteps").hidden = false;
   $("#heroTitle").textContent = "Welcome to Sidekick";
@@ -140,7 +149,7 @@ async function renderSteps() {
 }
 
 // Learned shortcuts and notes, grouped by site.
-async function renderSites() {
+export async function renderSites() {
   const box = $("#sitesList");
   const [adapters, notes] = await Promise.all([getAdapters(), getSiteNotes()]);
   const sites = [...new Set([...adapters.map(a => a.site), ...Object.keys(notes)])].sort();
@@ -207,7 +216,7 @@ async function renderSites() {
   }
 }
 
-async function renderApps() {
+export async function renderApps() {
   const apps = await getApplications();
   const box = $("#appsTable");
   if (!apps.length) {
@@ -254,8 +263,8 @@ async function renderApps() {
 
 // ---------- saving ----------
 
-let saveTimer = null;
-function scheduleSave() {
+export let saveTimer = null;
+export function scheduleSave() {
   $("#saveState").textContent = "Saving…";
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
@@ -267,7 +276,7 @@ function scheduleSave() {
 
 // ---------- resume ----------
 
-async function handleResume(file) {
+export async function handleResume(file) {
   if (!file) return;
   const status = $("#fillStatus");
   status.classList.remove("err");
@@ -301,7 +310,7 @@ async function handleResume(file) {
   }
 }
 
-const RESUME_KEYS = {
+export const RESUME_KEYS = {
   fullName: "full name", email: "email", phone: "phone", address: "street address", city: "city", state: "state or region",
   zip: "ZIP/postal code", country: "country", linkedin: "LinkedIn URL", github: "GitHub URL", portfolio: "portfolio/website URL",
   otherLinks: "other links, one per line", headline: "one-line professional headline",
@@ -312,7 +321,7 @@ const RESUME_KEYS = {
   skills: "comma-separated skills", languages: "spoken languages with level if listed", certifications: "certifications"
 };
 
-async function fillFromResume() {
+export async function fillFromResume() {
   const status = $("#fillStatus");
   status.classList.remove("err");
   if (!profile.resume?.text) return;
@@ -364,9 +373,9 @@ async function fillFromResume() {
 
 // ---------- memories ----------
 
-const X_ICON = `<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>`;
+export const X_ICON = `<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>`;
 
-async function renderMemories() {
+export async function renderMemories() {
   const list = await getMemories();
   const q = $("#memSearch").value.trim();
   const shown = q ? bm25(list, q, 200) : list;
@@ -409,7 +418,7 @@ async function renderMemories() {
 
 // ---------- skills ----------
 
-async function renderSkills() {
+export async function renderSkills() {
   const list = await getSkills();
   $("#skillCount").textContent = list.length ? `${list.length} saved` : "";
   const ul = $("#skillList");
@@ -446,7 +455,7 @@ async function renderSkills() {
 
 // ---------- documents ----------
 
-async function renderDocs() {
+export async function renderDocs() {
   const index = await getDocIndex();
   const ul = $("#docList");
   ul.innerHTML = "";
@@ -460,7 +469,7 @@ async function renderDocs() {
   }
 }
 
-async function addDocs(files) {
+export async function addDocs(files) {
   const status = $("#docStatus");
   status.classList.remove("err");
   for (const f of files) {
@@ -480,7 +489,7 @@ async function addDocs(files) {
 
 // ---------- wiring ----------
 
-function wire() {
+export function wire() {
   const pick = () => $("#resumeInput").click();
   $("#resumeDrop").onclick = pick;
   $("#resumeDrop").onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } };

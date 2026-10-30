@@ -1,16 +1,16 @@
 // Text extraction for PDF, Word (.docx) and plain-text files. Libraries load only when needed.
 
-const DOC_TYPES = {
+export const DOC_TYPES = {
   pdf: f => f.type === "application/pdf" || /\.pdf$/i.test(f.name),
   docx: f => f.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || /\.docx$/i.test(f.name)
 };
 
-function isDocFile(file) {
+export function isDocFile(file) {
   return DOC_TYPES.pdf(file) || DOC_TYPES.docx(file);
 }
 
-let pdfjsPromise = null;
-function loadPdfJs() {
+export let pdfjsPromise = null;
+export function loadPdfJs() {
   pdfjsPromise ||= import(chrome.runtime.getURL("vendor/pdf.min.mjs")).then(pdfjs => {
     pdfjs.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("vendor/pdf.worker.min.mjs");
     return pdfjs;
@@ -18,8 +18,8 @@ function loadPdfJs() {
   return pdfjsPromise;
 }
 
-let mammothPromise = null;
-function loadMammoth() {
+export let mammothPromise = null;
+export function loadMammoth() {
   mammothPromise ||= new Promise((resolve, reject) => {
     if (window.mammoth) return resolve(window.mammoth);
     const s = document.createElement("script");
@@ -32,7 +32,7 @@ function loadMammoth() {
 }
 
 // Rebuilds readable lines from PDF text items (which come as positioned fragments).
-function pdfItemsToText(items) {
+export function pdfItemsToText(items) {
   let out = "";
   let lastY = null;
   for (const it of items) {
@@ -47,7 +47,7 @@ function pdfItemsToText(items) {
   return out.replace(/[ \t]+\n/g, "\n").replace(/ {2,}/g, " ");
 }
 
-async function extractDocText(file, { maxChars = 100_000 } = {}) {
+export async function extractDocText(file, { maxChars = 100_000 } = {}) {
   let text;
   if (DOC_TYPES.pdf(file)) {
     const pdfjs = await loadPdfJs();
