@@ -8,9 +8,9 @@
     "dev": "vite build --watch",
     "build:test": "node scripts/build-test.mjs",
     "pretest": "npm run build:test",
-    "test": "node tests/run-all.js",
+    "test": "node tests/jsdom/run-all.js",
     "pretest:chrome": "npm run build",
-    "test:chrome": "node tests/real-chrome-test.js"
+    "test:chrome": "node tests/chrome/real-chrome-test.js"
   },
   "devDependencies": {
     "@types/chrome": "0.3.5",

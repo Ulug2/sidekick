@@ -1,0 +1,26 @@
+const { JSDOM } = require('jsdom'); const fs = require('fs');
+const dom = new JSDOM('<!doctype html><head></head>', { runScripts: 'outside-only' }); const w = dom.window;
+w.eval(fs.readFileSync(require('path').join(__dirname, '..', '..', 'public', 'vendor/math.js'), 'utf8')); w.eval(fs.readFileSync(require('path').join(__dirname, '..', '..', 'public', 'vendor/nerdamer.js'), 'utf8'));
+require(require('path').join(__dirname, 'helpers.js')).loadScripts(w, ['calc.js'], ['calcEngine']);
+const results = []; const check = (n, ok, x='') => results.push(`${ok ? 'PASS' : 'FAIL'}  ${n}${x ? '\n        ' + x.replace(/\n/g, '\n        ') : ''}`);
+(async () => {
+  const run = lines => w.eval('calcEngine').run(lines);
+  let r = await run(['f(x, y) = 4x^2 y^2 + 10x^2 + 9y^2', 'fxx = diff(f(x,y), x, 2)', 'fyy = diff(f(x,y), y, 2)', 'fxy = diff(diff(f(x,y), x), y)', 'solveSystem([diff(f(x,y),x)=0, diff(f(x,y),y)=0])']);
+  check('Second-derivative test pieces', /fxx.*8·y\^2\+20|20\+8·y\^2/.test(r) && /16·y·x|16·x·y/.test(r) && /x => 0, y => 0/.test(r) && !/✗/.test(r), r);
+  r = await run(['D = (8*0^2+20)*(8*0^2+18) - (16*0*0)^2']);
+  check('D(0,0) = 360', /→\s+360$/.test(r), r);
+  r = await run(['diff(x^3 sin(x), x)']); check('derivative, no quotes', /3·x\^2·sin\(x\)\+x\^3·cos\(x\)|x\^3·cos\(x\)\+3·x\^2·sin\(x\)/.test(r), r);
+  r = await run(['integrate(x e^x, x)', 'defint(x e^x, x, 0, 1)', 'defint(sin(x), x, 0, pi)', 'defint(e^(-x^2), x, 0, 1)']);
+  check('integrals exact + numeric', /e\^x·\(-1\+x\)/.test(r) && /defint\(x e\^x, x, 0, 1\)\s+→\s+1\b/.test(r) && /defint\(sin\(x\), x, 0, pi\)\s+→\s+2\b/.test(r) && /0\.7468/.test(r), r);
+  r = await run(['limit(sin(3x)/x, x, 0)', 'limit((1+1/n)^n, n, inf)', 'limit(1/x, x, infinity)']);
+  check('limits', /→\s+3$/m.test(r) && /→\s+e/.test(r) && /→\s+0$/m.test(r), r);
+  r = await run(['solve(x^2 - 5x + 6, x)', 'solve(2x + 3 = 11, x)', 'factor(x^2-1)', 'expand((x+1)^3)']);
+  check('solve + algebra', /\{3, 2\}|\{2, 3\}/.test(r) && /=\s*11, x\)\s+→\s+\{?4\}?$/m.test(r) && /\(1\+x\)·\(-1\+x\)|\(x\+1\)·\(x-1\)/.test(r) && /x\^3/.test(r) && !/✗/.test(r), r);
+  r = await run(['17.5% * 2340', '2340 * 0.175', '5000 * (1 + 0.04/12)^(12*10)', 'sum(1,2,3)', 'sum(1/k^2, k, 1, inf)']);
+  check('arithmetic, %, compound interest, sums', /409\.5/.test(r) && /7454\.\d+/.test(r) && /sum\(1,2,3\)\s+→\s+6/.test(r) && !/✗/.test(r), r);
+  r = await run(['a = 3', 'diff(a*x^2, x)', 'det([[1,2],[3,4]])', 'std([2,4,4,4,5,5,7,9])', '5 km to mile', 'derivative("x^2", "x")']);
+  check('scope substitution, matrices, stats, units, mathjs derivative', /6·x/.test(r) && /→\s+-2/.test(r) && /2\.138/.test(r) && /mile/.test(r) && /2 \* x/.test(r), r);
+  r = await run(['1/0 + ', 'integrate(sin(x)/x, x)']);
+  check('errors reported per line, no crash', (r.match(/✗/g) || []).length === 1 && /Si\(x\)/.test(r), r);
+  console.log(results.join('\n')); console.log(`\n${results.filter(x=>x.startsWith('PASS')).length}/${results.length} passed`);
+})().catch(e => console.error('CRASH', e));
