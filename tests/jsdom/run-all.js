@@ -2,7 +2,7 @@
 // Real Chrome is separate: npm run test:chrome (needs a Chromium from `npx playwright install chromium`).
 const { spawnSync } = require('child_process');
 const path = require('path');
-const SUITES = ['forms', 'safety', 'multitask', 'fixes', 'hardening', 'security', 'phase3', 'sites', 'verify', 'memory-session', 'brain', 'panel-v6', 'pages', 'v4', 'e2e', 'agent-cdp', 'engine', 'openai-profile', 'calc', 'numeric', 'docs', 'timeouts', 'scroll', 'region'];
+const SUITES = ['forms', 'safety', 'multitask', 'fixes', 'hardening', 'security', 'phase3', 'sites', 'verify', 'memory-session', 'brain', 'panel-v6', 'pages', 'v4', 'e2e', 'agent-cdp', 'engine', 'openai-profile', 'calc', 'numeric', 'docs', 'timeouts', 'scroll', 'region', 'prompts'];
 // calc and numeric also prove the calculator never uses eval (Chrome's extension CSP forbids it).
 const NO_EVAL = new Set(['calc', 'numeric']);
 const only = process.argv.slice(2);
