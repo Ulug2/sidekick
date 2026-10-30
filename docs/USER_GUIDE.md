@@ -3,8 +3,8 @@
 Your personal AI assistant in a Chrome side panel. It knows who you are, remembers what you tell it, does exact math, searches the web, sees your tab, and can operate pages for you (forms, job applications) with your approval.
 
 ## Install / update
-1. Unzip somewhere permanent (or over your old folder).
-2. `chrome://extensions` → Developer mode → **Load unpacked** (or the reload ↻ arrow on Sidekick).
+1. In the project folder: `npm install`, then `npm run build` (creates `dist/`; after updates, run it again).
+2. `chrome://extensions` → Developer mode → **Load unpacked** → choose `dist/` (after a rebuild: the reload ↻ arrow on Sidekick).
 3. First install opens onboarding: API key, resume, profile. Settings: the gear icon in the panel.
 
 ## How it's built (8 layers, adapted for one person)

@@ -97,6 +97,13 @@ General rules that came out of these: design for the long version of a task; eve
 - **Fix:** the agent's tabs open in the background and `switch_tab` moves only the agent. Trade-off: in a background tab it uses page events instead of the debugger and can't take screenshots (the fallback that already existed when you switch away).
 - **Tests:** safety 6, real-chrome 12 (4 applications in background tabs, your tab stays in front).
 
+### 15. Splitting a file into modules silently rewired Stop to window.stop() (caught before release)
+- **What happened:** after the side panel was split into modules, the agent card's Stop button referred to `stop` without importing it. In one shared global scope that was the panel's `stop()`; in a module it's the browser's `window.stop()`, which only stops the page loading, so the button would no longer have stopped the agent.
+- **Why nothing caught it at first:** the typecheck saw a valid global with the same shape; the test bundles put the panel's functions on `window` (as the old classic scripts did), which hid the difference.
+- **Fix:** the import; the test bundles no longer overwrite names the browser already has; `scripts/check-build.mjs` fails the build when any of our exported names is used without an import; ESLint `no-restricted-globals` for `close`, `stop`, `status`, `name`, `open`, `event`, `length`, `find`, `print`.
+- **Rule:** when code moves between modules, check the *built* output for names that now resolve to globals; never name a helper after a browser global.
+- **Tests:** multitask 7 (fails without the import), check-build in every build.
+
 ## Earlier lessons (v0.7–v0.9)
 - **A double-check must not overrule a right answer without evidence** (v0.7.2 pipeline problem). Replacements need a code check (objective or residuals) under both setups.
 - **Examples in prompts anchor the model.** Use neutral numbers, never the real answer.

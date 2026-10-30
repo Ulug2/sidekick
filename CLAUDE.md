@@ -15,43 +15,54 @@ Read these first:
 - For any failure on a real site, reproduce it on the real site first (he has Chrome; use Claude in Chrome or Playwright against the live page, read-only) before changing code.
 
 ## Status
-- Version 0.9.5. Plain JavaScript, no build step, no modules: every script in a page shares one global scope (no duplicate top-level names across files loaded together).
-- Planned next: organize the repo and migrate to TypeScript with a build (behavior-preserving), then rebuild the browser agent's perception/action layers (see ARCHITECTURE.md "Target architecture").
+- Version 0.9.5. TypeScript (`strict`), ES modules, built with Vite into `dist/`. Behavior is the same as the plain-JavaScript v0.9.5 (see `docs/MIGRATION_PLAN.md` and `docs/adr/`).
+- Next (when Ulugbek says so): Phase F, the run-trace recorder and the real-site benchmark, then agent v2 (see `docs/PRODUCT_PLAN.md`, ARCHITECTURE.md "Target architecture").
 
-## Layout (current)
+## Layout
 ```
-extension/            the unpacked extension (load this folder in chrome://extensions)
-  manifest.json       MV3; side panel, debugger, scripting, tabs, tabGroups, notifications
-  background.js       service worker: opens the panel, context menus (tiny)
-  sidepanel.*         chat UI, agent cards, history, notes (all runtime logic is loaded here)
-  ai.js               model calls: Claude Messages API + OpenAI Responses API, streaming, retries
-  brain.js            chat turn: routing, tools, math double-check pipeline, review
-  agent.js            browser agent loop, tools, safety gates, snapshots, learning
-  page-agent.js       functions injected into pages (snapshot + actions); must stay self-contained
-  cdp.js              chrome.debugger wrapper: trusted clicks/typing, screenshots, timeouts
-  adapters.js         learned site shortcuts + site notes; personal-data detection
-  guard.js            secret redaction, untrusted-content fencing, injection scan, output cleanup
-  calc.js             calculator engine (math.js + nerdamer), scanCurve
-  memory*.js, skills.js, session.js, profile-core.js, docs.js, web.js, screen.js
-  profile.*, options.*, evals.*, mic.*   other extension pages
-  vendor/             third-party libraries (pinned copies + licenses)
-  webmcp-capture.js   MAIN-world content script (WebMCP tool capture)
-tests/                jsdom suites (*-test.js), real-Chromium suite, fixtures, run-all.js
-docs/                 product plan, architecture, lessons, security, research, user guide
+src/
+  manifest.json          MV3 manifest, copied to dist/ as is (fixed "key" → fixed extension ID)
+  pages/                 HTML entry points (built to the root of dist/: sidepanel.html, profile.html, …)
+  background/            service worker: opens the panel, context menus (built to dist/background.js)
+  content/               webmcp-capture.js: MAIN-world content script, copied byte for byte
+  page/                  functions injected into web pages (snapshot, act, webmcp, read, region, …)
+  core/
+    llm/                 model calls: settings + model IDs, Claude Messages API, OpenAI Responses API, streaming, usage
+    storage/schema.ts    one typed schema for every chrome.storage key; readLocal()
+    security/            guard (redaction, untrusted fence, injection scan, stripWrappers), sites (siteOf), personal-data
+    browser/             screen (captures, page reads with time limits), cdp (TrustedInput: debugger input)
+    web/ docs/ calc/     read_url + search, PDF/DOCX text, calculator engine
+  assistant/             chat brain: turn, routing, prompt, tools, types; review/ (math double-check); memory/, skills, session, profile-core
+  agent/                 browser agent: loop/ (run, plan, tab group), perception/ (capture, format), actions/ (run-tool, input,
+                         describe, replay), safety/gates, skills/ (shortcuts, site notes), tools, prompt, page-calls, types
+  ui/                    sidepanel/ (sidepanel = entry and state, markdown, messages, chats, agent-card, notify, icons),
+                         profile/, options/, evals/, mic/, shared/ (page.css, dom.ts)
+  types/globals.d.ts     vendored-library globals and test hooks
+public/                  icons/, vendor/ (third-party libraries, pinned copies + licenses), copied as is
+tests/
+  jsdom/                 the jsdom suites (*-test.js), helpers.js, run-all.js
+  chrome/                real Chromium with the built extension (real-chrome-test.js)
+  unit/                  Vitest unit tests (import the TypeScript modules directly)
+  fixtures/              real-site copies (airline.html, job.html), resumes (fictional), prompts.json
+scripts/                 build-test.mjs (test bundles), check-build.mjs (checks dist/ after every build)
+docs/                    product plan, architecture, lessons, security, adr/, archive/
 ```
 
 ## Commands
 ```
 npm install
 npx playwright install chromium      # once, for the real-Chrome suite
-npm run build                        # build the extension into dist/ (npm run dev: rebuild on change)
-npm test                             # builds .test-build/, then all jsdom suites (about 556 checks, ~3 min)
-node tests/run-all.js forms safety   # selected suites
-npm run test:chrome                  # real Chromium with the real extension (about 56 checks; builds dist/ first); screenshots in .artifacts/shots
+npm run build                        # typecheck, build dist/, check it (npm run dev: rebuild on change)
+npm test                             # builds .test-build/, then all jsdom suites (about 580 checks, ~3 min)
+node tests/jsdom/run-all.js forms safety   # selected suites
+npm run test:unit                    # Vitest unit tests
+npm run test:chrome                  # real Chromium with dist/ (about 56 checks; builds first); screenshots in .artifacts/shots
+npm run lint                         # ESLint (typescript-eslint)
+npm run check                        # all of the above
 ```
-Load in Chrome: chrome://extensions → Developer mode → Load unpacked → `dist/` (run `npm run build` first). After code changes: rebuild, reload the extension, then reopen the side panel. The manifest has a fixed `key`, so the extension ID is always `nhnafciagehpkiaighdpmnahdacacnfj`.
+Load in Chrome: chrome://extensions → Developer mode → Load unpacked → `dist/` (after `npm run build`). After code changes: rebuild, reload the extension, reopen the side panel. The manifest has a fixed `key`, so the extension ID is always `nhnafciagehpkiaighdpmnahdacacnfj`.
 
-How the jsdom tests work: `tests/helpers.js` `loadScripts()` concatenates extension files into one jsdom window (same as the side panel's `<script>` tags) and fakes `chrome.*` and `fetch` (fake SSE streams from Claude/OpenAI). Fixtures in `tests/fixtures/` (for example `airline.html`, a copy of turkishairlines.com's booking form) reproduce real-site behavior. jsdom has no layout: tests stub `getBoundingClientRect`, `elementFromPoint`, and CSS clip.
+How the jsdom suites work: `scripts/build-test.mjs` bundles the same modules into classic scripts in `.test-build/` (one per page plus `lib.js`); `tests/jsdom/helpers.js` `loadScripts(w, files, expose)` loads the bundle for the page those files belong to into a jsdom window and puts the requested names on `window`. Fakes for `chrome.*` and `fetch` (SSE streams from Claude/OpenAI) are in helpers.js. Fixtures reproduce real-site behavior. jsdom has no layout: tests stub `getBoundingClientRect`, `elementFromPoint`, and CSS clip. `prompts-test.js` compares every system prompt and tool definition with `tests/fixtures/prompts.json` (update it only for an intended prompt change: `UPDATE_PROMPTS=1 node tests/jsdom/prompts-test.js`).
 
 ## Rules (from docs/LESSONS.md; follow them)
 1. **Real site first.** Before fixing a site failure, look at the real page's markup and behavior, build a fixture that fails without the fix, then fix. Validate on the real site too.
@@ -67,7 +78,7 @@ How the jsdom tests work: `tests/helpers.js` `loadScripts()` concatenates extens
 11. **Budget:** fast model by default; smart model only when routed (math, agent); strongest model only for tie-breaks. Estimate cost per run for anything new.
 12. **Say what wasn't tested** with real keys, real accounts, real sites.
 
-## Security invariants (must never regress; tests in tests/security-test.js, safety-test.js)
+## Security invariants (must never regress; tests in tests/jsdom/security-test.js, safety-test.js, tests/unit/security.test.ts)
 - Everything from outside (pages, frames, search results, files, selections, site tools, snapshots, chat history given to the agent) is fenced with `untrusted()`; the fence can't be closed early by content.
 - Replies can't load anything (no images/CSS/iframes; links open in a new tab; only http(s)/mailto).
 - Never type passwords, card numbers, SSNs/government IDs, API keys; refuse secret-looking fields and values.
@@ -78,10 +89,13 @@ How the jsdom tests work: `tests/helpers.js` `loadScripts()` concatenates extens
 - Typed secrets in chat are masked before sending and before saving.
 
 ## Gotchas
-- `page-agent.js` functions (`skPageSnapshot`, `skPageAct`, `skWebMCP*`) are passed to `chrome.scripting.executeScript({ func })`, which serializes the function's source. They must not reference anything outside their own body (no imports, no outer helpers). In a TS build, bundle them as separate self-contained scripts and inject with `files: [...]`, or keep them closure-free.
-- `webmcp-capture.js` runs in the page's MAIN world at `document_start` and must add nothing to pages that don't use WebMCP (fingerprinting).
+- Functions in `src/page/` are passed to `chrome.scripting.executeScript({ func })`, which sends only the function's source text. They must not use anything outside their own body (no imports except `import type`, no outer helpers). `npm run build` fails if one does (`scripts/check-build.mjs`). They stay `func`-injected (not `files: [...]`) so they can take arguments and so nothing is left behind in the page's world (ADR-005).
+- Modules don't share a global scope any more: a name used without an import resolves to the browser's global if one exists (`stop`, `close`, `status`, `name`, `open`, …) and silently does the wrong thing. ESLint flags those globals and `check-build.mjs` fails on any of our exported names used without an import (LESSONS 15). A module can't assign another module's `let`; export a setter (see `setAgentSignal`).
+- `src/content/webmcp-capture.js` runs in the page's MAIN world at `document_start` and must add nothing to pages that don't use WebMCP (fingerprinting). It's plain JavaScript, copied byte for byte; never bundle it.
+- Vendored libraries (`public/vendor/`) load as they did before: marked, DOMPurify, KaTeX, highlight.js by `<script vite-ignore>` tags; math.js, nerdamer, mammoth and pdf.js by URL at runtime. Don't bundle or upgrade them as part of other work.
 - `chrome.sidePanel.open` only works inside a user gesture (call it before any await).
-- The debugger's input commands can stall in background tabs; the agent falls back to page events (`viaTrusted`). Screenshots of background tabs are refused rather than switching tabs.
-- Claude 5.x hides thinking unless asked: requests use `thinking: { type: "adaptive", display: "summarized" }`, with a fallback for models that reject it. Model IDs live in `DEFAULT_SETTINGS` in `extension/ai.js`; don't change them without being asked.
+- The debugger's mouse input stalls in background tabs (checked in un-instrumented Chromium: clicks time out; typing, keys and CDP screenshots work); the agent falls back to page events (`viaTrusted`). Screenshots of background tabs are refused today rather than switching tabs. The agent's own tabs open in the background.
+- Claude 5.x hides thinking unless asked: requests use `thinking: { type: "adaptive", display: "summarized" }`, with a fallback for models that reject it. Model IDs live in `DEFAULT_SETTINGS` in `src/core/llm/settings.ts`; don't change them without being asked.
 - OpenAI calls use the Responses API with `store: false`; reasoning items are replayed with `encrypted_content`.
-- Storage is `chrome.storage.local` (unencrypted, like every extension). Keys: settings fields, `profile`, `memories`, `skills`, `adapters`, `siteNotes`, `chatIndex`, `chat:<id>`, `documents`, `applications`, `usage`, `evalRuns`, `userModel`.
+- Storage is `chrome.storage.local` (unencrypted, like every extension). Every key and its shape is in `src/core/storage/schema.ts`: settings fields, `profile`, `applications`, `memories`, `docIndex` + `doc:<id>`, `skills`, `userModel`, `adapters` (shortcuts), `siteNotes`, `chatIndex` + `chat:<id>`, `usage`, `evalRuns`; session storage: `pending`.
+- UI code (`src/ui`) looks elements up with `$` (returns `any`) and narrows DOM types with type-only assertions; the typed parts are the data (chats, settings, agent UI contract). Tighten it when a UI file is next changed for real.

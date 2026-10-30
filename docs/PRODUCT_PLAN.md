@@ -27,7 +27,7 @@ Homework help with answers that are checked, not guessed. Reminders for assignme
 | 0.9.1 | Live status + visible thinking, Lagrange max/min with DNE (`scanCurve`, completeness check), profile layout at half width, new chat on every open, agent keeps working when you switch tabs, blocked frames reported, MathQuill boxes, no wrapper tags in replies |
 | 0.9.2 | Several tasks in one run (checklist, budgets, keep going after each submit), no more freezes (timeouts, Stop always works, "Leave site?" disarmed), saved as it goes, chat context for Agent mode, find / scroll all / web_search |
 | 0.9.3 | From Claude in Chrome: notifications, agent tab group, approve the plan once, fast-model check of risky steps, local injection scan, hidden trap fields, site re-check before acting |
-| 0.9.5 | Before the TypeScript migration: shared hosting domains (`*.github.io`, `*.vercel.app`, …) count as separate sites for approvals; the agent opens and switches its own tabs in the background, never yours; chat page reads, screenshots, read_url and web search have time limits and obey Stop |
+| 0.9.5 | TypeScript + Vite build (same behavior; load `dist/`, fixed extension ID). Before that: shared hosting domains (`*.github.io`, `*.vercel.app`, …) count as separate sites for approvals; the agent opens and switches its own tabs in the background, never yours; chat page reads, screenshots, read_url and web search have time limits and obey Stop |
 | 0.9.4 | Autocomplete matching (codes, typed filtering, field's own list), pick_date calendars, row context for repeated fields; validated on the real turkishairlines.com form |
 
 **Honest status of the browser agent:** works on the test pages; still unreliable on complex real sites (the 2026-10-29 Turkish Airlines run failed: pop-ups, coordinate guessing, wrong clicks). Chat, memory, math and the safety layer are in better shape than agent reliability.
@@ -37,8 +37,8 @@ Homework help with answers that are checked, not guessed. Reminders for assignme
 ## Next, in order
 
 ### Phase F: Foundation (now)
-1. GitHub repo, local git history (no more zips).
-2. Organize the repo and migrate to TypeScript with a build; all tests green throughout (ARCHITECTURE.md §4).
+1. ~~Local git history~~ (done 2026-10-29); GitHub repo (next).
+2. ~~Organize the repo and migrate to TypeScript with a build~~ (done 2026-10-29: Vite, strict TypeScript, src/ by concern, all tests green throughout; ARCHITECTURE.md §4, docs/adr/).
 3. Run traces: record every agent step (observation, screenshot, model call, action, result, cost); export; replay viewer.
 4. Real-site benchmark: 10 tasks run on the Mac with a real model, scored per version:
    1. Turkish Airlines multi-city search IAD→IST→ALA→IAD, report the best total (stop before booking)

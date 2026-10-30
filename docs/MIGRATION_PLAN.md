@@ -1,6 +1,18 @@
 # Migration plan: organized folders + TypeScript + a build
 
-Status: proposal (checkpoint 2), 2026-10-29. Starts from v0.9.5 (`4cfef50`): `npm test` 546/546, `npm run test:chrome` 55/55.
+Status: **done** (2026-10-29). Started from v0.9.5 (`4cfef50`): `npm test` 546/546, `npm run test:chrome` 55/55. Ended with `npm test` 580/580, `npm run test:unit` 10/10, `npm run test:chrome` 56/56.
+
+## What changed from this plan while doing it
+- Steps 1 and 3 were done together: instead of a "legacy globals" shim, every file got real `import`s in step 1 (computed by scope analysis), so no shim was needed.
+- Test folders are `tests/jsdom`, `tests/chrome`, `tests/unit` (not `legacy`/`e2e`).
+- No Vitest wrapper around the jsdom suites (it only ran them twice); `npm test` stays their runner and new tests go to Vitest.
+- HTML entries keep their page names (`ui/sidepanel/sidepanel.ts`, not `main.ts`). No `core/messaging` folder yet: the one message (`pending`) is typed in `core/storage/schema.ts`.
+- Two code changes beyond moves, both needed by modules: `setAgentSignal()` (a module can't assign another module's variable) and one shared `$` helper (`ui/shared/dom.ts`) instead of three copies.
+- One regression found and fixed before release: the agent card's Stop button (LESSONS 15). New guards: the restricted-globals lint rule and the missing-import check in `scripts/check-build.mjs`.
+- Tools versions used: Vite 8.3.4, TypeScript 6.0.3, Vitest 5.0.4, ESLint 10.12.0, typescript-eslint 8.71.2, @types/chrome 0.3.5.
+
+---
+
 
 **Goal:** the same extension, organized into folders, typed, and built. After every step: both suites green, one commit (or a few). No new features, no prompt changes.
 

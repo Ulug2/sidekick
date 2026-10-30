@@ -1,6 +1,6 @@
 # Sidekick architecture
 
-Status: v0.9.4 (2026-10-29). This document has four parts: how it works today, what's wrong with it, the target architecture, and the migration plan to get there.
+Status: v0.9.5, TypeScript (2026-10-29). This document has four parts: how it works today, what's wrong with it, the target architecture, and the migration (done; see §4).
 
 ---
 
@@ -10,42 +10,33 @@ Status: v0.9.4 (2026-10-29). This document has four parts: how it works today, w
 
 | Context | Files | What runs there |
 |---|---|---|
-| Service worker | `background.js` | Opens the side panel on toolbar click; context menus ("Rewrite with Sidekick", "Ask Sidekick"); first-install onboarding. Nothing else (no alarms yet). |
-| Side panel page | `sidepanel.html` loads ~20 scripts | **All runtime logic**: chat, model calls, math pipeline, browser agent, memory, learning. The agent only runs while the panel is open. |
-| Injected into web pages | `page-agent.js` functions via `chrome.scripting.executeScript({ func })`; `screen.js` readers | Snapshots of interactive elements, actions (click, type, select, pick_date, upload), page text. ISOLATED world; WebMCP calls in MAIN world. |
-| Content script, MAIN world, `document_start` | `webmcp-capture.js` | Captures tools a site registers with `navigator.modelContext` (WebMCP). Inert on pages without WebMCP. |
-| Debugger (CDP) | `cdp.js` | Real (trusted) mouse/keyboard input, screenshots, layout metrics. 4 s timeout per command. |
-| Other pages | `profile.*`, `options.*`, `evals.*`, `mic.*` | Profile/resume/memories/skills/site skills editor; settings; eval runner; microphone permission. |
+| Service worker | `src/background/background.ts` → `dist/background.js` | Opens the side panel on toolbar click; context menus ("Rewrite with Sidekick", "Ask Sidekick"); first-install onboarding. Nothing else (no alarms yet). |
+| Side panel page | `src/pages/sidepanel.html` → `src/ui/sidepanel/sidepanel.ts` (imports everything else) | **All runtime logic**: chat, model calls, math pipeline, browser agent, memory, learning. The agent only runs while the panel is open. |
+| Injected into web pages | `src/page/*` via `chrome.scripting.executeScript({ func })` | Snapshots of interactive elements, actions (click, type, select, pick_date, upload), page text, area picking. ISOLATED world; WebMCP calls and the leave-prompt disarm in MAIN world. |
+| Content script, MAIN world, `document_start` | `src/content/webmcp-capture.js` (copied as is) | Captures tools a site registers with `navigator.modelContext` (WebMCP). Inert on pages without WebMCP. |
+| Debugger (CDP) | `src/core/browser/cdp.ts` | Real (trusted) mouse/keyboard input, screenshots, layout metrics. 4 s timeout per command. |
+| Other pages | `src/pages/{profile,options,evals,mic}.html` → `src/ui/<page>/` | Profile/resume/memories/skills/site skills editor; settings; eval runner; microphone permission. |
 
-All side-panel scripts share one global scope (plain `<script>` tags, no modules, no build).
+ES modules, bundled by Vite into `dist/` (ADR-002). One typed storage schema: `src/core/storage/schema.ts`.
 
-### Modules (lines at v0.9.4)
+### Modules (lines at v0.9.5)
 
-| File | Lines | Role |
-|---|---|---|
-| sidepanel.js | 2062 | Chat UI, streaming render (marked + DOMPurify + KaTeX), thinking/status line, agent run cards, plan approval card, notifications, history, pinned notes, voice, attachments, area capture |
-| agent.js | 1381 | Agent loop, tool definitions, system prompt, snapshot formatting (full vs. change-only), safety gates, plan/checklist, action check, tab group, learning shortcuts/site notes |
-| brain.js | 987 | Chat turn: system prompt, context block, routing (fast/smart/best), chat tools, math double-check pipeline (verify, arbitrate, confirm, tie-break, completeness), skills/memory tools |
-| page-agent.js | 830 | `skPageSnapshot` (elements with roles, labels, questions, sections, row context, traps), `skPageAct` (click, type, select_option with fuzzy/typed autocomplete, pick_date calendar, upload, keys, scroll all), WebMCP list/call |
-| calc.js | 565 | Calculator engine: math.js + nerdamer, numeric solving, `scanCurve` for constrained extrema |
-| ai.js | 501 | Settings, model selection, `modelCall` for Claude (Messages API, adaptive thinking, prompt caching) and OpenAI (Responses API, store:false), streaming, stall watchdog, usage tracking |
-| evals.js | 401 | Live eval cases (math, memory, guardrails, persona) |
-| adapters.js | 322 | Learned site shortcuts (compiled from successful runs, value-free), site notes, `siteOf`, `personalDetailsIn` |
-| memory.js / memory-io.js | 242 / 129 | Long-term memories (due/status/origin), retrieval, Markdown export/import |
-| session.js | 215 | Pinned notes per chat, end-of-chat reflection (memories, skills) |
-| screen.js | 134 | Screenshots, page text, problem text across frames, blocked-frame reporting |
-| skills.js | 127 | Procedural memory: skill index, matching, use_skill |
-| profile-core.js | 99 | Profile schema, profile → prompt, applications log |
-| web.js | 97 | read_url (SSRF-guarded), keyless web search fallback |
-| cdp.js | 85 | TrustedInput (debugger) with timeouts |
-| guard.js | 83 | Secret redaction, `untrusted()` fencing, injection scan, `stripWrappers` |
-| docs.js | 70 | Document store for syllabi/notes |
+| Folder | What's there |
+|---|---|
+| `core/llm` (≈560) | `settings` (defaults, model IDs, provider/model choice), `call` (`modelCall` with the stall watchdog), `anthropic` (Messages API, adaptive thinking, caching), `openai` (Responses API, store:false), `sse`, `usage`, `types` |
+| `core/security` (≈220) | `guard` (redaction, `untrusted()` fence, injection scan, `stripWrappers`), `sites` (`siteOf`, shared hosting list), `personal-data` (`personalDetailsIn`, profile values) |
+| `core/browser`, `core/web`, `core/docs`, `core/calc` | page reads and captures with time limits, `TrustedInput`; `read_url` (SSRF-guarded) and keyless search; PDF/DOCX text; the calculator (math.js + nerdamer, `scanCurve`) |
+| `core/storage/schema.ts` | every chrome.storage key and its type; `readLocal()` |
+| `assistant` (≈1,700) | `turn` (one chat turn, tool loop), `routing`, `prompt`, `tools` (chat tools), `review/` (math double-check: `parse`, `check`, `review`), `memory/` (memories, documents, Markdown export/import), `skills`, `session` (pinned notes, end-of-chat reflection), `profile-core` |
+| `agent` (≈1,900) | `loop/run` (the loop, budgets, nudges), `loop/plan`, `loop/tab-group`, `perception/capture` + `format` (full or change-only snapshots), `actions/run-tool` (gates then action), `actions/input` (page events or debugger), `actions/describe`, `actions/replay`, `safety/gates`, `skills/shortcuts` + `site-notes`, `tools` (tool schemas), `prompt`, `page-calls`, `types` |
+| `page` (≈850) | `snapshot`, `act`, `webmcp`, `read`, `region`, `replace-selection`, `leave-prompt`: self-contained, checked by `scripts/check-build.mjs` |
+| `ui` (≈2,700) | `sidepanel/` (entry + state, `markdown`, `messages`, `chats`, `agent-card`, `notify`, `icons`), `profile/`, `options/`, `evals/`, `mic/`, `shared/` |
 
 ### Main flows
 
-**Chat turn:** `sidepanel.send()` → `brain.runTurn()` builds system prompt + context block (date, tab, pinned notes, relevant memories, matched skill) → routes to a tier → `ai.modelCall()` streams text and summarized thinking → tool calls (calculate, web_search, read_url, read_page, remember, use_skill, operate_browser) → for math: `reviewAnswer()` (independent checker; code compares objective/residuals; completeness check; tie-break on the strongest model) → render, save, refresh pinned notes.
+**Chat turn:** `ui/sidepanel` `send()` → `assistant/turn` `runTurn()` builds system prompt + context block (date, tab, pinned notes, relevant memories, matched skill) → routes to a tier (`assistant/routing`) → `core/llm` `modelCall()` streams text and summarized thinking → tool calls (calculate, web_search, read_url, read_page, remember, use_skill, operate_browser) → for math: `reviewAnswer()` (independent checker; code compares objective/residuals; completeness check; tie-break on the strongest model) → render, save, refresh pinned notes.
 
-**Agent run:** `sidepanel.sendAgent()` passes the chat history (fenced) → `agent.runAgent()`:
+**Agent run:** `ui/sidepanel` `sendAgent()` passes the chat history (fenced) → `ui/sidepanel/agent-card` `runAgentCard()` → `agent/loop/run` `runAgent()`:
 1. Snapshot (`captureTab`, all frames) → `formatSnapshot` (full, or only changes since the last full one; repeated buttons grouped; site tools, shortcuts and notes; blocked frames; hidden traps).
 2. Model (smart tier, parallel tool calls allowed) → tool calls.
 3. `runTool` → gates in order: never-act sites → site re-check (tab moved?) → personal-data sharing check (fast model) → per-tool approvals (final actions, uploads, risky URLs, off-plan sites) → action via CDP (trusted) or page events (fallback) → snapshot.
@@ -55,11 +46,12 @@ All side-panel scripts share one global scope (plain `<script>` tags, no modules
 **Learning:** end-of-chat reflection writes memories and skills (never from web content); agent runs compile shortcuts.
 
 ### Storage (`chrome.storage.local`)
-Settings fields (see `DEFAULT_SETTINGS`), `profile`, `memories`, `skills`, `adapters` (shortcuts), `siteNotes`, `chatIndex` + `chat:<id>`, `documents`, `applications`, `usage`, `evalRuns`, `userModel`. Session storage: `pending` (context-menu hand-off).
+All keys and their types: `src/core/storage/schema.ts`. Settings fields (`DEFAULT_SETTINGS`), `profile`, `applications`, `memories`, `docIndex` + `doc:<id>`, `skills`, `userModel`, `adapters` (shortcuts), `siteNotes`, `chatIndex` + `chat:<id>`, `usage`, `evalRuns`. Session storage: `pending` (context-menu hand-off).
 
 ### Tests
-- `tests/*-test.js`: jsdom suites that load the real extension files into a fake window with fake `chrome.*` and fake model streams (about 530 checks).
-- `tests/real-chrome-test.js`: Playwright launches Chromium with the real extension, serves local test pages, fakes the model API at the network layer, and checks real CSP, real debugger input, tab groups, and so on (about 54 checks). It asserts nothing reaches outside servers.
+- `tests/jsdom/*-test.js`: jsdom suites that load test bundles of the same modules into a fake window with fake `chrome.*` and fake model streams (about 580 checks; ADR-006). `prompts-test` pins every prompt and tool definition.
+- `tests/unit/*.test.ts`: Vitest unit tests on the TypeScript modules.
+- `tests/chrome/real-chrome-test.js`: Playwright launches Chromium with the built extension (`dist/`), serves local test pages, fakes the model API at the network layer, and checks real CSP, real debugger input, tab groups, the fixed extension ID, and so on (about 56 checks). It asserts nothing reaches outside servers.
 - Fixtures reproduce real sites (`fixtures/airline.html` = turkishairlines.com booking form).
 - Missing: a benchmark on **real** sites with a **real** model, and run traces from real use.
 
@@ -73,7 +65,7 @@ Settings fields (see `DEFAULT_SETTINGS`), `profile`, `memories`, `skills`, `adap
    - Rules ("use ids", "deal with the pop-up first", "don't repeat a failing action") live in the prompt, and the model ignores them under pressure.
 2. **No observability.** A failed real run leaves only a list of step titles. Debugging is guesswork.
 3. **Tests prove the fixtures, not reality.** Every version passed its suites and still failed on real sites.
-4. **Codebase shape.** One global scope, no types, `sidepanel.js` and `agent.js` over 1,000 lines each, prompt text mixed with logic.
+4. **Codebase shape** (fixed by the migration: modules, strict TypeScript, files split by concern; UI code is still loosely typed, ADR-008).
 5. **The agent lives in the panel.** Close the panel and the run dies; nothing can run on a schedule (Phase 4 needs the service worker or an offscreen document).
 6. **Cost.** Long runs with screenshots on the smart model can cost $0.50 to $2; at $10/month that's few runs.
 
@@ -116,23 +108,24 @@ tests/
 ### Agent v2 in one paragraph
 Each step, perception produces one observation: the visible part of the page as a list of elements with stable ids, names from Chrome's accessibility tree, state, and position, with dialogs and pop-ups first, plus a screenshot with the same ids drawn on it. The executor model answers with actions on ids only. The action layer checks preconditions, performs the action with real input, waits for the page to settle, and reports what changed. Code, not the prompt, enforces policies: a pop-up blocking the target is handled first; the same failing action twice triggers a replan by the planner model; coordinate clicks are allowed only on a zoomed crop and only after id-based actions fail. Every step is written to the trace.
 
-### Open decisions (write these up as ADRs in docs/adr/)
-- **ADR-001: build our own agent core, or fork Nanobrowser** (Apache-2.0 Chrome extension agent: TypeScript, WXT, chrome.debugger, planner/navigator, multi-provider). Run the same 10 benchmark tasks on both; adopt their core if clearly better, and put Sidekick's personal layer (profile, memory, homework, deadlines, applications) on top.
-- **ADR-002: build tooling.** WXT (extension framework on Vite: manifest generation, HMR, multiple entry points) vs. plain Vite + a manifest plugin. Leaning WXT.
-- **ADR-003: perception source.** CDP accessibility tree + DOMSnapshot (needs the debugger attached; shows Chrome's yellow "debugging" bar) vs. an improved in-page walker (no bar, but no cross-origin frames). Likely CDP with the in-page walker as fallback.
-- **ADR-004: UI.** Keep vanilla TS DOM code vs. move the side panel to React (the user knows React; the current UI works).
+### Decisions (docs/adr/)
+- **ADR-001 (open): build our own agent core, or fork Nanobrowser** (Apache-2.0 Chrome extension agent: TypeScript, chrome.debugger, planner/navigator, multi-provider). Run the same 10 benchmark tasks on both; adopt their core if clearly better, and put Sidekick's personal layer (profile, memory, homework, deadlines, applications) on top.
+- **ADR-002: build tooling.** Decided: plain Vite with a hand-written manifest (not WXT).
+- **ADR-003 (open): perception source.** CDP accessibility tree + DOMSnapshot (needs the debugger attached; shows Chrome's yellow "debugging" bar) vs. an improved in-page walker (no bar, but no cross-origin frames). Likely CDP with the in-page walker as fallback.
+- **ADR-004: UI.** Decided: keep vanilla TS DOM code for now.
+- **ADR-005 to 008** (migration): page functions stay `func`-injected and checked; test bundles; fixed extension key; strictness rules.
 
 ---
 
-## 4. Migration plan (behavior-preserving)
+## 4. Migration (done, 2026-10-29)
 
-Goal: the same extension, organized and typed, with all tests green after every step. **No new features during the migration.**
+The same extension, organized and typed, with all tests green after every step (details and deviations: `docs/MIGRATION_PLAN.md`, decisions: `docs/adr/`).
 
-0. **Baseline.** `npm install`, `npm test` (about 530 checks green), `npm run test:chrome` (54). Commit the baseline (local git).
-1. **Tooling.** Add TypeScript (`strict`, `allowJs` during the transition), the bundler (ADR-002), ESLint/Prettier, a build to `dist/` that Chrome can load. CI script: typecheck + unit + e2e.
-2. **Make the tests target the build.** The jsdom suites concatenate source files today (`tests/helpers.js loadScripts`). Point them at bundled output (or expose a test entry that sets the same globals), so they keep working while files move. Then port suites to Vitest gradually.
-3. **Modules.** Replace the shared global scope with explicit imports/exports. Move files into `src/` following the target layout. Keep names and behavior.
-4. **Convert to `.ts`**, leaves first: guard, profile-core, adapters, calc, memory, skills, session, web, docs, screen, ai, cdp, page scripts, agent, brain, sidepanel. Add types for storage (schema), messages, model calls, tool calls, snapshots.
-5. **Page scripts.** Bundle `page-agent` and friends as separate self-contained scripts; inject with `files: [...]`. Keep `world: "MAIN"` where it's used.
-6. **Docs.** Update this file, CLAUDE.md, tests/README.md. Record decisions in `docs/adr/`.
-7. **Then (separate project):** trace recorder → real-site benchmark → agent v2 (ADR-001 decides build vs. fork).
+1. ES modules + Vite build to `dist/`, test bundles for the jsdom suites, fixed extension ID.
+2. Folders (`src/`, `public/`, `tests/jsdom|chrome|unit`).
+3. Injected functions moved to `src/page/`, checked on every build.
+4. TypeScript, `strict`, types for storage, model calls, tool calls, page snapshots and actions, agent state, chat turns.
+5. Big files split by concern (agent, brain, side panel, adapters, model layer); prompts pinned by `prompts-test`.
+6. Lint (typescript-eslint + restricted globals), Vitest, `npm run check`.
+
+Next (separate project): trace recorder → real-site benchmark → agent v2 (ADR-001 decides build vs. fork).

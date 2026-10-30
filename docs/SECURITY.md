@@ -46,6 +46,6 @@ Sidekick holds your API key, profile, resume, memories and chats, reads every pa
 
 ## How it's tested
 
-- `security-test.js` (29 checks): attacks on each boundary above.
-- `hardening-test.js` (10): 400 fuzzed hostile replies, 40 fuzzed hostile pages, property tests on the double-check, stop mid-check, stress, accessibility.
-- `real-chrome-test.js` (55): the real extension in real Chromium (MV3 CSP, chrome.scripting, chrome.debugger, content scripts) against a local web server; also asserts that nothing reaches any outside server during the run.
+- `tests/jsdom/security-test.js` (29 checks): attacks on each boundary above. `tests/unit/security.test.ts`: the same rules as plain functions.
+- `tests/jsdom/hardening-test.js` (10): 400 fuzzed hostile replies, 40 fuzzed hostile pages, property tests on the double-check, stop mid-check, stress, accessibility.
+- `tests/chrome/real-chrome-test.js` (56): the real extension in real Chromium (MV3 CSP, chrome.scripting, chrome.debugger, content scripts) against a local web server; also asserts that nothing reaches any outside server during the run.
