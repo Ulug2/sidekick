@@ -10,8 +10,68 @@ import { captureScreen, readPageText, readProblemText } from "../core/browser/sc
 import { getUserModel } from "./session.js";
 import { getSkills, markSkillUsed, skillFor, skillsIndexText } from "./skills.js";
 import { fetchUrlText, webSearchFallback } from "../core/web/web.js";
+import type { Citation, ToolCall, ToolDef, ToolResult, Tier, Usage, ModelMessage, Settings, Provider } from "../core/llm/ai.js";
+import type { Memory, SearchHit } from "./memory/memory.js";
+import type { Skill } from "./skills.js";
+import type { Profile } from "./profile-core.js";
 
-export const PERSONALITIES = {
+// ---------- types ----------
+export interface Route { tier: Tier; reason: string }
+// Long-term memory as the chat sees it (the eval runner passes a temporary one).
+export interface ChatMemoryStore {
+  add(text: string, extra?: Record<string, any>): Promise<{ memory: Memory; updated: boolean }>;
+  remove(shortId: string): Promise<Memory | null>;
+  search(q: string, scopes?: string[]): Promise<SearchHit[]>;
+  relevant(q: string): Promise<Memory[]>;
+  standing(): Promise<Memory[]>;
+  upcoming(): Promise<Memory[]>;
+  skills?: () => Promise<Skill[]>;
+  about(): Promise<string>;
+}
+export interface ToolChip { done(summary?: string): void; fail(msg: string): void }
+// How runTurn talks to the panel (or the eval runner).
+export interface TurnUI {
+  signal?: AbortSignal;
+  tier?: Tier;
+  previousTier?: Tier | null;
+  tabInfo?: { title?: string; url?: string } | null;
+  hasTab?: boolean;
+  screenFromTab?: boolean;
+  sessionNotes?: string[];
+  memoryStore?: ChatMemoryStore;
+  runAgent?(task: string): Promise<string>;
+  onText?(chunk: string): void;
+  onThinking?(text: string, label?: string): void;
+  onStatus?(text: string): void;
+  onHold?(): void;
+  onToolStart?(name: string, args: any): ToolChip | undefined;
+  onMemory?(event: { type: "saved" | "forgot"; memory: Memory; updated?: boolean }): void;
+}
+export interface TurnInput { text: string; images?: string[]; attachments?: { kind: string }[]; quickAction?: string }
+export interface ToolTrace { name: string; args: any; result: string; ms?: number; error?: boolean }
+export interface RoundTrace { ms: number; model: string; usage: Usage; stop: string | null; tools: ToolTrace[] }
+// A setup block, parsed (see SETUP_FORMAT).
+export type Values = Record<string, number>;
+export interface Setup { raw: string; variables: string; constraints: string[]; answerText: string; type: "min" | "max" | "equations" | "other"; objective?: string; equations?: string[]; values: Values | null }
+export interface Check { ok: boolean | null; evidence: string }
+export interface Arbitration { decision: "keep" | "replace" | "undecided"; evidence: string }
+export interface Verification {
+  verdict: string; reason: string; tools: ToolTrace[]; model: string;
+  outcome?: string; corrected?: boolean; evidence?: string;
+  selfCheck?: Check; checkerSelfCheck?: Check; arbitration?: Arbitration;
+  tieBreak?: { model: string; answer: string; tools: ToolTrace[] } | null;
+  vote?: { original: boolean | null; doubleCheck: boolean | null; third: boolean | null };
+}
+export interface Review { kind: "corrected" | "conflict"; original?: string; reason: string; evidence?: string; by?: string; alternatives?: { label: string; text: string }[] }
+export interface ReviewResult { text: string; review?: Review; verification: Verification; chip: { ok?: string; fixed?: string; warn?: string } }
+export interface TurnTrace { route: Route & { model: string; effort: string }; rounds: RoundTrace[]; usage: Usage; started: number; ms?: number; verification?: Verification }
+export interface TurnResult { text: string; citations: Citation[]; trace: TurnTrace; corrected: boolean; review: Review | null; held: boolean }
+export interface ChatToolEnv { memory: ChatMemoryStore; onMemory?: TurnUI["onMemory"]; runAgent?: (task: string) => Promise<string>; signal?: AbortSignal; addCitations(list: Citation[]): void }
+export interface ChatToolResult { text: string; summary?: string; images?: string[]; isError?: boolean }
+// An answer to compare: its final values (if any) and its text without the setup block.
+interface Answer { values?: Values | null; text: string }
+
+export const PERSONALITIES: Record<string, string> = {
   concise: "Terse and efficient. Give the answer in as few words as it takes, no pleasantries. Expand only when asked.",
   balanced: "Calm, capable and direct, with quiet warmth, like a trusted chief of staff who happens to be brilliant. Confident when you know, candid when you don't.",
   warm: "Friendly, encouraging and supportive, while staying honest and efficient. Celebrate progress briefly; never gush.",
@@ -23,7 +83,7 @@ export const PERSONALITIES = {
 // Cheap fast model for everyday messages; the smart model for anything that needs real
 // reasoning. Local heuristics, so routing itself costs nothing.
 
-export const SMART_SIGNALS = [
+export const SMART_SIGNALS: [RegExp, string][] = [
   [/\b(derivative|differentiat|integra(l|te)|limit|solve|equation|proof|prove|theorem|lemma|matrix|matrices|eigen|determinant|probabilit|statistic|variance|regression|calculus|differential|optimi[sz]|discriminant|gradient|hessian|series|converge|critical point|extrema|maxim|minim|polynomial|logarithm|trig|vector|physics|chemistry)\w*/i, "math or science"],
   [/[∫∑∏√π≤≥≠∞∂Δ]|\\(frac|int|sum|lim|sqrt)|\b[a-z]\s*\^\s*\d|\d\s*[\+\-\*\/\^]\s*\d|\bf\s*\(\s*x/i, "math notation"],
   [/```|\b(function|class|def|const|import|SELECT|typescript|javascript|python|java|c\+\+|sql|regex|algorithm|big[- ]?o|complexity|stack ?trace|exception|segfault|compile|refactor|debug)\b/i, "code"],
@@ -31,7 +91,7 @@ export const SMART_SIGNALS = [
 ];
 export const FAST_ONLY = /^(hi|hey|hello|yo|thanks?|thank you|thx|ok(ay)?|cool|nice|great|good (morning|afternoon|evening|night)|bye|lol|haha)[\s!.?]*$/i;
 
-export function routeMessage(text, { attachments = [], previousTier, quickAction } = {}) {
+export function routeMessage(text: string, { attachments = [], previousTier, quickAction }: { attachments?: { kind: string }[]; previousTier?: Tier | null; quickAction?: string } = {}): Route {
   const t = String(text || "").trim();
   if (FAST_ONLY.test(t)) return { tier: "fast", reason: "small talk" };
   if (quickAction && ["rewrite", "shorten", "grammar"].includes(quickAction)) return { tier: "fast", reason: "text edit" };
@@ -45,8 +105,8 @@ export function routeMessage(text, { attachments = [], previousTier, quickAction
 
 // ---------- system prompt ----------
 
-export async function buildSystemPrompt(s, { model, provider, hasAgent, builtInSearch, memoryStore }) {
-  const profile = typeof getProfile === "function" ? await getProfile() : {};
+export async function buildSystemPrompt(s: Settings, { model, provider, hasAgent, builtInSearch, memoryStore }: { model: string; provider: Provider; hasAgent: boolean; builtInSearch?: boolean; memoryStore?: ChatMemoryStore }): Promise<string> {
+  const profile = typeof getProfile === "function" ? await getProfile() : ({} as Profile);
   const userModel = memoryStore?.about ? await memoryStore.about() : (await getUserModel()).text;
   const standing = await (memoryStore?.standing || standingMemories)();
   const skills = await (memoryStore?.skills || getSkills)();
@@ -136,7 +196,7 @@ ${skills.length ? `\n## Your skills (procedures you learned with ${userName}; wh
 
 // Per-message context: time, open tab, relevant memories. Prepended to the latest message
 // (not the system prompt) so the system prompt stays identical and cacheable.
-export async function buildTurnContext(query, { tabInfo, memoryStore, sessionNotes = [] } = {}) {
+export async function buildTurnContext(query: string, { tabInfo, memoryStore, sessionNotes = [] }: { tabInfo?: TurnUI["tabInfo"]; memoryStore?: ChatMemoryStore; sessionNotes?: string[] } = {}): Promise<string> {
   const now = new Date();
   const lines = [
     `Now: ${now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}, ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`
@@ -159,8 +219,8 @@ export async function buildTurnContext(query, { tabInfo, memoryStore, sessionNot
 
 // ---------- tools ----------
 
-export function chatTools({ provider, webSearchServer, hasTab, hasAgent }) {
-  const tools = [
+export function chatTools({ provider, webSearchServer, hasTab, hasAgent }: { provider?: Provider; webSearchServer?: boolean; hasTab?: boolean; hasAgent?: boolean }): ToolDef[] {
+  const tools: ToolDef[] = [
     {
       name: "calculate",
       description: "Exact math engine (math.js + computer algebra). Use for any non-trivial arithmetic, percentages, money, unit conversion, statistics, algebra and calculus. One statement per line; variables and functions persist across lines. Symbolic helpers take plain math without quotes: diff(expr, x[, n]), integrate(expr, x), defint(expr, x, a, b), limit(expr, x, value) (inf for infinity), solve(expr_or_equation, x), solveSystem([eq1, eq2]), factor, expand, sum(expr, k, a, b). Numeric methods work on anything (square roots, trig, logs): minimize(f, [x, y][, [x0, y0]][, [[xlo, xhi], [ylo, yhi]]]), maximize(...), nsolve(equation, x[, guess][, [lo, hi]]), nsolveSystem([eq1, eq2], [x, y][, [x0, y0]]). solve and solveSystem fall back to numeric automatically. scanCurve(f, g = c, x, y): walks along a 2-variable constraint curve (near and very far) and reports the largest/smallest f and whether each is reached or only approached (DNE). Always write multiplication explicitly (2*x, x*(20 - 2*x)). Returns each line's result.",
@@ -227,9 +287,9 @@ export function chatTools({ provider, webSearchServer, hasTab, hasAgent }) {
   return tools;
 }
 
-export const clip = (s, n = 400) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n) + "…" : s; };
+export const clip = (s: unknown, n = 400): string => { const t = String(s ?? ""); return t.length > n ? t.slice(0, n) + "…" : t; };
 
-export async function executeChatTool(call, env) {
+export async function executeChatTool(call: ToolCall, env: ChatToolEnv): Promise<ChatToolResult> {
   const a = call.args || {};
   switch (call.name) {
     case "calculate": {
@@ -287,7 +347,7 @@ export async function executeChatTool(call, env) {
       return { text: `Forgot: ${removed.text}`, summary: removed.text };
     }
     case "operate_browser": {
-      const summary = await env.runAgent(String(a.task || ""));
+      const summary = await env.runAgent!(String(a.task || ""));
       return { text: `Agent finished. Its report:\n${summary}`, summary: "Done" };
     }
     default:
@@ -296,7 +356,7 @@ export async function executeChatTool(call, env) {
 }
 
 // Real memory store (the eval runner swaps in a temporary one).
-export const realMemoryStore = {
+export const realMemoryStore: ChatMemoryStore = {
   add: (text, extra = {}) => addMemory(text, "chat", extra.kind || "fact", extra),
   remove: async shortId => {
     const m = (await getMemories()).find(x => x.id.startsWith(shortId.replace(/[\[\]\s]/g, "")));
@@ -314,9 +374,9 @@ export const realMemoryStore = {
 // pinned notes, so the context window never overflows. Always starts on a user message.
 export const HISTORY_MAX_MESSAGES = 40;
 export const HISTORY_MAX_CHARS = 120000;
-export function capHistory(past) {
+export function capHistory(past: ModelMessage[]): ModelMessage[] {
   let start = Math.max(0, past.length - HISTORY_MAX_MESSAGES);
-  const size = i => past.slice(i).reduce((n, m) => n + (m.text || "").length, 0);
+  const size = (i: number) => past.slice(i).reduce((n, m) => n + ((m as { text?: string }).text || "").length, 0);
   while (start < past.length - 2 && size(start) > HISTORY_MAX_CHARS) start += 2;
   while (start < past.length && past[start].role !== "user") start++;
   if (start === 0) return past;
@@ -343,7 +403,7 @@ export const JUST_ANSWER = /\b(just|only)\s+(give\s+(me\s+)?)?(the\s+|an?\s+)?(f
 // needed") never overrides an answer.
 export const HEDGE = /\b(fail(ed|s|ure)?\b|unable\b|could ?n['o]?t\b|can(no|')t (compute|solve|find|determine|verify|confirm)|no (real |valid |consistent )?solutions? (was |were )?(found|exists?)|not (sure|certain|confident)|uncertain|unclear|might be (needed|wrong|required)|may be (needed|required)|re-?evaluat)/i;
 
-export function isMathAsk({ route, userText, images = [], reply = "" }) {
+export function isMathAsk({ route, userText, images = [], reply = "" }: { route: Route; userText: string; images?: string[]; reply?: string }) {
   const text = String(userText || "");
   const mathRoute = route.reason === "math or science" || route.reason === "math notation" || route.reason === "math on screen";
   const problemOnScreen = images.length > 0 && (SOLVE_WORDS.test(text) || (text.length < 120 && /\b(again|this|it|that|retry|redo)\b/i.test(text)));
@@ -351,20 +411,20 @@ export function isMathAsk({ route, userText, images = [], reply = "" }) {
   return { mathRoute, problemOnScreen, any: mathRoute || problemOnScreen || mathyAsk };
 }
 
-export function needsCheck({ route, userText, images = [], reply, usedCalc = false }) {
+export function needsCheck({ route, userText, images = [], reply, usedCalc = false }: { route: Route; userText: string; images?: string[]; reply: string; usedCalc?: boolean }): boolean {
   if (!reply || reply.length > 8000) return false;
   if (!(isMathAsk({ route, userText, images, reply }).any || usedCalc)) return false;
   const numeric = /\d|\$|\\(frac|sqrt)|√/.test(reply);
   return numeric || GAVE_UP.test(reply);
 }
 
-export function tagged(text, tag) {
+export function tagged(text: string, tag: string): string {
   const m = String(text).match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "i"));
   return m ? m[1].trim() : "";
 }
 
 // Exact verdict word: "incorrect" or "not correct" must never read as "correct".
-export function parseVerdict(text) {
+export function parseVerdict(text: string): "correct" | "incorrect" | "unsure" {
   const v = tagged(text, "verdict").toLowerCase().replace(/[^a-z ]/g, " ").trim();
   if (/\b(incorrect|wrong|not correct)\b/.test(v)) return "incorrect";
   if (/\b(unsure|uncertain|unknown|not sure)\b/.test(v)) return "unsure";
@@ -383,8 +443,8 @@ export function parseVerdict(text) {
 
 export const SETUP_FORMAT = "```setup\nvariables: x = what x means (units), y = …\ngoal: minimize <objective> | maximize <objective> | solve [equation 1, equation 2] | other\nconstraints: 0 <= x <= 10, … (or none)\nanswer: x = 2.5, y = 0.75\n```";
 
-export function splitTop(s) {
-  const out = []; let depth = 0, cur = "";
+export function splitTop(s: unknown): string[] {
+  const out: string[] = []; let depth = 0, cur = "";
   for (const c of String(s || "")) {
     if ("([{".includes(c)) depth++;
     if (")]}".includes(c)) depth--;
@@ -396,8 +456,8 @@ export function splitTop(s) {
 }
 
 // "x = 4.1295, y ≈ 1.2572" → { x: 4.1295, y: 1.2572 }. Null when a name repeats (several solutions).
-export function parseValues(text) {
-  const vals = {};
+export function parseValues(text: unknown): Values | null {
+  const vals: Values = {};
   for (const m of String(text || "").replace(/[−–]/g, "-").matchAll(/(?:^|[^\w.])([A-Za-z][A-Za-z0-9_]*)\s*(?:=|≈|\\approx)\s*\$?\s*(-?\d+(?:\.\d+)?(?:e-?\d+)?)/g)) {
     if (m[1] in vals) return null;
     vals[m[1]] = Number(m[2]);
@@ -405,23 +465,24 @@ export function parseValues(text) {
   return Object.keys(vals).length ? vals : null;
 }
 
-export function stripSetup(text) {
+export function stripSetup(text: unknown): string {
   return String(text || "").replace(/```setup[\s\S]*?(```|$)/gi, "").trim();
 }
 
-export function parseSetup(text) {
+export function parseSetup(text: unknown): Setup | null {
   const blocks = [...String(text || "").matchAll(/```setup[^\n]*\n([\s\S]*?)```/gi)];
   if (!blocks.length) return null;
-  const body = blocks.at(-1)[1];
-  const field = k => ((body.match(new RegExp(`^\\s*${k}\\s*:\\s*(.+)$`, "im")) || [])[1] || "").trim();
+  const body = blocks.at(-1)![1];
+  const field = (k: string) => ((body.match(new RegExp(`^\\s*${k}\\s*:\\s*(.+)$`, "im")) || [])[1] || "").trim();
   const goal = field("goal");
   const constraints = field("constraints");
-  const setup = {
+  const setup: Setup = {
     raw: body.trim(),
     variables: field("variables"),
     constraints: /^(none|n\/a|-)?$/i.test(constraints) ? [] : splitTop(constraints),
     answerText: field("answer"),
-    type: "other"
+    type: "other",
+    values: null
   };
   let m;
   if ((m = goal.match(/^(minimi[sz]e|maximi[sz]e|min|max)\b\s*:?\s*(.+)$/i))) {
@@ -437,7 +498,7 @@ export function parseSetup(text) {
 
 // The final numbers of a reply when it has no setup block: look at its last lines only, so
 // intermediate values in the working don't count.
-export function answerValues(text) {
+export function answerValues(text: string): Values | null {
   const lines = stripSetup(text).split("\n").map(l => l.trim()).filter(Boolean);
   for (let k = 1; k <= Math.min(4, lines.length); k++) {
     const v = parseValues(lines.slice(-k).join("\n"));
@@ -446,21 +507,21 @@ export function answerValues(text) {
   return null;
 }
 
-export const close = (a, b, rel = 5e-3) => Math.abs(a - b) <= rel * Math.max(1, Math.abs(a), Math.abs(b));
+export const close = (a: number, b: number, rel = 5e-3) => Math.abs(a - b) <= rel * Math.max(1, Math.abs(a), Math.abs(b));
 
-export function numbersIn(text) {
+export function numbersIn(text: string): number[] {
   return (stripSetup(text).replace(/[−–]/g, "-").match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
 }
-export const plain = t => stripSetup(t).replace(/[\s$*`\\{}]/g, "").replace(/[−–]/g, "-").toLowerCase();
+export const plain = (t: string) => stripSetup(t).replace(/[\s$*`\\{}]/g, "").replace(/[−–]/g, "-").toLowerCase();
 
 // LaTeX-ish math → something math.js can evaluate: \sqrt{10} → sqrt(10), \frac{a}{b} → (a)/(b).
-export function delatex(t) {
+export function delatex(t: string): string {
   let s = String(t).replace(/\$/g, "").replace(/\\left|\\right|\\,|\\!/g, "").replace(/\\cdot|\\times/g, "*").replace(/\\pi/g, "pi");
   for (let k = 0; k < 4; k++) s = s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, "(($1)/($2))").replace(/\\sqrt\{([^{}]*)\}/g, "sqrt($1)");
   return calcEngine.normalize ? calcEngine.normalize(s) : s;
 }
-export const numKey = v => (Math.abs(v) < 1e-9 ? "0" : Number(v.toPrecision(3)).toString());
-export function evalNum(expr) {
+export const numKey = (v: number) => (Math.abs(v) < 1e-9 ? "0" : Number(v.toPrecision(3)).toString());
+export function evalNum(expr: string): number | null {
   try {
     const v = window.math.evaluate(expr);
     const n = typeof v === "number" ? v : v && typeof v.re === "number" && Math.abs(v.im || 0) < 1e-12 ? v.re : NaN;
@@ -468,15 +529,15 @@ export function evalNum(expr) {
   } catch { return null; }
 }
 // Points and tuples in an answer, e.g. "(3, 1, \sqrt{10}) and (3, 1, -\sqrt{10})" → {"3,1,3.16", "3,1,-3.16"}.
-export function tuplesIn(text) {
-  const set = new Set();
+export function tuplesIn(text: string): Set<string> {
+  const set = new Set<string>();
   if (!window.math) return set;
   const s = delatex(stripSetup(text));
   for (const m of s.matchAll(/\(((?:[^()]|\([^()]*\))*)\)/g)) {
     const parts = splitTop(m[1]);
     if (parts.length < 2) continue;
     const vals = parts.map(evalNum);
-    if (vals.every(v => v !== null)) set.add(vals.map(numKey).join(","));
+    if (vals.every(v => v !== null)) set.add((vals as number[]).map(numKey).join(","));
   }
   return set;
 }
@@ -484,11 +545,11 @@ export function tuplesIn(text) {
 // Do two final answers say the same thing? Values by name, else the same points, else the
 // same short list of numbers, else the same text. Points that only restate the question
 // (like the given point (6, 2, 0)) don't count.
-export function answersMatch(a, b, question = "") {
+export function answersMatch(a: Answer, b: Answer, question = ""): boolean {
   if (!a || !b) return false;
   if (a.values && b.values) {
     const ka = Object.keys(a.values).sort(), kb = Object.keys(b.values).sort();
-    if (ka.join() === kb.join()) return ka.every(k => close(a.values[k], b.values[k]));
+    if (ka.join() === kb.join()) return ka.every(k => close(a.values![k], b.values![k]));
   }
   const given = tuplesIn(question);
   const ta = [...tuplesIn(a.text)].filter(t => !given.has(t)), tb = [...tuplesIn(b.text)].filter(t => !given.has(t));
@@ -504,14 +565,14 @@ export function answersMatch(a, b, question = "") {
 
 // ---------- deciding with code, not with a model's opinion ----------
 
-export async function evalSafe(expr, values) {
+export async function evalSafe(expr: string, values: Values): Promise<any> {
   try {
     const v = await calcEngine.evaluate(expr, values);
     return typeof v === "number" && !Number.isFinite(v) ? NaN : v;
   } catch { return NaN; }
 }
 
-export async function feasible(constraints, values) {
+export async function feasible(constraints: string[], values: Values): Promise<boolean> {
   for (const c of constraints) {
     const ok = await evalSafe(c, values);
     if (ok === false) return false;
@@ -519,7 +580,7 @@ export async function feasible(constraints, values) {
   return true;
 }
 
-export async function residualsOk(equations, values) {
+export async function residualsOk(equations: string[], values: Values): Promise<boolean | null> {
   for (const eq of equations) {
     const r = await evalSafe(eq, values);
     if (typeof r === "boolean") { if (!r) return false; continue; } // a condition like x > 0
@@ -530,15 +591,15 @@ export async function residualsOk(equations, values) {
   return true;
 }
 
-export const fmtNum = v => (typeof v === "number" ? (Math.abs(v) >= 1e4 || Math.abs(v) < 1e-3 ? v.toPrecision(6) : String(+v.toFixed(4))) : String(v));
-export const fmtPoint = vals => Object.entries(vals).map(([k, v]) => `${k} = ${fmtNum(v)}`).join(", ");
+export const fmtNum = (v: unknown): string => (typeof v === "number" ? (Math.abs(v) >= 1e4 || Math.abs(v) < 1e-3 ? v.toPrecision(6) : String(+v.toFixed(4))) : String(v));
+export const fmtPoint = (vals: Values) => Object.entries(vals).map(([k, v]) => `${k} = ${fmtNum(v)}`).join(", ");
 
 // Compares the original answer (p) with the checker's (c).
 // Returns { decision: "keep" | "replace" | "undecided", evidence }.
 // "replace" needs decisive evidence under BOTH setups (or a setup they agree on); a checker's
 // own setup alone can only confirm the original, never overturn it.
-export async function arbitrate({ pSetup, cSetup, pValues, cValues }) {
-  const setups = [pSetup, cSetup].filter(st => st && st.type !== "other");
+export async function arbitrate({ pSetup, cSetup, pValues, cValues }: { pSetup: Setup | null; cSetup: Setup | null; pValues?: Values | null; cValues?: Values | null }): Promise<Arbitration> {
+  const setups = [pSetup, cSetup].filter((st): st is Setup => !!st && st.type !== "other");
   if (!pValues || !cValues || !setups.length) return { decision: "undecided", evidence: "no comparable numeric answers" };
   const keys = Object.keys(pValues).sort().join();
   if (keys !== Object.keys(cValues).sort().join()) return { decision: "undecided", evidence: "the answers use different variables" };
@@ -547,8 +608,8 @@ export async function arbitrate({ pSetup, cSetup, pValues, cValues }) {
   // Optimization: evaluate every stated objective at both answers.
   const opt = setups.filter(st => (st.type === "min" || st.type === "max") && st.objective);
   if (opt.length && opt.every(st => st.type === opt[0].type)) {
-    const vals = [];
-    for (const st of opt) vals.push({ p: await evalSafe(st.objective, pValues), c: await evalSafe(st.objective, cValues) });
+    const vals: { p: any; c: any }[] = [];
+    for (const st of opt) vals.push({ p: await evalSafe(st.objective!, pValues), c: await evalSafe(st.objective!, cValues) });
     if (vals.every(v => typeof v.p === "number" && typeof v.c === "number" && !Number.isNaN(v.p) && !Number.isNaN(v.c))) {
       // Two setups only count as one model if they give the same objective values at both points.
       const agree = vals.every(v => close(v.p, vals[0].p, 1e-6) && close(v.c, vals[0].c, 1e-6));
@@ -571,7 +632,7 @@ export async function arbitrate({ pSetup, cSetup, pValues, cValues }) {
   // Equations: plug both answers into every stated system.
   const systems = setups.filter(st => st.type === "equations" && st.equations?.length);
   if (systems.length) {
-    const eqs = systems.flatMap(st => st.equations);
+    const eqs = systems.flatMap(st => st.equations!);
     const pOk = await residualsOk(eqs, pValues), cOk = await residualsOk(eqs, cValues);
     if (pOk === true) return { decision: "keep", evidence: `the original (${fmtPoint(pValues)}) satisfies the equations` };
     if (pOk === false && cOk === true && both) return { decision: "replace", evidence: `the original (${fmtPoint(pValues)}) doesn't satisfy the equations; the double-check's (${fmtPoint(cValues)}) does` };
@@ -583,7 +644,7 @@ export async function arbitrate({ pSetup, cSetup, pValues, cValues }) {
 // Does an answer pass its OWN setup's check? For optimization: it's feasible and no small step
 // in any variable makes the objective better (a real local optimum). For equations: plugging it
 // in works. Returns { ok: true | false | null (can't tell), evidence }.
-export async function confirmAnswer(setup, values) {
+export async function confirmAnswer(setup: Setup | null | undefined, values: Values | null | undefined): Promise<Check> {
   if (!setup || !values || setup.type === "other") return { ok: null, evidence: "" };
   const vars = Object.keys(values);
   if (setup.type === "equations") {
@@ -613,11 +674,11 @@ export async function confirmAnswer(setup, values) {
 // A question asking for both the maximum and the minimum, answered with the same value for both
 // (or only one of them, with no DNE) is almost always a Lagrange candidate reported twice.
 // Returns a reason string, or "".
-export function extremaProblem(question, answer) {
+export function extremaProblem(question: string, answer: string): string {
   const q = String(question || ""), a = stripSetup(answer).replace(/[*$`\\]/g, " ");
   if (!/\bmax(imum|ima)?\b[\s\S]*\bmin(imum|ima)?\b|\bmin(imum|ima)?\b[\s\S]*\bmax(imum|ima)?\b/i.test(q)) return "";
   if (/\bDNE\b|does not exist|doesn['’]t exist|not attained|no (maximum|minimum)/i.test(a)) return "";
-  const num = re => { const m = a.match(re); return m ? Number(m[1].replace(/[−–]/g, "-")) : null; };
+  const num = (re: RegExp) => { const m = a.match(re); return m ? Number(m[1].replace(/[−–]/g, "-")) : null; };
   const mx = num(/\bmax(?:imum)?(?:\s+value)?\b[^0-9−–-]{0,25}([−–-]?\d+(?:\.\d+)?)/i);
   const mn = num(/\bmin(?:imum)?(?:\s+value)?\b[^0-9−–-]{0,25}([−–-]?\d+(?:\.\d+)?)/i);
   if (mx !== null && mn !== null && close(mx, mn, 1e-9)) return `the answer gives the same value (${fmtNum(mx)}) for the maximum and the minimum; one of them probably doesn't exist (DNE)`;
@@ -628,30 +689,30 @@ export function extremaProblem(question, answer) {
 
 // ---------- the solver loops (checker and tie-breaker) ----------
 
-export function problemPrompt({ question, images, context = [], notes = [] }) {
-  const prior = context.slice(-4).map(m => `${m.role === "user" ? "User" : "Assistant"}: ${String(m.text || "").slice(0, 1500)}`).join("\n\n");
+export function problemPrompt({ question, images, context = [], notes = [] }: { question: string; images: string[]; context?: ModelMessage[]; notes?: string[] }): string {
+  const prior = context.slice(-4).map(m => `${m.role === "user" ? "User" : "Assistant"}: ${String((m as { text?: string }).text || "").slice(0, 1500)}`).join("\n\n");
   return `${prior ? `Earlier in the conversation (for context):\n${prior}\n\n` : ""}${notes.length ? `Pinned notes for this chat:\n${notes.map(n => `- ${n}`).join("\n")}\n\n` : ""}The user's request${images.length ? " (the problem may be in the attached image; any page text below is the same problem as text)" : ""}:
 """
 ${question}
 """`;
 }
 
-export async function solverLoop({ system, text, images = [], tier, model, signal, onThinking }) {
+export async function solverLoop({ system, text, images = [], tier, model, signal, onThinking }: { system: string; text: string; images?: string[]; tier: Tier; model?: string; signal?: AbortSignal; onThinking?: (t: string) => void }): Promise<{ text: string; tools: ToolTrace[]; model: string }> {
   const calcTool = chatTools({ hasTab: false, hasAgent: false, webSearchServer: true }).filter(t => t.name === "calculate");
-  const transcript = [{ role: "user", images, text }];
-  const env = { memory: realMemoryStore, addCitations() {}, signal };
-  const tools = [];
-  let out = "", model_ = model;
+  const transcript: ModelMessage[] = [{ role: "user", images, text }];
+  const env: ChatToolEnv = { memory: realMemoryStore, addCitations() {}, signal };
+  const tools: ToolTrace[] = [];
+  let out = "", model_ = model!;
   for (let round = 0; round < 8; round++) {
     if (round === 7) transcript.push({ role: "user", text: "(Stop calling tools now and give your final reply with the required block and tags.)" });
     const r = await modelCall({ tier, model, effort: "high", system, messages: transcript, tools: calcTool, signal, onThinking });
     out = r.text; model_ = r.model;
     if (!r.toolCalls.length || round === 7) break;
     transcript.push({ role: "assistant", text: r.text, toolCalls: r.toolCalls, raw: r.raw });
-    const results = [];
+    const results: ToolResult[] = [];
     for (const call of r.toolCalls) {
-      let res;
-      try { res = await executeChatTool(call, env); } catch (err) { if (err.name === "AbortError") throw err; res = { text: `Error: ${err.message}`, isError: true }; }
+      let res: ChatToolResult;
+      try { res = await executeChatTool(call, env); } catch (err: any) { if (err.name === "AbortError") throw err; res = { text: `Error: ${err.message}`, isError: true }; }
       results.push({ id: call.id, name: call.name, text: res.text, isError: res.isError });
       tools.push({ name: call.name, args: call.args, result: clip(res.text, 1500), error: !!res.isError || (/✗/.test(res.text || "") && !/→/.test(res.text || "")) });
     }
@@ -660,7 +721,7 @@ export async function solverLoop({ system, text, images = [], tier, model, signa
   return { text: out, tools, model: model_ };
 }
 
-export async function verifyAnswer({ question, images = [], context = [], answer, notes = [], signal, onThinking }) {
+export async function verifyAnswer({ question, images = [], context = [], answer, notes = [], signal, onThinking }: { question: string; images?: string[]; context?: ModelMessage[]; answer: string; notes?: string[]; signal?: AbortSignal; onThinking?: (t: string) => void }) {
   const text = `${problemPrompt({ question, images, context, notes })}
 
 Proposed answer:
@@ -690,13 +751,13 @@ ${SETUP_FORMAT}
     setup: parseSetup(r.text),
     tools: r.tools,
     model: r.model,
-    calcFailed: r.tools.length > 0 && r.tools.at(-1).error
+    calcFailed: r.tools.length > 0 && r.tools.at(-1)!.error
   };
 }
 
 // Third, independent solve on the strongest model. It never sees either earlier answer, so it
 // can't be anchored by them.
-export async function independentSolve({ question, images = [], context = [], notes = [], signal, onThinking }) {
+export async function independentSolve({ question, images = [], context = [], notes = [], signal, onThinking }: { question: string; images?: string[]; context?: ModelMessage[]; notes?: string[]; signal?: AbortSignal; onThinking?: (t: string) => void }) {
   const text = `${problemPrompt({ question, images, context, notes })}
 
 Solve this from scratch, carefully. First write down the setup: what each variable means (read every label, length and condition in the problem or image), the objective or equations, and the constraints. Answer every part asked. For max/min with a constraint, decide whether each extreme exists (closed and bounded → both exist; unbounded → check with scanCurve; only approached → DNE). Use the calculate tool for every computation (exact methods first; minimize, maximize, nsolve or nsolveSystem when exact ones fail). Check your answer against every condition.
@@ -712,10 +773,10 @@ ${SETUP_FORMAT}
 
 // Runs the double-check (and the tie-break when needed) and decides what the user sees.
 // Returns { text, review?, verification, chip }.
-export async function reviewAnswer({ text, question, images, context, notes, signal, onTieBreak, onThinking }) {
+export async function reviewAnswer({ text, question, images, context, notes, signal, onTieBreak, onThinking }: { text: string; question: string; images: string[]; context: ModelMessage[]; notes: string[]; signal?: AbortSignal; onTieBreak?: () => void; onThinking?: (t: string, label?: string) => void }): Promise<ReviewResult> {
   await calcEngine.load(); // math.js is needed to compare answers
   const v = await verifyAnswer({ question, images, context, notes, answer: text, signal, onThinking: t => onThinking?.(t, "Double-check") });
-  const verification = { verdict: v.verdict, reason: v.reason, tools: v.tools, model: v.model };
+  const verification: Verification = { verdict: v.verdict, reason: v.reason, tools: v.tools, model: v.model };
   const pSetup = parseSetup(text);
   const pValues = pSetup?.values || v.proposedValues || answerValues(text);
   const pConf = await confirmAnswer(pSetup, pValues);
@@ -747,7 +808,7 @@ export async function reviewAnswer({ text, question, images, context, notes, sig
     const tb = await independentSolve({ question, images, context, notes, signal, onThinking: t => onThinking?.(t, "Third solve") }).catch(err => { if (err.name === "AbortError") throw err; return null; });
     verification.tieBreak = tb && { model: tb.model, answer: clip(tb.finalAnswer, 600), tools: tb.tools };
     const third = tb && { values: tb.setup?.values || answerValues(tb.finalAnswer), text: stripSetup(tb.finalAnswer) };
-    const tConf = tb ? await confirmAnswer(tb.setup, third.values) : { ok: null };
+    const tConf: Check = tb ? await confirmAnswer(tb.setup, third!.values) : { ok: null, evidence: "" };
     if (third && tConf.ok === true && !answersMatch(third, { values: pValues, text: stripSetup(text) }, question)) {
       return {
         text: tb.finalAnswer,
@@ -779,7 +840,7 @@ export async function reviewAnswer({ text, question, images, context, notes, sig
 
   const original = { values: pValues, text: stripSetup(text) };
   const checker = { values: v.setup?.values || answerValues(v.finalAnswer), text: stripSetup(v.finalAnswer) };
-  const replaceWith = (evidence, by) => ({
+  const replaceWith = (evidence: string, by: string): ReviewResult => ({
     text: v.finalAnswer,
     review: { kind: "corrected", original: text, reason: v.reason, evidence, by },
     verification: { ...verification, outcome: "corrected", corrected: true, evidence },
@@ -804,23 +865,23 @@ export async function reviewAnswer({ text, question, images, context, notes, sig
 
   // Undecided: a third, independent solve on the strongest model.
   onTieBreak?.();
-  let tb;
+  let tb: Awaited<ReturnType<typeof independentSolve>> | null;
   try {
     tb = await independentSolve({ question, images, context, notes, signal, onThinking: t => onThinking?.(t, "Third solve") });
-  } catch (err) {
+  } catch (err: any) {
     if (err.name === "AbortError") throw err;
     tb = null;
   }
   verification.tieBreak = tb && { model: tb.model, answer: clip(tb.finalAnswer, 600), tools: tb.tools };
   const third = tb && { values: tb.setup?.values || answerValues(tb.finalAnswer), text: stripSetup(tb.finalAnswer) };
   // Only answers that don't fail their own code check get a vote.
-  const tConf = tb ? await confirmAnswer(tb.setup, third.values) : { ok: null };
+  const tConf: Check = tb ? await confirmAnswer(tb.setup, third!.values) : { ok: null, evidence: "" };
   const thirdCounts = third && tConf.ok !== false;
   const withP = thirdCounts && pConf.ok !== false && answersMatch(third, original, question);
   const withC = thirdCounts && answersMatch(third, checker, question);
   verification.vote = { original: pConf.ok, doubleCheck: cConf.ok, third: tConf.ok };
   if (withP && !withC) return { text, verification: { ...verification, outcome: "kept-by-vote" }, chip: { ok: "Kept the original: a third independent solve agrees with it" } };
-  if (withC && !withP) return replaceWith(`a third independent solve (${tb.model}) agrees with the double-check`, "vote");
+  if (withC && !withP) return replaceWith(`a third independent solve (${tb!.model}) agrees with the double-check`, "vote");
   return {
     text,
     review: {
@@ -839,21 +900,21 @@ export async function reviewAnswer({ text, question, images, context, notes, sig
 // ---------- one turn ----------
 
 export const MAX_TOOL_ROUNDS = 10;
-export const serverSearchBroken = {}; // built-in web search can be disabled by an org admin or unsupported by a model
+export const serverSearchBroken: Record<string, boolean> = {}; // built-in web search can be disabled by an org admin or unsupported by a model
 
 // history: earlier messages [{ role: "user"|"assistant", text, images? }]
 // user: { text, images?, attachments?, quickAction? }
 // ui: { onText(chunk), onToolStart(name, args) -> { done(summary), fail(msg) }, onMemory(evt),
 //       runAgent?(task) -> summary, signal, tier?, previousTier?, tabInfo?, hasTab?, memoryStore? }
 // Returns { text, citations, trace }.
-export async function runTurn(history, user, ui) {
+export async function runTurn(history: { role: "user" | "assistant"; text?: string; images?: string[] }[], user: TurnInput, ui: TurnUI): Promise<TurnResult> {
   const s = await getSettings();
   const provider = effectiveProvider(s);
-  let route = ui.tier ? { tier: ui.tier, reason: "chosen by you" } : routeMessage(user.text, { attachments: user.attachments, previousTier: ui.previousTier, quickAction: user.quickAction });
+  let route: Route = ui.tier ? { tier: ui.tier, reason: "chosen by you" } : routeMessage(user.text, { attachments: user.attachments, previousTier: ui.previousTier, quickAction: user.quickAction });
   const images = user.images || [];
   const math = isMathAsk({ route, userText: user.text, images });
   // A problem on screen always gets the smart model at high effort, even if you picked "fast".
-  let effort;
+  let effort: string | undefined;
   if (math.problemOnScreen) {
     if (route.tier !== "smart") route = { tier: "smart", reason: "math on screen" };
     effort = "high";
@@ -882,16 +943,16 @@ export async function runTurn(history, user, ui) {
   // Only the newest images are sent; older ones would be re-sent (and paid for) every turn.
   // If this message has none, the most recent earlier images stay, so follow-ups about them work.
   const keepIdx = images.length ? -1 : history.map(m => (m.images || []).length > 0).lastIndexOf(true);
-  const past = history.map((m, i) => {
+  const past: ModelMessage[] = history.map((m, i): ModelMessage => {
     const n = (m.images || []).length;
     if (i === keepIdx) return { role: m.role, text: m.text || "", images: m.images };
     return { role: m.role, text: (m.text || "") + (n ? `\n[${n} earlier image${n > 1 ? "s" : ""} not shown]` : "") };
   });
-  const transcript = [...capHistory(past), { role: "user", text: `${context}\n\n${userText}`, images }];
+  const transcript: ModelMessage[] = [...capHistory(past), { role: "user", text: `${context}\n\n${userText}`, images }];
 
-  const trace = { route: { ...route, model, effort: effort || (route.tier === "smart" ? s.smartEffort : s.fastEffort) }, rounds: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, started: Date.now() };
-  const citations = [];
-  const env = {
+  const trace: TurnTrace = { route: { ...route, model, effort: effort || (route.tier === "smart" ? s.smartEffort : s.fastEffort) }, rounds: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, started: Date.now() };
+  const citations: Citation[] = [];
+  const env: ChatToolEnv = {
     memory,
     onMemory: ui.onMemory,
     runAgent: ui.runAgent,
@@ -905,7 +966,7 @@ export async function runTurn(history, user, ui) {
   if (hold) ui.onHold?.();
   let text = "";
   let pendingBreak = false;
-  const onText = chunk => {
+  const onText = (chunk: string) => {
     if (pendingBreak && text.trim()) { text += "\n\n"; if (!hold) ui.onText?.("\n\n"); }
     pendingBreak = false;
     text += chunk;
@@ -914,23 +975,23 @@ export async function runTurn(history, user, ui) {
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     if (round === MAX_TOOL_ROUNDS) transcript.push({ role: "user", text: "(You've used many tools. Stop calling tools now and give your best answer with what you have.)" });
-    let r;
+    let r: Awaited<ReturnType<typeof modelCall>>;
     try {
       r = await modelCall({ tier: route.tier, model, effort, system, messages: transcript, tools, serverTools, signal: ui.signal, onText, onThinking: t => ui.onThinking?.(t, "Answer") });
-    } catch (err) {
+    } catch (err: any) {
       if (serverTools.length && /web.?search/i.test(err.message) && !text) {
         // Built-in search unavailable (turned off by an org admin, or not supported by this model): use Sidekick's own search.
         serverSearchBroken[provider] = true;
         serverTools.length = 0;
-        tools.push(chatTools({ provider: "openai", webSearchServer: false, hasTab: false, hasAgent: false }).find(t => t.name === "web_search"));
+        tools.push(chatTools({ provider: "openai", webSearchServer: false, hasTab: false, hasAgent: false }).find(t => t.name === "web_search")!);
         round--;
         continue;
       }
       throw err;
     }
-    for (const k of Object.keys(trace.usage)) trace.usage[k] += r.usage?.[k] || 0;
+    for (const k of Object.keys(trace.usage) as (keyof Usage)[]) trace.usage[k] += r.usage?.[k] || 0;
     env.addCitations(r.citations || []);
-    const roundTrace = { ms: r.ms, model: r.model, usage: r.usage, stop: r.stop, tools: [] };
+    const roundTrace: RoundTrace = { ms: r.ms, model: r.model, usage: r.usage, stop: r.stop, tools: [] };
     trace.rounds.push(roundTrace);
     for (const st of r.serverTools || []) {
       const h = ui.onToolStart?.(st.name, st.args);
@@ -946,15 +1007,15 @@ export async function runTurn(history, user, ui) {
     if (!r.toolCalls.length || round === MAX_TOOL_ROUNDS) break;
 
     transcript.push({ role: "assistant", text: r.text, toolCalls: r.toolCalls, raw: r.raw });
-    const results = [];
+    const results: ToolResult[] = [];
     for (const call of r.toolCalls) {
       const h = ui.onToolStart?.(call.name, call.args);
       const t0 = Date.now();
-      let res;
+      let res: ChatToolResult;
       try {
         res = await executeChatTool(call, env);
         if (res.isError) h?.fail(res.text); else h?.done(res.summary || "");
-      } catch (err) {
+      } catch (err: any) {
         if (err.name === "AbortError") throw err;
         res = { text: `Error: ${err.message}`, isError: true };
         h?.fail(err.message);
@@ -967,10 +1028,10 @@ export async function runTurn(history, user, ui) {
   }
   // Independent check for math / homework answers.
   const usedCalc = trace.rounds.some(r => r.tools.some(t => t.name === "calculate"));
-  let review = null;
+  let review: Review | null = null;
   if (s.verifyAnswers && needsCheck({ route, userText: user.text, images, reply: text, usedCalc })) {
     const h = ui.onToolStart?.("verify", {});
-    let tbChip = null;
+    let tbChip: ToolChip | null | undefined = null;
     try {
       const r = await reviewAnswer({
         text,
@@ -985,11 +1046,11 @@ export async function runTurn(history, user, ui) {
       trace.verification = r.verification;
       text = r.text;
       review = r.review || null;
-      if (tbChip) tbChip.done(r.verification.outcome === "conflict" ? "Still disagrees" : r.verification.outcome === "kept-by-vote" ? "Agrees with the original" : "Agrees with the double-check");
+      if (tbChip) (tbChip as ToolChip).done(r.verification.outcome === "conflict" ? "Still disagrees" : r.verification.outcome === "kept-by-vote" ? "Agrees with the original" : "Agrees with the double-check");
       h?.done(r.chip.fixed || r.chip.warn || r.chip.ok);
-    } catch (err) {
+    } catch (err: any) {
       if (err.name === "AbortError") throw err;
-      tbChip?.fail(err.message);
+      (tbChip as ToolChip | null | undefined)?.fail(err.message);
       h?.fail(err.message);
     }
   }
