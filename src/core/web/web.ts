@@ -2,33 +2,35 @@
 // and reading a web page or PDF by URL. Results are fenced as untrusted content.
 import { extractDocText } from "../docs/docs.js";
 
-export const UA_FETCH = { credentials: "omit", redirect: "follow" };
+export const UA_FETCH: RequestInit = { credentials: "omit", redirect: "follow" };
+export interface SearchResult { title: string; url: string; snippet: string }
 export const WEB_TIMEOUT_MS = 20000;
 
 // Fetch options that give up after a while and also stop when you press Stop.
-export function webFetchOpts(signal, ms = globalThis.SK_WEB_MS || WEB_TIMEOUT_MS) {
+export function webFetchOpts(signal: AbortSignal | undefined, ms = globalThis.SK_WEB_MS || WEB_TIMEOUT_MS) {
   const limit = AbortSignal.timeout(ms);
   return { ...UA_FETCH, signal: signal ? AbortSignal.any([signal, limit]) : limit };
 }
 // A timeout reads as "the site was slow", never as a crash; Stop stays a Stop.
-export function webError(err, what, signal) {
+export function webError(err: any, what: string, signal?: AbortSignal): Error {
   if (signal?.aborted) return signal.reason instanceof Error ? signal.reason : new DOMException("Stopped", "AbortError");
   if (err?.name === "TimeoutError" || err?.name === "AbortError") return new Error(`${what} didn't answer within ${Math.round((globalThis.SK_WEB_MS || WEB_TIMEOUT_MS) / 1000)} s. Try again, or try another source.`);
   return err;
 }
 
-export function htmlToText(doc) {
+export function htmlToText(doc: Document): string {
   doc.querySelectorAll("script, style, noscript, svg, iframe, nav, footer, header, aside, form, [aria-hidden=true], [hidden]").forEach(e => e.remove());
   const root = doc.querySelector("article, main, [role=main]") || doc.body;
   if (!root) return "";
   const BLOCK = /^(P|DIV|LI|TR|H[1-6]|SECTION|ARTICLE|BLOCKQUOTE|PRE|BR|TABLE|UL|OL|DD|DT|FIGCAPTION)$/;
   let out = "";
-  const walk = n => {
-    if (n.nodeType === 3) { out += n.data; return; }
+  const walk = (n: Node) => {
+    if (n.nodeType === 3) { out += (n as Text).data; return; }
     if (n.nodeType !== 1) return;
-    if (n.tagName === "TD" || n.tagName === "TH") out += " | ";
+    const el = n as Element;
+    if (el.tagName === "TD" || el.tagName === "TH") out += " | ";
     for (const c of n.childNodes) walk(c);
-    if (BLOCK.test(n.tagName)) out += "\n";
+    if (BLOCK.test(el.tagName)) out += "\n";
   };
   walk(root);
   return out.replace(/[ \t ]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim();
@@ -36,7 +38,7 @@ export function htmlToText(doc) {
 
 // Your own machine and local network: routers, printers, NAS boxes, dev servers.
 // (URL parsing already turns tricks like http://2130706433/ into 127.0.0.1.)
-export function isPrivateHost(host) {
+export function isPrivateHost(host: string): boolean {
   const h = String(host || "").toLowerCase().replace(/^\[|\]$/g, "");
   return /^(localhost|.*\.localhost|.*\.local|.*\.internal|.*\.lan|.*\.home\.arpa)$/.test(h)
     || /^(0|127|10)\./.test(h) || /^192\.168\./.test(h) || /^169\.254\./.test(h)
@@ -45,12 +47,12 @@ export function isPrivateHost(host) {
     || /^\d+$/.test(h);
 }
 
-export async function fetchUrlText(url, { max = 15000, signal } = {}) {
+export async function fetchUrlText(url: string, { max = 15000, signal }: { max?: number; signal?: AbortSignal } = {}): Promise<{ url: string; title: string; text: string; truncated: boolean }> {
   try { return await fetchUrlTextInner(url, { max, signal }); }
   catch (err) { throw webError(err, "The site", signal); }
 }
 
-export async function fetchUrlTextInner(url, { max, signal }) {
+export async function fetchUrlTextInner(url: string, { max, signal }: { max: number; signal?: AbortSignal }) {
   let u;
   try { u = new URL(url); } catch { throw new Error("That isn't a valid URL."); }
   if (!/^https?:$/.test(u.protocol)) throw new Error("Only http(s) links can be read.");
@@ -60,7 +62,7 @@ export async function fetchUrlTextInner(url, { max, signal }) {
   try { if (res.url && isPrivateHost(new URL(res.url).hostname)) throw new Error("redirect"); } catch { throw new Error("That link redirects to a local network address, which Sidekick doesn't read."); }
   if (!res.ok) throw new Error(`The site answered ${res.status} ${res.statusText}.`);
   const type = res.headers.get("content-type") || "";
-  let title = u.hostname, text;
+  let title = u.hostname, text: string;
   if (/pdf/i.test(type) || /\.pdf$/i.test(u.pathname)) {
     const blob = await res.blob();
     const file = new File([blob], u.pathname.split("/").pop() || "document.pdf", { type: "application/pdf" });
@@ -79,8 +81,8 @@ export async function fetchUrlTextInner(url, { max, signal }) {
 }
 
 // Keyless web search through DuckDuckGo's HTML page, with Bing as a fallback.
-export async function webSearchFallback(query, limit = 6, { signal } = {}) {
-  const tries = [
+export async function webSearchFallback(query: string, limit = 6, { signal }: { signal?: AbortSignal } = {}): Promise<SearchResult[]> {
+  const tries: (() => Promise<any[]>)[] = [ // result objects, or null for skipped entries (removed by filter(Boolean))
     async () => {
       const res = await fetch("https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query), webFetchOpts(signal));
       const doc = new DOMParser().parseFromString(await res.text(), "text/html");
@@ -105,7 +107,7 @@ export async function webSearchFallback(query, limit = 6, { signal } = {}) {
       }).filter(Boolean);
     }
   ];
-  let lastErr;
+  let lastErr: any;
   for (const t of tries) {
     try {
       const results = (await t()).filter(r => /^https?:/.test(r.url)).slice(0, limit);

@@ -1,30 +1,39 @@
 // Text extraction for PDF, Word (.docx) and plain-text files. Libraries load only when needed.
 
+type FileLike = { type: string; name: string };
+// pdf.js, loaded from public/vendor at runtime (only the parts used here).
+type PdfJs = {
+  GlobalWorkerOptions: { workerSrc: string };
+  getDocument(src: { data: Uint8Array }): { promise: Promise<{ numPages: number; getPage(n: number): Promise<{ getTextContent(): Promise<{ items: PdfTextItem[] }> }> }> };
+};
+export type PdfTextItem = { str?: string; transform?: number[]; hasEOL?: boolean };
+
 export const DOC_TYPES = {
-  pdf: f => f.type === "application/pdf" || /\.pdf$/i.test(f.name),
-  docx: f => f.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || /\.docx$/i.test(f.name)
+  pdf: (f: FileLike) => f.type === "application/pdf" || /\.pdf$/i.test(f.name),
+  docx: (f: FileLike) => f.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || /\.docx$/i.test(f.name)
 };
 
-export function isDocFile(file) {
+export function isDocFile(file: FileLike): boolean {
   return DOC_TYPES.pdf(file) || DOC_TYPES.docx(file);
 }
 
-export let pdfjsPromise = null;
-export function loadPdfJs() {
-  pdfjsPromise ||= import(chrome.runtime.getURL("vendor/pdf.min.mjs")).then(pdfjs => {
+export let pdfjsPromise: Promise<PdfJs> | null = null;
+export function loadPdfJs(): Promise<PdfJs> {
+  pdfjsPromise ||= import(/* @vite-ignore */ chrome.runtime.getURL("vendor/pdf.min.mjs")).then((pdfjs: PdfJs) => {
     pdfjs.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("vendor/pdf.worker.min.mjs");
     return pdfjs;
   });
   return pdfjsPromise;
 }
 
-export let mammothPromise = null;
-export function loadMammoth() {
-  mammothPromise ||= new Promise((resolve, reject) => {
+type Mammoth = NonNullable<Window["mammoth"]>;
+export let mammothPromise: Promise<Mammoth> | null = null;
+export function loadMammoth(): Promise<Mammoth> {
+  mammothPromise ||= new Promise<Mammoth>((resolve, reject) => {
     if (window.mammoth) return resolve(window.mammoth);
     const s = document.createElement("script");
     s.src = chrome.runtime.getURL("vendor/mammoth.browser.min.js");
-    s.onload = () => resolve(window.mammoth);
+    s.onload = () => resolve(window.mammoth!);
     s.onerror = () => reject(new Error("Couldn't load the Word reader."));
     document.head.appendChild(s);
   });
@@ -32,7 +41,7 @@ export function loadMammoth() {
 }
 
 // Rebuilds readable lines from PDF text items (which come as positioned fragments).
-export function pdfItemsToText(items) {
+export function pdfItemsToText(items: PdfTextItem[]): string {
   let out = "";
   let lastY = null;
   for (const it of items) {
@@ -47,8 +56,8 @@ export function pdfItemsToText(items) {
   return out.replace(/[ \t]+\n/g, "\n").replace(/ {2,}/g, " ");
 }
 
-export async function extractDocText(file, { maxChars = 100_000 } = {}) {
-  let text;
+export async function extractDocText(file: File, { maxChars = 100_000 } = {}): Promise<{ text: string; truncated: boolean }> {
+  let text: string;
   if (DOC_TYPES.pdf(file)) {
     const pdfjs = await loadPdfJs();
     const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;

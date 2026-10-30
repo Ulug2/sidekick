@@ -15,7 +15,7 @@ const ALLOWED = new Set([...Object.keys(globals.browser), ...Object.keys(globals
 
 // The functions to check: everything src/page/*.js exports.
 const names = new Set();
-for (const f of fs.readdirSync(PAGE).filter(f => f.endsWith(".js"))) {
+for (const f of fs.readdirSync(PAGE).filter(f => /\.(js|ts)$/.test(f))) {
   for (const m of fs.readFileSync(path.join(PAGE, f), "utf8").matchAll(/^export (?:async )?(?:function\*? ?|const )([\w$]+)/gm)) names.add(m[1]);
 }
 

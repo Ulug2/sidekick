@@ -8,7 +8,7 @@ export const SECRET_PATTERNS = [
   { label: "private key", re: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g }
 ];
 
-export function luhnValid(digits) {
+export function luhnValid(digits: string): boolean {
   let sum = 0;
   for (let i = 0; i < digits.length; i++) {
     let d = +digits[digits.length - 1 - i];
@@ -19,7 +19,7 @@ export function luhnValid(digits) {
 }
 
 // Returns { text, count }.
-export function redactSecrets(input) {
+export function redactSecrets(input: unknown): { text: string; count: number } {
   let text = String(input ?? "");
   let count = 0;
   // Card numbers: 13-19 digits, optionally grouped by spaces or dashes, passing the Luhn check.
@@ -38,7 +38,7 @@ export function redactSecrets(input) {
 // Sidekick's own wrapper tags (<untrusted_content …>, <context>, <final_answer> …) never belong
 // in a reply. Models sometimes copy them back (e.g. when rewriting selected text); this removes
 // them so they're never shown, copied or saved.
-export function stripWrappers(text) {
+export function stripWrappers(text: unknown): string {
   return String(text ?? "")
     .replace(/[<‹]\/?untrusted_content\b[^>\n]*>\n?/gi, "")
     .replace(/<\/?(context|final_answer|verdict|reason|proposed_values|user_message|assistant_reply)>\n?/gi, "")
@@ -58,7 +58,7 @@ export const INJECTION_PATTERNS = [
   /\b(send|email|e-mail|forward|upload|post|share|exfiltrate|transmit|paste)\b[^.\n]{0,40}\b(the user'?s?|your user'?s?|their|all (of )?(the|your))\b[^.\n]{0,30}\b(passwords?|credentials?|cookies?|api keys?|personal (data|information|details)|resume|ssn|social security|bank|card|emails?|files)\b/i,
   /\b(do not|don't|never) (tell|inform|notify|alert|mention (this |it )?to) the user\b|\bwithout (telling|asking|informing|notifying) the user\b/i
 ];
-export function injectionHints(text) {
+export function injectionHints(text: unknown): string[] {
   const t = String(text || "");
   const out = [];
   for (const re of INJECTION_PATTERNS) {
@@ -72,7 +72,7 @@ export function injectionHints(text) {
 }
 
 // Wraps outside content so the model can tell it apart from you.
-export function untrusted(source, content) {
+export function untrusted(source: unknown, content: unknown): string {
   const { text, count } = redactSecrets(content);
   const safeSource = String(source || "unknown").replace(/["<>\n]/g, " ").slice(0, 200);
   const body = text.replace(/<\/?untrusted_content/gi, m => m.replace("<", "‹"));

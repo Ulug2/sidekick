@@ -8,11 +8,11 @@ import path from "node:path";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const OUT = path.join(ROOT, ".test-build");
 const SRC = path.join(ROOT, "src");
+const src = file => path.join(SRC, file);
 const PAGES = ["sidepanel", "profile", "options", "evals", "mic"];
 // Every module except the pages' own UI code, the service worker and the content script.
-const LIB = fs.readdirSync(SRC, { recursive: true }).filter(f => f.endsWith(".js") && !/^(ui|background|content)\//.test(f)).sort();
-const BUNDLES = { lib: LIB, ...Object.fromEntries(PAGES.map(p => [p, [...(p === "mic" ? [] : LIB), `ui/${p}/${p}.js`]])) };
-const src = file => path.join(SRC, file);
+const LIB = fs.readdirSync(SRC, { recursive: true }).filter(f => /\.(js|ts)$/.test(f) && !f.endsWith(".d.ts") && !/^(ui|background|content|types)\//.test(f)).sort();
+const BUNDLES = { lib: LIB, ...Object.fromEntries(PAGES.map(p => [p, [...(p === "mic" ? [] : LIB), fs.existsSync(src(`ui/${p}/${p}.ts`)) ? `ui/${p}/${p}.ts` : `ui/${p}/${p}.js`]])) };
 const ENTRIES = path.join(ROOT, "node_modules", ".sk-test-entries");
 const fnNames = file => [...fs.readFileSync(src(file), "utf8").matchAll(/^export (?:async )?function\*? ?([\w$]+)/gm)].map(m => m[1]);
 
