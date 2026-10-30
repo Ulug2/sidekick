@@ -659,7 +659,7 @@ export function plainForSpeech(md: any) {
     .trim();
 }
 
-export let speakingToggle = false;
+export const speakingToggle = false;
 export function speak(text: any, toggle = false) {
   if (!("speechSynthesis" in window)) return;
   if (toggle && speechSynthesis.speaking) { stopSpeaking(); return; }

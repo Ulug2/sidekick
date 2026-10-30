@@ -27,7 +27,8 @@ for (const [name, files] of Object.entries(BUNDLES)) {
   const entry = files.map((f, i) => `import * as m${i} from ${JSON.stringify(src(f))};`).join("\n") +
     `\nconst all = Object.assign({}, ${files.map((_, i) => `m${i}`).join(", ")});` +
     `\nwindow.__sk = all;` +
-    `\nfor (const k of ${JSON.stringify([...new Set(files.flatMap(fnNames))])}) window[k] = all[k];\n`;
+    // Names the browser already has on window (stop, close, …) are left alone, as in the real panel.
+    `\nfor (const k of ${JSON.stringify([...new Set(files.flatMap(fnNames))])}) if (!(k in window)) window[k] = all[k];\n`;
   const entryFile = path.join(ENTRIES, `${name}.js`);
   fs.writeFileSync(entryFile, entry);
   await build({

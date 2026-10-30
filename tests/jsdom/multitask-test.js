@@ -269,6 +269,33 @@ const lastId = (all, label) => { const re = new RegExp(String.raw`\[(\d+)\] [a-z
     check('Reopening the chat shows the run with its checklist', /Apply: Backend Software Engineer, Agentic/.test($('.agent-plan')?.textContent || '') && /Filled it in/.test($('.agent-run .md').textContent));
   }
 
+  // ---------- 7. the agent card's own Stop button stops the run ----------
+  {
+    const local = makeStore({ anthropicKey: 'k', profile: { fullName: 'Ulugbek Rivera' } });
+    const fc = fakeChrome({ local });
+    const html = fs.readFileSync(srcPath('sidepanel.html'), 'utf8').replace(/<script src="([^"]+)"><\/script>/g, '');
+    const w = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true, url: 'chrome-extension://abc/sidepanel.html' }).window;
+    H.basicDom(w);
+    w.chrome = fc.chrome;
+    let agentCalls = 0;
+    w.fetch = async (u, o) => {
+      const b = JSON.parse(o.body);
+      if (!/browser agent/.test(b.system || '')) return text('{"notes":[]}');
+      agentCalls++;
+      // The model never answers; only Stop can end the run.
+      return new Promise((_, reject) => o.signal?.addEventListener('abort', () => reject(new w.DOMException('Stopped', 'AbortError')), { once: true }));
+    };
+    loadScripts(w, PANEL_SCRIPTS, []);
+    await sleep(120);
+    const $ = s => w.document.querySelector(s);
+    $('#agentToggle').click();
+    $('#input').value = 'apply to the backend job'; $('#input').dispatchEvent(new w.Event('input')); $('#send').click();
+    for (let i = 0; i < 300 && !agentCalls; i++) await sleep(10);
+    $('.agent-run .agent-stop').click();
+    for (let i = 0; i < 300 && !$('.agent-run.finished'); i++) await sleep(10);
+    check('The Stop button on the agent card stops the run (not the page: window.stop)', !!$('.agent-run.finished') && /Stopped/i.test($('.agent-run').textContent), $('.agent-run')?.textContent.slice(0, 300));
+  }
+
   console.log(results.join('\n'));
   console.log(`\n${results.filter(x => x.startsWith('PASS')).length}/${results.length} passed`);
   process.exit(0);

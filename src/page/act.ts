@@ -69,7 +69,7 @@ export async function skPageAct(a: PageAction): Promise<PageActionResult> {
     return { ok: true, label };
   }
 
-  let el = a.id ? deepFind(document, `[data-sk-id="${CSS.escape(String(a.id))}"]`) : document.activeElement;
+  const el = a.id ? deepFind(document, `[data-sk-id="${CSS.escape(String(a.id))}"]`) : document.activeElement;
   if (!el) return { ok: false, error: `Element [${a.id}] isn't on the page anymore. Use the new snapshot.` };
 
   // ---- safety: never type secrets, whatever the model asks ----
@@ -185,7 +185,7 @@ export async function skPageAct(a: PageAction): Promise<PageActionResult> {
   const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
   const isoOf = (text: any) => {
     const t = clean(text);
-    let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (m) return `${m[1]}-${m[2]}-${m[3]}`;
     const d = new Date(t);
     if (isNaN(d as any) || !/[a-z]{3}|\d{1,2}\/\d{1,2}\/\d{4}/i.test(t)) return null;

@@ -2,7 +2,7 @@
 // bridge (AgentUI) between the agent loop and the panel.
 import { clearEmpty } from "./messages.js";
 import { LOGO, STEP_ICON } from "./icons.js";
-import { messagesEl, autoScroll, controller, input, resizeInput, agentMode, refreshSend } from "./sidepanel.js";
+import { messagesEl, autoScroll, controller, input, resizeInput, agentMode, refreshSend, stop } from "./sidepanel.js";
 import { renderMarkdown } from "./markdown.js";
 import { untrusted } from "../../core/security/guard.js";
 import type { PlanItem, AgentUI } from "../../agent/types.js";
