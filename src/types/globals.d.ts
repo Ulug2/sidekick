@@ -29,6 +29,7 @@ declare global {
     // math.js and nerdamer: loaded by calc.ts on first use. Their APIs are large and untyped here.
     math?: any;
     nerdamer?: any;
+    SymbolicResult?: any; // calc.ts: exact results with an approximate value
     // mammoth (Word documents): loaded by docs.ts on first use.
     mammoth?: { extractRawText(input: { arrayBuffer: ArrayBuffer }): Promise<{ value: string }> };
   }
