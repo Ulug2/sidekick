@@ -3,12 +3,12 @@
 import { readLocal, type Chat, type ChatIndexEntry } from "../../core/storage/schema.js";
 import { chat, MAX_CHATS, startNewChat, openChat } from "./sidepanel.js";
 import { FAST_ONLY } from "../../assistant/routing.js";
-import { getSettings } from "../../core/llm/ai.js";
 import { getProfile } from "../../assistant/profile-core.js";
 import { updateSessionNotes, reflectOnChat } from "../../assistant/session.js";
 import { showToast } from "./messages.js";
 import { ICON } from "./icons.js";
 import { $ } from "../shared/dom.js";
+import { getSettings } from "../../core/llm/settings.js";
 
 // ---------- chat storage ----------
 // Chats live in chrome.storage.local: an index ("chatIndex") plus one key per chat.

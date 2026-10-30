@@ -1,14 +1,15 @@
 // One chat turn: context, the model with its tools, the tool loop, and the math double-check.
 // Used by the side panel and by the eval runner.
-import { effectiveProvider, getSettings, modelCall, modelFor } from "../core/llm/ai.js";
 import { stripWrappers, untrusted } from "../core/security/guard.js";
 import { readProblemText } from "../core/browser/screen.js";
-import type { Citation, ToolResult, Usage, ModelMessage } from "../core/llm/ai.js";
 import type { TurnInput, TurnUI, TurnResult, Route, TurnTrace, ChatToolEnv, RoundTrace, ChatToolResult, Review, ToolChip } from "./types.js";
 import { routeMessage } from "./routing.js";
 import { isMathAsk, JUST_ANSWER, needsCheck, reviewAnswer } from "./review/review.js";
 import { realMemoryStore, chatTools, executeChatTool, clip } from "./tools.js";
 import { buildSystemPrompt, buildTurnContext } from "./prompt.js";
+import { effectiveProvider, getSettings, modelFor } from "../core/llm/settings.js";
+import { modelCall } from "../core/llm/call.js";
+import type { Citation, ToolResult, Usage, ModelMessage } from "../core/llm/types.js";
 
 // Very long chats: keep the most recent messages word for word. Older ones are covered by the
 // pinned notes, so the context window never overflows. Always starts on a user message.

@@ -1,7 +1,7 @@
 // Routing (cost + quality): the cheap fast model for everyday messages, the smart model for
 // anything that needs real reasoning. Local heuristics, so routing itself costs nothing.
-import type { Tier } from "../core/llm/ai.js";
 import type { Route } from "./types.js";
+import type { Tier } from "../core/llm/types.js";
 
 // ---------- routing (cost + quality) ----------
 // Cheap fast model for everyday messages; the smart model for anything that needs real

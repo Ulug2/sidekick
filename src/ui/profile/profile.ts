@@ -1,4 +1,3 @@
-import { callModel, getSettings } from "../../core/llm/ai.js";
 import { extractDocText, isDocFile } from "../../core/docs/docs.js";
 import { exportMemoryMarkdown, importMemoryMarkdown } from "../../assistant/memory/memory-io.js";
 import { addDocument, addMemory, bm25, deleteDocument, deleteMemory, getDocIndex, getMemories, updateMemory } from "../../assistant/memory/memory.js";
@@ -10,6 +9,8 @@ import { PERSONAL_LABELS, PROFILE_FIELD_NAMES } from "../../core/security/person
 import { deleteAdapter, getAdapters } from "../../agent/skills/shortcuts.js";
 import { getSiteNotes, saveSiteNotes } from "../../agent/skills/site-notes.js";
 import { $ } from "../shared/dom.js";
+import { callModel } from "../../core/llm/call.js";
+import { getSettings } from "../../core/llm/settings.js";
 
 export const params = new URLSearchParams(location.search);
 export const isOnboarding = params.get("welcome") === "1";

@@ -1,6 +1,5 @@
 // The agent loop: the model operates a tab through tools, one step at a time, until the task is
 // done, it asks you, or it runs out of steps. Learns a shortcut and site notes at the end.
-import { callAgentModel, getSettings, type ModelMessage, type ToolResult } from "../../core/llm/ai.js";
 import { memoriesFor } from "../../assistant/memory/memory.js";
 import { getProfile, type Profile } from "../../assistant/profile-core.js";
 import type { AgentUI, AgentRunResult, AgentState } from "../types.js";
@@ -14,6 +13,9 @@ import { SNAPSHOT_TOOLS, runTool } from "../actions/run-tool.js";
 import { learnFlow } from "../skills/shortcuts.js";
 import { learnSiteNotes } from "../skills/site-notes.js";
 import { siteOf } from "../../core/security/sites.js";
+import { callAgentModel } from "../../core/llm/call.js";
+import { getSettings } from "../../core/llm/settings.js";
+import type { ModelMessage, ToolResult } from "../../core/llm/types.js";
 
 export const AGENT_MAX_STEPS = 40;
 export const KEEP_FULL_SNAPSHOTS = 2; // older page snapshots are shortened to save tokens

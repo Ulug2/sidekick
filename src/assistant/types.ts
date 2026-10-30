@@ -1,8 +1,8 @@
 // Shapes the chat brain passes around: the turn's contract with the panel, traces, memory, and the
 // math review's setups and verdicts.
-import type { Tier, Usage, Citation } from "../core/llm/ai.js";
 import type { Memory, SearchHit } from "./memory/memory.js";
 import type { Skill } from "./skills.js";
+import type { Tier, Usage, Citation } from "../core/llm/types.js";
 
 // ---------- types ----------
 export interface Route { tier: Tier; reason: string }

@@ -1,5 +1,4 @@
 // The chat's tools: definitions the model sees, and what each one does.
-import type { Provider, ToolDef, ToolCall } from "../core/llm/ai.js";
 import type { ChatToolEnv, ChatToolResult, ChatMemoryStore } from "./types.js";
 import { calcEngine } from "../core/calc/calc.js";
 import { webSearchFallback, fetchUrlText } from "../core/web/web.js";
@@ -10,6 +9,7 @@ import { readPageText, captureScreen } from "../core/browser/screen.js";
 import { getSkills, markSkillUsed } from "./skills.js";
 import { addMemory, getMemories, deleteMemory, searchPersonal, memoriesFor, standingMemories, upcomingMemories } from "./memory/memory.js";
 import { getUserModel } from "./session.js";
+import type { Provider, ToolDef, ToolCall } from "../core/llm/types.js";
 
 // ---------- tools ----------
 

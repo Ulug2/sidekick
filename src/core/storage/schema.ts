@@ -2,12 +2,13 @@
 // (unencrypted, like every extension), plus one hand-off value in chrome.storage.session.
 // readLocal() is chrome.storage.local.get with these types; writes still go through
 // chrome.storage.local.set at each owner (see the module named next to each key).
-import type { Settings, UsageLog } from "../llm/ai.js";
 import type { Application, Profile } from "../../assistant/profile-core.js";
 import type { DocChunks, DocIndexEntry, Memory } from "../../assistant/memory/memory.js";
 import type { Skill } from "../../assistant/skills.js";
 import type { UserModel } from "../../assistant/session.js";
 import type { Shortcut, SiteNote } from "../../agent/types.js";
+import type { Settings } from "../llm/settings.js";
+import type { UsageLog } from "../llm/usage.js";
 
 // ---------- chats (ui/sidepanel) ----------
 export interface ChatIndexEntry { id: string; title: string; updatedAt: number }

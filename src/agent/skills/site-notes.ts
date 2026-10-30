@@ -4,8 +4,8 @@
 import type { SiteNote, Shortcut } from "../types.js";
 import { readLocal } from "../../core/storage/schema.js";
 import { redactSecrets } from "../../core/security/guard.js";
-import { modelCall } from "../../core/llm/ai.js";
 import { normLabel } from "./shortcuts.js";
+import { modelCall } from "../../core/llm/call.js";
 
 export const SITE_NOTES_MAX = 8;
 

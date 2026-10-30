@@ -1,8 +1,8 @@
 // Step titles shown to you, and value-free versions for learning.
-import type { ToolCall } from "../../core/llm/ai.js";
 import type { Elements, AgentState } from "../types.js";
 import { hostOf } from "../page-calls.js";
 import { questionOfLine } from "../skills/shortcuts.js";
+import type { ToolCall } from "../../core/llm/types.js";
 
 export const quote = (s: unknown) => `“${String(s || "").slice(0, 60)}”`;
 

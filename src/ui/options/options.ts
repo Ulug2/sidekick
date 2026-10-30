@@ -1,5 +1,5 @@
-import { DEFAULT_SETTINGS, effectiveProvider, getSettings, modelFor, type Settings } from "../../core/llm/ai.js";
 import { readLocal } from "../../core/storage/schema.js";
+import { DEFAULT_SETTINGS, effectiveProvider, getSettings, modelFor, type Settings } from "../../core/llm/settings.js";
 
 // Settings fields are <input>, <select> and <textarea> elements, keyed by setting name.
 export const el = (id: string) => document.getElementById(id) as HTMLInputElement;

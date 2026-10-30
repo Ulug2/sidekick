@@ -5,12 +5,12 @@
 //  2. Reflection: when a chat ends (you start a new one), Sidekick reviews it and keeps only
 //     durable things about you in long-term memory. The rest of the chat is left behind.
 //  3. User model: a short "how you like to work" summary, refined after each session.
-import { modelCall } from "../core/llm/ai.js";
 import { redactSecrets } from "../core/security/guard.js";
 import { addMemory, deleteMemory, getMemories, updateMemory } from "./memory/memory.js";
 import { applySkillOps, getSkills, type Skill } from "./skills.js";
 import { readLocal, type Chat, type ChatMessage } from "../core/storage/schema.js";
 import type { Memory } from "./memory/memory.js";
+import { modelCall } from "../core/llm/call.js";
 
 export interface UserModel { text: string; updated: number }
 // Where the end-of-chat review reads and writes long-term memory (the eval runner passes a temporary one).

@@ -2,11 +2,12 @@
 // tie-break on the strongest model when that can't decide.
 import type { Route, ToolTrace, ChatToolEnv, ChatToolResult, ReviewResult, Verification, Check } from "../types.js";
 import { SMART_SIGNALS } from "../routing.js";
-import { modelCall, type ModelMessage, type Tier, type ToolResult } from "../../core/llm/ai.js";
 import { chatTools, realMemoryStore, executeChatTool, clip } from "../tools.js";
 import { SETUP_FORMAT, parseVerdict, tagged, parseValues, parseSetup, stripSetup, answerValues, answersMatch, numbersIn } from "./parse.js";
 import { calcEngine } from "../../core/calc/calc.js";
 import { confirmAnswer, extremaProblem, arbitrate } from "./check.js";
+import { modelCall } from "../../core/llm/call.js";
+import type { ModelMessage, Tier, ToolResult } from "../../core/llm/types.js";
 
 // ---------- independent check of math answers ----------
 // Reasoning models still slip (a sign, a missed candidate, a misread diagram). For math and

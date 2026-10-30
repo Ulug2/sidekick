@@ -1,5 +1,5 @@
 // The tools the agent model can call (names, descriptions and JSON schemas).
-import type { ToolDef } from "../core/llm/ai.js";
+import type { ToolDef } from "../core/llm/types.js";
 
 export const AGENT_TOOLS: ToolDef[] = [
   {

@@ -2,12 +2,12 @@
 // status line and thinking, sources, the Details trace, action buttons, tool chips and toasts.
 import { messagesEl, PROMPTS, busy, sendAgent, attachPage, send, autoScroll, replaceSelectionOnPage, speak } from "./sidepanel.js";
 import { LOGO, ICON } from "./icons.js";
-import { getSettings } from "../../core/llm/ai.js";
 import { getProfile, profileIsEmpty } from "../../assistant/profile-core.js";
 import { activeTab } from "../../core/browser/screen.js";
 import { renderMarkdown } from "./markdown.js";
 import { deleteMemory } from "../../assistant/memory/memory.js";
 import { $ } from "../shared/dom.js";
+import { getSettings } from "../../core/llm/settings.js";
 
 // ---------- toasts ----------
 

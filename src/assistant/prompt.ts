@@ -1,10 +1,11 @@
 // The assistant's persona and system prompt, and the per-message context block.
-import type { Settings, Provider } from "../core/llm/ai.js";
 import type { ChatMemoryStore, TurnUI } from "./types.js";
 import { getProfile, profileIsEmpty, profileToPrompt, type Profile } from "./profile-core.js";
 import { getUserModel } from "./session.js";
 import { standingMemories, memoriesFor, memoryLine, upcomingMemories } from "./memory/memory.js";
 import { getSkills, skillsIndexText, skillFor, markSkillUsed } from "./skills.js";
+import type { Settings } from "../core/llm/settings.js";
+import type { Provider } from "../core/llm/types.js";
 
 export const PERSONALITIES: Record<string, string> = {
   concise: "Terse and efficient. Give the answer in as few words as it takes, no pleasantries. Expand only when asked.",

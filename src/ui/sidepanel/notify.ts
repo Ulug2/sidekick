@@ -1,5 +1,5 @@
 // Chrome notifications when the agent needs you or finishes while you're looking elsewhere.
-import { getSettings } from "../../core/llm/ai.js";
+import { getSettings } from "../../core/llm/settings.js";
 
 // ---------- notifications ----------
 // While the agent works you're often in another tab or app. When it needs you or finishes, a

@@ -1,5 +1,4 @@
 // Runs one tool call: safety gates first, then the action, then the updated page.
-import type { ToolCall } from "../../core/llm/ai.js";
 import type { AgentState, AgentUI, ToolOutcome } from "../types.js";
 import { logApplication, type Profile } from "../../assistant/profile-core.js";
 import { describeSafe, describeCall, quote } from "./describe.js";
@@ -18,6 +17,7 @@ import { addToAgentGroup } from "../loop/tab-group.js";
 import { questionOfLine, nthOf, roleFamily, getAdapters, saveAdapters, adaptersFor } from "../skills/shortcuts.js";
 import { siteOf } from "../../core/security/sites.js";
 import { personalDetailsIn } from "../../core/security/personal-data.js";
+import type { ToolCall } from "../../core/llm/types.js";
 
 export const ACTING_TOOLS = new Set(["click", "click_at", "type", "select_option", "pick_date", "set_checked", "upload_file", "press_key", "site_tool"]);
 // Tools that end by showing the updated page.

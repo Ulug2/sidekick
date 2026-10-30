@@ -3,12 +3,10 @@
 // the other files of this folder.
 import { pickRegionInPage } from "../../page/region.js";
 import { pageReplaceSelection } from "../../page/replace-selection.js";
-import { getSettings, modelFor } from "../../core/llm/ai.js";
 import { extractDocText, isDocFile } from "../../core/docs/docs.js";
 import { redactSecrets, untrusted } from "../../core/security/guard.js";
 import { activeTab, captureScreen, readPageText, readSelectionFromPage, runInPage } from "../../core/browser/screen.js";
 import type { Chat, ChatMessage } from "../../core/storage/schema.js";
-import type { Tier } from "../../core/llm/ai.js";
 import { runTurn } from "../../assistant/turn.js";
 import { newChat, saveChat, reflectChat, togglePin, renderPin, waitForNotes, refreshNotes, drawerOpen, setDrawer, renderChatList, reflectStaleChats } from "./chats.js";
 import { createTypewriter, addError, showToast, addUserMessage, addAiMessage, restoreThoughts, addActions, showEmpty, createStatus, addToolChip, TOOL_LABEL, memoryChip } from "./messages.js";
@@ -17,6 +15,8 @@ import { addAgentRun, agentRun, runAgentCard, agentHistory, INTERRUPTED } from "
 import { renderMarkdown, renderReview } from "./markdown.js";
 import { notifyIds, clearNotice } from "./notify.js";
 import { $ } from "../shared/dom.js";
+import { getSettings, modelFor } from "../../core/llm/settings.js";
+import type { Tier } from "../../core/llm/types.js";
 
 export const scroller = $("#scroller");
 export const messagesEl = $("#messages");

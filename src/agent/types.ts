@@ -1,8 +1,8 @@
 // Shapes the browser agent passes around: what the page scripts return (snapshots, action
 // results), the elements the model can act on, the agent's tool calls, and what it learns.
 // Types only: page scripts (src/page) may import these with `import type`.
-import type { Settings } from "../core/llm/ai.js";
 import type { TrustedInput } from "../core/browser/cdp.js";
+import type { Settings } from "../core/llm/settings.js";
 
 // ---------- page snapshot (page/snapshot.ts → agent) ----------
 // A site's form declared as a tool for AI agents (WebMCP declarative API).
