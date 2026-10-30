@@ -1,5 +1,4 @@
 // Agent mode: the model operates the current tab through tools, one action at a time.
-// Needs: ai.js (callAgentModel), profile-core.js, page-agent.js (skPageSnapshot, skPageAct).
 import { adaptersFor, findTarget, getAdapters, getSiteNotes, learnFlow, learnSiteNotes, nthOf, personalDetailsIn, profileValues, questionOfLine, roleFamily, saveAdapters, siteKnowledgeText, siteOf } from "./skills/adapters.js";
 import { callAgentModel, getSettings, modelCall } from "../core/llm/ai.js";
 import { TrustedInput } from "../core/browser/cdp.js";
@@ -12,13 +11,82 @@ import { skWebMCPCall, skWebMCPList } from "../page/webmcp.js";
 import { getProfile, logApplication, profileToPrompt } from "../assistant/profile-core.js";
 import { explainCaptureError, shrinkImage } from "../core/browser/screen.js";
 import { webSearchFallback } from "../core/web/web.js";
+import type { Settings, ModelMessage, ToolCall, ToolDef, ToolResult } from "../core/llm/ai.js";
+import type { Profile } from "../assistant/profile-core.js";
+import type { Memory } from "../assistant/memory/memory.js";
+import type { ActionLogEntry, Elements, FormTool, FrameSnapshot, PageAction, PageActionResult, Shortcut, SiteTool, SnapshotOptions } from "./types.js";
+
+// ---------- types ----------
+export type PlanStatus = "todo" | "doing" | "done" | "failed" | "skipped";
+export interface PlanItem { text: string; status: PlanStatus | string; note?: string }
+// One frame of a capture, after its lines got frame-prefixed ids ("3:12").
+export interface CapturedFrame {
+  frameId: number; url: string; isTop: boolean; dialog: string; headings: string[]; errors: string[]; lines: string[];
+  skipped: number; traps: number; text: string; textLength: number; formTools: (FormTool & { frameId: number })[];
+}
+export interface Capture {
+  title: string; url: string; frames: CapturedFrame[]; siteTools: SiteTool[];
+  protected?: boolean; error?: string; blockedFrames?: { count: number; hosts: string[] }; scroll?: FrameSnapshot["scroll"];
+}
+// The last full snapshot, so later ones can list only what changed.
+export interface SnapshotBase { page: string; lines: Map<string, string>; at: number; headings: string; textHead: string; toolsKey: string; blockedKey: string }
+export interface AgentState {
+  tabId: number;
+  goal: string;
+  settings: Settings;
+  elements: Elements;
+  siteTools: Record<string, SiteTool>;
+  shortcuts: Record<string, Shortcut>;
+  steps: string[]; // step titles shown to you
+  safeSteps: string[]; // the same steps without any values (for site notes)
+  actionLog: ActionLogEntry[]; // successful actions, by meaning (for shortcuts)
+  errors: string[];
+  answers: string[];
+  input: TrustedInput | null;
+  signal?: AbortSignal;
+  userContext?: string[];
+  startSite?: string;
+  visitOk: Set<string>;
+  shareOk: Set<string>;
+  uploadOk?: Set<string>;
+  plan?: PlanItem[];
+  planApproval?: { sites: Set<string>; autoSubmit: boolean };
+  deferSnapshot?: boolean;
+  viewport?: { width: number; height: number };
+  groupId?: number | null;
+  lastActionAt?: number;
+  snapCount?: number;
+  lastSnapHost?: string;
+  lastSnapshotKind?: string;
+  base?: SnapshotBase | null;
+  finished?: boolean;
+  inputTimedOut?: boolean;
+  inputFailedFor?: number;
+}
+// A step card in the panel.
+export interface StepHandle { done(ok: boolean, detail?: string): void; waiting(): void }
+// How the agent talks to the panel (sidepanel.runAgentCard) or a test.
+export interface AgentUI {
+  signal: AbortSignal;
+  step(text: string, tool?: string): StepHandle;
+  note(text: string): void;
+  thinking?(chunk: string): void;
+  plan?(items: PlanItem[]): void;
+  approve(req: { title: string; detail: string }): Promise<boolean>;
+  approvePlan?(req: { items: string[]; sites: string[] }): Promise<{ ok: boolean; autoSubmit?: boolean } | undefined>;
+  ask(question: string): Promise<string>;
+}
+// What a tool call returns to the loop (text goes back to the model).
+export interface ToolOutcome { text: string; images?: string[]; failed?: boolean; declined?: boolean; errorMsg?: string; snapshot?: string; done?: boolean; summary?: string }
+export interface AgentRunResult { summary: string | null; steps: string[]; learned: { shortcut?: object; notes?: string[] } | null; plan?: PlanItem[] }
+type AskApproval = (title: string, detail: string) => Promise<boolean>;
 
 export const AGENT_MAX_STEPS = 40;
 export const KEEP_FULL_SNAPSHOTS = 2; // older page snapshots are shortened to save tokens
 // Clicks on controls with these words always need your approval, whatever the model says.
 export const RISKY_WORDS = /\b(submit|send|pay|purchase|buy( now)?|place order|order now|checkout|check out|delete|remove account|publish|post|transfer|donate|unsubscribe|confirm (purchase|order|payment)|sign and submit|finish application|complete application)\b/i;
 
-export const AGENT_TOOLS = [
+export const AGENT_TOOLS: ToolDef[] = [
   {
     name: "click",
     description: "Click an element from the snapshot. Returns the updated page snapshot.",
@@ -226,7 +294,7 @@ export const AGENT_TOOLS = [
   }
 ];
 
-export function agentSystemPrompt(profile, { memories = [], assistantName = "Sidekick" } = {}) {
+export function agentSystemPrompt(profile: Profile, { memories = [] as Memory[], assistantName = "Sidekick" } = {}): string {
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const about = profileToPrompt(profile, { includeResume: true }) + (memories.length ? `\n\n### Things you've learned about them\n${memories.map(m => `- ${m.text}`).join("\n")}` : "");
   return `You are ${assistantName}'s browser agent. You operate the user's Chrome tab to complete the task they give you, using tools, one action at a time. Today is ${today}.
@@ -302,25 +370,25 @@ ${about || "The user hasn't filled in a profile yet. Ask for whatever you need, 
 
 // ---------- page plumbing ----------
 
-export const sleep = ms => new Promise(r => setTimeout(r, ms));
+export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 // Calls into a page can hang forever when the page shows a dialog ("Leave site?", alert()) or
 // freezes. That's what froze the agent mid-way through several applications. Never wait forever.
 export const PAGE_TIMEOUT_MS = 15000;
-export let agentSignal = null; // the running task's Stop signal: Stop works even while a page hangs
-export function pageScript(details) {
-  let timer, onStop;
-  const limit = new Promise((_, reject) => {
+export let agentSignal: AbortSignal | null = null; // the running task's Stop signal: Stop works even while a page hangs
+export function pageScript<R>(details: { target: chrome.scripting.InjectionTarget; func: (...args: any[]) => R; args?: unknown[]; world?: "MAIN" | "ISOLATED" }): Promise<chrome.scripting.InjectionResult<Awaited<R>>[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined, onStop!: () => void;
+  const limit = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(Object.assign(new Error("The page isn't responding. It may be showing a dialog (like \"Leave site?\" or an alert) or be frozen."), { name: "PageTimeout" })), globalThis.SK_PAGE_MS || PAGE_TIMEOUT_MS);
     onStop = () => reject(new DOMException("Stopped", "AbortError"));
     if (agentSignal?.aborted) onStop(); else agentSignal?.addEventListener("abort", onStop, { once: true });
   });
-  const run = chrome.scripting.executeScript(details);
+  const run = chrome.scripting.executeScript(details as any) as Promise<chrome.scripting.InjectionResult<Awaited<R>>[]>;
   run.catch(() => {});
   return Promise.race([run, limit]).finally(() => { clearTimeout(timer); agentSignal?.removeEventListener("abort", onStop); });
 }
 
-export async function waitForTab(tabId, maxMs = 10000) {
+export async function waitForTab(tabId: number, maxMs = 10000): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < maxMs) {
     const tab = await chrome.tabs.get(tabId).catch(() => null);
@@ -339,15 +407,15 @@ export const PROTECTED = /^(chrome|chrome-extension|edge|about|devtools|view-sou
 // snapshot the first time on a page, then only what changed since (ids stay the same), which
 // keeps each step small and fast.
 
-export async function captureTab(state, opts = {}) {
+export async function captureTab(state: AgentState, opts: SnapshotOptions = {}): Promise<Capture> {
   const tab = await chrome.tabs.get(state.tabId);
   const url = tab.url || tab.pendingUrl || "";
-  const cap = { title: tab.title || "", url, frames: [], siteTools: [] };
+  const cap: Capture = { title: tab.title || "", url, frames: [], siteTools: [] };
   if (PROTECTED.test(url)) { state.elements = {}; state.siteTools = {}; cap.protected = true; return cap; }
-  let results;
+  let results: chrome.scripting.InjectionResult<FrameSnapshot | null>[];
   try {
     results = await pageScript({ target: { tabId: state.tabId, allFrames: true }, func: skPageSnapshot, args: [opts] });
-  } catch (err) {
+  } catch (err: any) {
     cap.error = err.message;
     return cap;
   }
@@ -358,7 +426,7 @@ export async function captureTab(state, opts = {}) {
   {
     const seen = results.flatMap(r => r.result?.frames || []);
     const read = results.filter(r => r.frameId !== 0 && r.result);
-    const readHosts = new Set(read.map(r => hostOf(r.result.url)));
+    const readHosts = new Set(read.map(r => hostOf(r.result!.url)));
     if (seen.length > read.length) {
       const hosts = [...new Set(seen.map(f => f.host).filter(h => h && !readHosts.has(h)))];
       cap.blockedFrames = { count: seen.length - read.length, hosts };
@@ -393,7 +461,7 @@ export async function captureTab(state, opts = {}) {
   } catch {}
   for (const f of cap.frames) {
     for (const t of f.formTools) {
-      const properties = {}, required = [];
+      const properties: Record<string, object> = {}, required: string[] = [];
       for (const p of t.params) {
         properties[p.name] = { type: p.type === "checkbox" ? "boolean" : p.type === "number" ? "number" : "string", ...(p.description && { description: p.description }), ...(p.options && { enum: p.options }) };
         if (p.required) required.push(p.name);
@@ -405,13 +473,13 @@ export async function captureTab(state, opts = {}) {
   return cap;
 }
 
-export const pageKey = url => { try { const u = new URL(url); return u.origin + u.pathname; } catch { return String(url || ""); } };
-export const stripOffscreen = l => l.replace(/,? offscreen\b/, "").replace(/ $/, "");
+export const pageKey = (url: string) => { try { const u = new URL(url); return u.origin + u.pathname; } catch { return String(url || ""); } };
+export const stripOffscreen = (l: string) => l.replace(/,? offscreen\b/, "").replace(/ $/, "");
 
 // Rows of identical buttons or links ("Save" on every job card) become one line with all ids.
-export function groupRepeats(lines) {
-  const keyOf = l => { const m = l.match(/^\[[\d:]+\] (.*)$/); return m ? stripOffscreen(m[1]) : null; };
-  const counts = {};
+export function groupRepeats(lines: string[]): string[] {
+  const keyOf = (l: string) => { const m = l.match(/^\[[\d:]+\] (.*)$/); return m ? stripOffscreen(m[1]) : null; };
+  const counts: Record<string, number> = {};
   for (const l of lines) { const k = keyOf(l); if (k && /^(button|link|clickable|menuitem|tab) /.test(k)) counts[k] = (counts[k] || 0) + 1; }
   const out = [], done = new Set();
   for (const l of lines) {
@@ -419,20 +487,20 @@ export function groupRepeats(lines) {
     if (!k || (counts[k] || 0) < 4) { out.push(l); continue; }
     if (done.has(k)) continue;
     done.add(k);
-    const ids = lines.filter(x => keyOf(x) === k).map(x => x.match(/^\[([\d:]+)\]/)[1]);
+    const ids = lines.filter(x => keyOf(x) === k).map(x => x.match(/^\[([\d:]+)\]/)![1]);
     out.push(`[${ids.join(",")}] ${k} ×${ids.length} (any of these ids works)`);
   }
   return out;
 }
 
-export function toolSignature(t) {
+export function toolSignature(t: SiteTool): string {
   const props = t.inputSchema?.properties || {};
   const req = new Set(t.inputSchema?.required || []);
-  const args = Object.entries(props).slice(0, 12).map(([k, v]) => `${k}${req.has(k) ? "" : "?"}: ${v?.enum ? v.enum.slice(0, 8).map(x => JSON.stringify(x)).join("|") : v?.type || "any"}`).join(", ");
+  const args = Object.entries(props).slice(0, 12).map(([k, v]) => `${k}${req.has(k) ? "" : "?"}: ${v?.enum ? v.enum.slice(0, 8).map((x: unknown) => JSON.stringify(x)).join("|") : v?.type || "any"}`).join(", ");
   return `- ${t.name}(${args})${t.description ? `: ${t.description}` : ""}${t.readOnly ? " [read-only]" : ""}`;
 }
 
-export async function formatSnapshot(state, cap, { forceFull = false } = {}) {
+export async function formatSnapshot(state: AgentState, cap: Capture, { forceFull = false } = {}): Promise<{ text: string; kind: "full" | "diff" }> {
   state.snapCount = (state.snapCount || 0) + 1;
   if (cap.protected) {
     state.base = null;
@@ -506,7 +574,7 @@ export async function formatSnapshot(state, cap, { forceFull = false } = {}) {
 }
 
 // Learned shortcuts and notes for the site, shown in full snapshots.
-export async function siteKnowledgeFor(state, url) {
+export async function siteKnowledgeFor(state: AgentState, url: string): Promise<string> {
   if (state.settings?.learnSites === false || typeof siteOf !== "function") return "";
   try {
     const site = siteOf(url);
@@ -517,7 +585,7 @@ export async function siteKnowledgeFor(state, url) {
   } catch { return ""; }
 }
 
-export async function snapshotTab(state, opts = {}) {
+export async function snapshotTab(state: AgentState, opts: { forceFull?: boolean } = {}): Promise<string> {
   const cap = await captureTab(state);
   if (cap.url) state.lastSnapHost = hostOf(cap.url);
   const r = await formatSnapshot(state, cap, opts);
@@ -525,9 +593,9 @@ export async function snapshotTab(state, opts = {}) {
   return r.text;
 }
 
-export const hostOf = url => { try { return new URL(url).hostname; } catch { return ""; } };
+export const hostOf = (url: string) => { try { return new URL(url).hostname; } catch { return ""; } };
 
-export async function actInPage(state, action) {
+export async function actInPage(state: AgentState, action: PageAction): Promise<PageActionResult> {
   const id = String(action.id ?? "");
   const [frameId, elId] = id.includes(":") ? [Number(id.split(":")[0]), id.split(":")[1]] : [0, id];
   const [res] = await pageScript({
@@ -544,13 +612,13 @@ export async function actInPage(state, action) {
 //       ask(question) -> Promise<string>, signal }
 // opts.history: the chat so far, so a follow-up like "apply for the backend one" knows what
 // "the backend one" is and which company you were looking at.
-export async function runAgent(goal, ui, opts = {}) {
+export async function runAgent(goal: string, ui: AgentUI, opts: { history?: string; userMessages?: string[] } = {}): Promise<AgentRunResult> {
   const profile = await getProfile();
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) throw new Error("No active tab.");
   const settings = await getSettings();
   const memories = await memoriesFor(goal, { relevant: 10, recent: 3 }).catch(() => []);
-  const state = { tabId: tab.id, elements: {}, steps: [], settings, input: null, actionLog: [], errors: [], answers: [], safeSteps: [], siteTools: {}, shortcuts: {}, goal };
+  const state: AgentState = { tabId: tab.id!, elements: {}, steps: [], settings, input: null, actionLog: [], errors: [], answers: [], safeSteps: [], siteTools: {}, shortcuts: {}, goal, visitOk: new Set(), shareOk: new Set() };
   const system = agentSystemPrompt(profile, { memories, assistantName: settings.assistantName });
 
   // Follow tabs the page opens because of the agent's own action (e.g. "Apply" opening a new
@@ -558,19 +626,19 @@ export async function runAgent(goal, ui, opts = {}) {
   // it in Chrome) are never followed: only within a few seconds of an agent click or key press,
   // and never Chrome's own pages.
   let newTabNote = "";
-  const onCreated = t => {
+  const onCreated = (t: chrome.tabs.Tab) => {
     const recent = Date.now() - (state.lastActionAt || 0) < 4000;
     const url = t.pendingUrl || t.url || "";
     if (t.openerTabId === state.tabId && recent && !PROTECTED.test(url) && !/^chrome:\/\/newtab/.test(url)) {
-      state.tabId = t.id;
-      addToAgentGroup(state, t.id);
+      state.tabId = t.id!;
+      addToAgentGroup(state, t.id!);
       newTabNote = "Note: that action opened a new tab; you're now working in it.\n\n";
     }
   };
   chrome.tabs.onCreated.addListener(onCreated);
   // You can keep using Chrome while the agent works: it carries on in its own tab.
   let toldBackground = false;
-  const onActivated = info => {
+  const onActivated = (info: chrome.tabs.OnActivatedInfo) => {
     // Tabs the page opens after an agent click can become active; check once it has moved there.
     setTimeout(() => {
       if (info.tabId !== state.tabId && !toldBackground && !state.finished) {
@@ -590,7 +658,7 @@ export async function runAgent(goal, ui, opts = {}) {
   state.visitOk = new Set(startSite ? [startSite] : []);
   state.shareOk = new Set(startSite ? [startSite] : []);
   const history = String(opts.history || "").trim();
-  const transcript = [{ role: "user", text: `${history ? `Earlier in this chat (context for the task; the user's newest message is the task):\n${history}\n\n` : ""}Task: ${goal}\n\nCurrent page:\n${await snapshotTab(state)}` }];
+  const transcript: ModelMessage[] = [{ role: "user", text: `${history ? `Earlier in this chat (context for the task; the user's newest message is the task):\n${history}\n\n` : ""}Task: ${goal}\n\nCurrent page:\n${await snapshotTab(state)}` }];
   let summary = null;
   let nudges = 0;
   // Several tasks get more steps: 40 for the first, 30 for each one after, up to 160.
@@ -614,7 +682,7 @@ export async function runAgent(goal, ui, opts = {}) {
         if ((open.length || asking) && nudges < 2) {
           nudges++;
           transcript.push({ role: "user", text: open.length
-            ? `Not finished: ${open.length} checklist item${open.length > 1 ? "s are" : " is"} still open:\n${planText(state.plan)}\nKeep going with tools. If you need the user, use ask_user; for a submit, click it with final_action: true (the user approves there). Call done only when every item is done, failed or skipped.`
+            ? `Not finished: ${open.length} checklist item${open.length > 1 ? "s are" : " is"} still open:\n${planText(state.plan!)}\nKeep going with tools. If you need the user, use ask_user; for a submit, click it with final_action: true (the user approves there). Call done only when every item is done, failed or skipped.`
             : "A reply without a tool call ends the task. If you need the user's answer or decision, call ask_user (you'll get the answer and can continue). For a submit, click it with final_action: true; the user approves it there. If the task is complete, call done." });
           continue;
         }
@@ -647,33 +715,33 @@ export async function runAgent(goal, ui, opts = {}) {
     await state.input?.detach();
   }
   const learned = state.finished ? await learnFromRun(state, profile, goal, ui.signal) : null;
-  return { summary, steps: state.steps, learned, plan: state.plan };
+  return { summary: summary as string | null, steps: state.steps, learned, plan: state.plan };
 }
 
 // After a finished task: save the steps that worked as a shortcut for the site, and (if the run
 // hit problems) a few notes for next time. Never fails the run.
-export async function learnFromRun(state, profile, goal, signal) {
+export async function learnFromRun(state: AgentState, profile: Profile, goal: string, signal?: AbortSignal): Promise<AgentRunResult["learned"]> {
   if (state.settings.learnSites === false) return null;
-  const out = {};
+  const out: NonNullable<AgentRunResult["learned"]> = {};
   try {
     const a = await learnFlow(state.actionLog, profile, goal);
     if (a) out.shortcut = { id: a.id, title: a.title, site: a.site, steps: a.steps.length, automatic: a.steps.filter(s => !s.needsModel && !s.final && !s.optional).length };
   } catch (err) { console.warn("Couldn't save shortcut", err); }
   try {
-    const site = state.actionLog.length ? state.actionLog.at(-1).site : "";
+    const site = state.actionLog.length ? state.actionLog.at(-1)!.site : "";
     if (site && (state.errors.length || state.answers.length)) {
       const notes = await learnSiteNotes({ site, goal, steps: state.safeSteps, errors: state.errors, answers: state.answers, signal });
       if (notes.length) out.notes = notes;
     }
-  } catch (err) { if (err.name !== "AbortError") console.warn("Couldn't save site notes", err); }
+  } catch (err: any) { if (err.name !== "AbortError") console.warn("Couldn't save site notes", err); }
   return out.shortcut || out.notes ? out : null;
 }
 
 // Keeps only the latest page snapshots in full; older ones are cut to their first lines.
 // The newest full snapshot is never cut: later snapshots only list changes against it.
-export function trimTranscript(transcript) {
+export function trimTranscript(transcript: ModelMessage[]): void {
   const toolMsgs = transcript.filter(m => m.role === "tool");
-  let base = null;
+  let base: ToolResult | null = null;
   for (const m of toolMsgs) for (const r of m.results) if (r.snapshot === "full") base = r;
   toolMsgs.slice(0, -KEEP_FULL_SNAPSHOTS).forEach(m => {
     for (const r of m.results) {
@@ -685,17 +753,17 @@ export function trimTranscript(transcript) {
     }
   });
   // The first message's snapshot too, once we're a few steps in.
-  const first = transcript[0];
+  const first = transcript[0] as Extract<ModelMessage, { role: "user" }>;
   if (base && toolMsgs.length > KEEP_FULL_SNAPSHOTS && !first.trimmed) {
     first.text = first.text.replace(/\n\nCurrent page:\n[\s\S]*$/, "\n\n[initial page snapshot removed]");
     first.trimmed = true;
   }
 }
 
-export const quote = s => `“${String(s || "").slice(0, 60)}”`;
+export const quote = (s: unknown) => `“${String(s || "").slice(0, 60)}”`;
 
 // A step without any values typed or chosen (for learning site notes).
-export function describeSafe(call, el) {
+export function describeSafe(call: ToolCall, el: Elements[string] | undefined): string {
   const a = call.args || {};
   const target = el ? quote(el.label || el.role) : "";
   switch (call.name) {
@@ -715,7 +783,7 @@ export function describeSafe(call, el) {
   }
 }
 
-export function describeCall(call, state) {
+export function describeCall(call: ToolCall, state: AgentState): string {
   const a = call.args || {};
   const el = state.elements[String(a.id)];
   const target = el ? quote(el.label || el.role) : a.id ? `[${a.id}]` : "";
@@ -723,7 +791,7 @@ export function describeCall(call, state) {
     case "click": return a.description ? `${a.description}` : `Click ${target}`;
     case "type": return `Type ${quote(a.text)} into ${target}`;
     case "select_option": return `Choose ${quote(a.option)} in ${target}`;
-    case "pick_date": { const d = new Date(String(a.date) + "T12:00:00"); return `Pick ${isNaN(d) ? a.date : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} in ${target}`; }
+    case "pick_date": { const d = new Date(String(a.date) + "T12:00:00"); return `Pick ${isNaN(d as any) ? a.date : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} in ${target}`; }
     case "set_checked": {
       const q = el && questionOfLine(el.line);
       if (el?.role === "radio") return `Choose ${target}${q ? ` for ${quote(q)}` : ""}`;
@@ -757,7 +825,7 @@ export function describeCall(call, state) {
 // Real clicks/typing through Chrome's debugger, attached to whichever tab we're working in.
 // In a background tab (you switched to another one) the agent uses page events instead: the
 // debugger's input can stall there until the tab is visible again.
-export async function trustedInput(state) {
+export async function trustedInput(state: AgentState): Promise<TrustedInput | null> {
   if (!state.settings.trustedInput) return null;
   const tab = await chrome.tabs.get(state.tabId).catch(() => null);
   if (tab && tab.active === false) return null;
@@ -772,9 +840,9 @@ export async function trustedInput(state) {
 
 // Runs a real-input action; if the debugger stalls (background tab), stops using it for this run
 // and returns false so the caller does the same action with page events instead.
-export async function viaTrusted(state, fn) {
+export async function viaTrusted(state: AgentState, fn: () => Promise<void>): Promise<boolean> {
   try { await fn(); return true; }
-  catch (err) {
+  catch (err: any) {
     if (err.name !== "TrustedInputTimeout" && !/debugger|detached|not attached|Trusted input/i.test(err.message || "")) throw err;
     state.inputTimedOut = true;
     await state.input?.detach().catch(() => {});
@@ -785,7 +853,7 @@ export async function viaTrusted(state, fn) {
 
 // When the agent itself leaves a page (navigate, go back), a half-filled form's "Leave site?"
 // prompt would block the tab and freeze the run. The agent chose to leave, so turn it off first.
-export async function disarmLeavePrompt(state) {
+export async function disarmLeavePrompt(state: AgentState): Promise<void> {
   try {
     await pageScript({ target: { tabId: state.tabId, frameIds: [0] }, world: "MAIN", func: pageDisarmLeavePrompt });
   } catch {}
@@ -793,7 +861,7 @@ export async function disarmLeavePrompt(state) {
 
 // ---------- the agent's tab group ----------
 // Tabs the agent opens are kept in one "Sidekick" group, so you can see where it's working.
-export async function addToAgentGroup(state, tabId) {
+export async function addToAgentGroup(state: AgentState, tabId: number): Promise<void> {
   if (state.settings.agentTabGroup === false || !chrome.tabs.group || !chrome.tabGroups) return;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -804,7 +872,7 @@ export async function addToAgentGroup(state, tabId) {
     } catch { state.groupId = null; } // you closed the group: start a new one
   }
 }
-export async function finishAgentGroup(state, ok) {
+export async function finishAgentGroup(state: AgentState, ok: boolean | undefined): Promise<void> {
   if (state.groupId == null) return;
   try { await chrome.tabGroups.update(state.groupId, { title: ok ? "Sidekick ✓" : "Sidekick" }); } catch {}
 }
@@ -818,8 +886,8 @@ export const CHECK_SYSTEM = `You check one step of a browser agent before it run
 Reply with JSON only: {"verdict": "ok" or "ask", "reason": "one short sentence the user will read"}.
 "ok": the step plausibly serves what the user asked, including normal steps along the way (the company's own site or careers page, job boards and applicant-tracking sites such as Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Handshake, LinkedIn; course sites such as Moodle or MyOpenMath for homework; search engines; the sign-in page of the site in question).
 "ask": the site or the sharing has no clear connection to the request, or looks like sending the user's details somewhere they didn't ask for (a survey, a "verify your identity" page, a different company, a URL with data attached).`;
-export async function checkAction(state, detail) {
-  const strip = t => String(t || "").replace(/<untrusted_content[\s\S]*?<\/untrusted_content>/g, "[attached content]").slice(0, 1500);
+export async function checkAction(state: AgentState, detail: string): Promise<{ ok: boolean; reason: string }> {
+  const strip = (t: unknown) => String(t || "").replace(/<untrusted_content[\s\S]*?<\/untrusted_content>/g, "[attached content]").slice(0, 1500);
   const earlier = (state.userContext || []).slice(-6).map(t => `- ${strip(t).slice(0, 300)}`).join("\n");
   const text = `The user's request: ${strip(state.goal)}
 ${earlier ? `Their earlier messages in this chat:\n${earlier}\n` : ""}Sites already used in this task: ${[...state.visitOk].join(", ") || "none"}
@@ -830,15 +898,15 @@ Proposed step: ${detail}`;
     const j = m ? JSON.parse(m[0]) : null;
     if (j && (j.verdict === "ok" || j.verdict === "ask")) return { ok: j.verdict === "ok", reason: String(j.reason || "").slice(0, 200) };
     return { ok: false, reason: "The safety check gave an unclear answer." };
-  } catch (err) {
+  } catch (err: any) {
     if (err.name === "AbortError") throw err;
     return { ok: false, reason: "The safety check couldn't run." };
   }
 }
-export const inPlan = (state, site) => !!state.planApproval?.sites.has(site);
+export const inPlan = (state: AgentState, site: string) => !!state.planApproval?.sites.has(site);
 
 // Going to a site not used yet in this task.
-export async function gateVisit(state, url, askApproval) {
+export async function gateVisit(state: AgentState, url: string, askApproval: AskApproval): Promise<boolean> {
   const site = siteOf(url);
   if (!site || state.visitOk.has(site)) return true;
   if (state.planApproval) {
@@ -852,7 +920,7 @@ export async function gateVisit(state, url, askApproval) {
   return true;
 }
 // Typing your personal details on a site for the first time in this task.
-export async function gateShare(state, site, kinds, field, askApproval) {
+export async function gateShare(state: AgentState, site: string, kinds: string[], field: string, askApproval: AskApproval): Promise<boolean> {
   if (!site || state.shareOk.has(site)) return true;
   if (inPlan(state, site) || state.settings.actionCheck === false) { state.shareOk.add(site); return true; }
   const v = await checkAction(state, `Type the user's ${kinds.join(", ")} into the field "${field}" on ${site}`);
@@ -864,11 +932,11 @@ export async function gateShare(state, site, kinds, field, askApproval) {
 // asking": never anything with money, deleting or publishing.
 export const NEVER_AUTO = /\b(pay|purchase|buy|order|checkout|check out|donate|transfer|delete|remove|unsubscribe|publish|post|sign and)\b/i;
 
-export const PLAN_MARK = { todo: "○", doing: "→", done: "✓", failed: "✗", skipped: "–" };
-export const planText = plan => plan.map((x, i) => `${PLAN_MARK[x.status] || "○"} ${i + 1}. ${x.text}${x.note ? ` (${x.note})` : ""}`).join("\n");
-export const planOpen = plan => (plan || []).filter(x => x.status === "todo" || x.status === "doing");
+export const PLAN_MARK: Record<string, string> = { todo: "○", doing: "→", done: "✓", failed: "✗", skipped: "–" };
+export const planText = (plan: PlanItem[]) => plan.map((x, i) => `${PLAN_MARK[x.status] || "○"} ${i + 1}. ${x.text}${x.note ? ` (${x.note})` : ""}`).join("\n");
+export const planOpen = (plan: PlanItem[] | undefined) => (plan || []).filter(x => x.status === "todo" || x.status === "doing");
 
-export function siteBlocked(state, url) {
+export function siteBlocked(state: AgentState, url: string): string | undefined {
   const host = hostOf(url);
   return String(state.settings.blockedSites || "").split(/[\s,]+/).map(x => x.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "")).filter(Boolean)
     .find(d => host === d || host.endsWith("." + d));
@@ -882,7 +950,7 @@ export const LEARNABLE = new Set(["click", "type", "select_option", "set_checked
 
 // Records every successful action (by meaning: role, label, question, section) for learning,
 // and every failure for the site notes.
-export async function runTool(call, state, ui, profile, takeTabNote) {
+export async function runTool(call: ToolCall, state: AgentState, ui: AgentUI, profile: Profile, takeTabNote: () => string): Promise<ToolOutcome> {
   const a = call.args || {};
   const id = String(a.id ?? "");
   const el = state.elements[id];
@@ -900,14 +968,14 @@ export async function runTool(call, state, ui, profile, takeTabNote) {
   return r;
 }
 
-export async function runToolInner(call, state, ui, profile, takeTabNote) {
+export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentUI, profile: Profile, takeTabNote: () => string): Promise<ToolOutcome> {
   const a = call.args || {};
   const label = describeCall(call, state);
   // Checklist updates show in the checklist itself, not as steps.
   const quiet = call.name === "plan";
   const step = quiet ? { done() {}, waiting() {} } : ui.step(label, call.name);
   if (!quiet) state.steps.push(label);
-  const fail = msg => { step.done(false, msg); return { text: `Error: ${msg}`, failed: true, errorMsg: msg }; };
+  const fail = (msg: string): ToolOutcome => { step.done(false, msg); return { text: `Error: ${msg}`, failed: true, errorMsg: msg }; };
   const withSnapshot = async (prefix = "", opts = {}) => {
     if (state.deferSnapshot) {
       await sleep(120);
@@ -922,13 +990,13 @@ export async function runToolInner(call, state, ui, profile, takeTabNote) {
     step.done(false, "You declined");
     return { text: "The user declined this action. Don't retry it. Ask what they'd like instead, or finish with done.", failed: true, declined: true };
   };
-  const askApproval = async (title, detail) => {
+  const askApproval = async (title: string, detail: string) => {
     step.waiting();
     return ui.approve({ title, detail });
   };
   // A web page can trick the model into "visiting" a URL that carries your data to someone
   // else (https://evil.example/?d=your@email). Such URLs need your OK.
-  const urlLooksSafe = async url => {
+  const urlLooksSafe = async (url: string) => {
     const personal = personalDetailsIn(url, profile);
     let longData = false;
     try { const u = new URL(url); longData = (u.search + u.hash).length > 300; } catch {}
@@ -978,7 +1046,7 @@ export async function runToolInner(call, state, ui, profile, takeTabNote) {
         if (input) {
           const loc = await actInPage(state, { op: "locate", id: a.id });
           if (!loc.ok) return fail(loc.error);
-          if (await viaTrusted(state, () => input.click(loc.x, loc.y))) {
+          if (await viaTrusted(state, () => input.click(loc.x!, loc.y!))) {
             state.lastActionAt = Date.now();
             step.done(true);
             return withSnapshot(loc.covered ? `Note: "${loc.covered}" was on top of that element, so the click may have hit it instead.\n\n` : "");
@@ -995,7 +1063,7 @@ export async function runToolInner(call, state, ui, profile, takeTabNote) {
         if (state.viewport && (x < 0 || y < 0 || x > state.viewport.width || y > state.viewport.height)) return fail(`(${x}, ${y}) is outside the visible page (${state.viewport.width}×${state.viewport.height}). Coordinates must come from the latest screenshot, and scrolling moves everything: after a scroll, take a new screenshot first. Better: use the element's id from the snapshot (click, select_option, pick_date).`);
         const what = await actInPage(state, { op: "describe_point", x, y });
         if (!what.ok) return fail(what.error);
-        if (everyClick || a.final_action || RISKY_WORDS.test(what.label) || RISKY_WORDS.test(a.description || "")) {
+        if (everyClick || a.final_action || RISKY_WORDS.test(what.label!) || RISKY_WORDS.test(a.description || "")) {
           if (!(await askApproval(`Click ${quote(what.label)} at (${x}, ${y})`, a.description || ""))) return declined();
         }
         const input = await trustedInput(state);
@@ -1038,7 +1106,7 @@ export async function runToolInner(call, state, ui, profile, takeTabNote) {
         if (input && (!a.id || state.elements[String(a.id)]?.frameId === 0 || String(a.id).includes(":"))) {
           const info = await actInPage(state, { op: "enter_check", id: a.id });
           // A real Enter submits forms, so it counts as a final action in bigger forms.
-          if (a.key === "Enter" && info.ok && info.formFields > 2 && !info.inTextarea) {
+          if (a.key === "Enter" && info.ok && info.formFields! > 2 && !info.inTextarea) {
             if (!(await askApproval("Press Enter, which will submit this form", ""))) return declined();
           }
           if (await viaTrusted(state, () => input.key(a.key))) {
@@ -1131,7 +1199,7 @@ export async function runToolInner(call, state, ui, profile, takeTabNote) {
           const r = await actInPage(state, { op: "fill_form_tool", id: t.form, values: args, submit: !!t.autosubmit });
           if (!r.ok) return fail(r.error);
           step.done(true);
-          return withSnapshot(`Filled the site's "${t.name}" form (${r.filled.join(", ") || "nothing"})${r.missing.length ? `; couldn't fill: ${r.missing.join(", ")}` : ""}. ${r.submitted ? "It was submitted." : "Not submitted yet: click the form's submit button to send it (that click needs approval)."}\n\n`);
+          return withSnapshot(`Filled the site's "${t.name}" form (${r.filled!.join(", ") || "nothing"})${r.missing!.length ? `; couldn't fill: ${r.missing!.join(", ")}` : ""}. ${r.submitted ? "It was submitted." : "Not submitted yet: click the form's submit button to send it (that click needs approval)."}\n\n`);
         }
         const [res] = await pageScript({ target: { tabId: state.tabId, frameIds: [0] }, world: "MAIN", func: skWebMCPCall, args: [{ name: t.name, args }] });
         const out = res?.result || { ok: false, error: "The page didn't respond." };
@@ -1158,7 +1226,7 @@ export async function runToolInner(call, state, ui, profile, takeTabNote) {
           }
           state.uploadOk.add(site);
         }
-        const [, type, base64] = profile.resume.dataUrl.match(/^data:([^;]*);base64,(.*)$/s);
+        const [, type, base64] = profile.resume.dataUrl.match(/^data:([^;]*);base64,(.*)$/s)!;
         const r = await actInPage(state, { op: "upload_file", id: a.id, file: { name: profile.resume.name, type: type || profile.resume.type, base64 } });
         if (!r.ok) return fail(r.error);
         step.done(true);
@@ -1169,8 +1237,8 @@ export async function runToolInner(call, state, ui, profile, takeTabNote) {
         if (!words.length) return fail("find needs some words to look for.");
         const cap = await captureTab(state, { maxElements: 2500, maxText: 300000 });
         if (cap.error) return fail(cap.error);
-        const all = l => words.every(w => l.toLowerCase().includes(w));
-        const any = l => words.some(w => l.toLowerCase().includes(w));
+        const all = (l: string) => words.every(w => l.toLowerCase().includes(w));
+        const any = (l: string) => words.some(w => l.toLowerCase().includes(w));
         const els = cap.frames.flatMap(f => f.lines.filter(l => l.startsWith("[")).map(stripOffscreen));
         let hitEls = els.filter(all);
         if (!hitEls.length) hitEls = els.filter(any);
@@ -1194,8 +1262,8 @@ export async function runToolInner(call, state, ui, profile, takeTabNote) {
       }
       case "plan": {
         if (Array.isArray(a.items) && a.items.length) {
-          const items = a.items.slice(0, 12).map(t => String(t).slice(0, 120));
-          const sites = [...new Set([state.startSite, ...(Array.isArray(a.sites) ? a.sites : []).map(d => siteOf(/^https?:/.test(d) ? d : "https://" + String(d).trim()))].filter(Boolean))].slice(0, 10);
+          const items: string[] = a.items.slice(0, 12).map((t: unknown) => String(t).slice(0, 120));
+          const sites = [...new Set([state.startSite, ...(Array.isArray(a.sites) ? a.sites : []).map((d: string) => siteOf(/^https?:/.test(d) ? d : "https://" + String(d).trim()))].filter(Boolean))].slice(0, 10);
           // Several tasks: you approve the plan once (tasks + sites) instead of step by step.
           const covered = state.planApproval && sites.every(x => inPlan(state, x));
           if (items.length >= 2 && ui.approvePlan && !covered) {
@@ -1213,10 +1281,10 @@ export async function runToolInner(call, state, ui, profile, takeTabNote) {
         } else if (a.update && state.plan?.[Number(a.update.item) - 1]) {
           Object.assign(state.plan[Number(a.update.item) - 1], { status: a.update.status, note: String(a.update.note || "").slice(0, 160) });
         } else return fail(state.plan ? `There's no item ${a.update?.item}; the plan has ${state.plan.length}.` : "Start the plan with items.");
-        ui.plan?.(state.plan.map(x => ({ ...x })));
+        ui.plan?.(state.plan!.map(x => ({ ...x })));
         step.done(true);
         const approvedNote = a.items && state.planApproval ? `\nThe user approved this plan for ${[...state.planApproval.sites].join(", ")}. ${state.planApproval.autoSubmit ? "Submits on those sites won't ask again (still mark them final_action: true); anything with payment, deleting or posting still asks." : "Each submit still needs their OK (final_action: true)."} Going to other sites needs their OK.` : "";
-        return { text: `Checklist:\n${planText(state.plan)}${approvedNote}` };
+        return { text: `Checklist:\n${planText(state.plan!)}${approvedNote}` };
       }
       case "read_text": {
         const r = await actInPage(state, { op: "read_text", max: 15000 });
@@ -1231,9 +1299,9 @@ export async function runToolInner(call, state, ui, profile, takeTabNote) {
         const tab = await chrome.tabs.get(state.tabId);
         if (tab.active === false) return fail("The page is in a background tab (the agent's own tab, or the user switched tabs), so it can't be photographed right now. Work from the snapshot and read_text; if you truly need to see it, use ask_user to have them switch to it.");
         const input = await trustedInput(state);
-        let shot = null;
+        let shot: { dataUrl: string; width: number; height: number } | null = null;
         if (input) {
-          try { shot = await input.screenshot(); } catch (err) { if (err.name !== "TrustedInputTimeout") throw err; }
+          try { shot = await input.screenshot(); } catch (err: any) { if (err.name !== "TrustedInputTimeout") throw err; }
         }
         if (!shot) {
           const raw = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 75 });
@@ -1265,8 +1333,8 @@ export async function runToolInner(call, state, ui, profile, takeTabNote) {
         if (!(await gateVisit(state, a.url, askApproval))) return declined();
         // The agent works in its own tabs and never switches the tab you're looking at.
         const t = await chrome.tabs.create({ url: a.url, active: false });
-        state.tabId = t.id;
-        await addToAgentGroup(state, t.id);
+        state.tabId = t.id!;
+        await addToAgentGroup(state, t.id!);
         await sleep(300);
         step.done(true);
         return withSnapshot();
@@ -1280,7 +1348,7 @@ export async function runToolInner(call, state, ui, profile, takeTabNote) {
         const t = await chrome.tabs.get(Number(a.tab_id)).catch(() => null);
         if (!t) return fail("No tab with that id.");
         // Works there in the background: the tab you're looking at stays in front.
-        state.tabId = t.id;
+        state.tabId = t.id!;
         step.done(true);
         return withSnapshot();
       }
@@ -1309,7 +1377,7 @@ export async function runToolInner(call, state, ui, profile, takeTabNote) {
       default:
         return fail(`Unknown tool ${call.name}.`);
     }
-  } catch (err) {
+  } catch (err: any) {
     if (err.name === "AbortError") { step.done(false, "Stopped"); throw err; }
     return fail(err.message || String(err));
   }
@@ -1317,7 +1385,7 @@ export async function runToolInner(call, state, ui, profile, takeTabNote) {
 
 // ---------- replaying a learned shortcut ----------
 
-export const stepWhat = s => {
+export const stepWhat = (s: Shortcut["steps"][number]) => {
   const target = `${s.role} “${String(s.label || "").slice(0, 50)}”${s.question ? ` (${String(s.question).slice(0, 60)})` : ""}`;
   switch (s.tool) {
     case "type": return `type into ${target}`;
@@ -1332,7 +1400,7 @@ export const stepWhat = s => {
 // Runs the routine steps of a shortcut through the normal tools (so every safety rule and
 // approval still applies), matching each step to the page by role, label and question.
 // Returns { done: [labels], stop: why it stopped, failedAt: step index if a step failed }.
-export async function replayShortcut(shortcut, state, ui, profile) {
+export async function replayShortcut(shortcut: Shortcut, state: AgentState, ui: AgentUI, profile: Profile): Promise<{ done: string[]; stop: string; failedAt?: number }> {
   const vals = profileValues(profile);
   const done = [];
   await captureTab(state);
