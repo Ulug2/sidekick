@@ -1,14 +1,15 @@
 // Quality checks ("evals"): a fixed set of conversations run through the real pipeline with
 // automatic grading. Run them after changing models or instructions; aim for ≥ 85% passing.
 import { effectiveProvider, getSettings, modelFor } from "../../core/llm/ai.js";
-import { routeMessage, runTurn } from "../../assistant/brain.js";
 import { calcEngine } from "../../core/calc/calc.js";
 import { redactSecrets, untrusted } from "../../core/security/guard.js";
 import { bm25 } from "../../assistant/memory/memory.js";
 import { reflectOnChat, updateSessionNotes } from "../../assistant/session.js";
 import { readLocal, type Chat } from "../../core/storage/schema.js";
-import type { ChatMemoryStore, TurnInput, TurnResult } from "../../assistant/brain.js";
 import type { LongTermStore } from "../../assistant/session.js";
+import { routeMessage } from "../../assistant/routing.js";
+import { runTurn } from "../../assistant/turn.js";
+import type { ChatMemoryStore, TurnInput, TurnResult } from "../../assistant/types.js";
 
 export const GATE = 0.85;
 
