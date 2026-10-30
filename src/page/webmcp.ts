@@ -1,14 +1,16 @@
 // Injected into web pages with chrome.scripting.executeScript({ func }), which sends the
 // function's source text: it must not use anything outside its own body (no imports, no helpers).
 
+import type { SiteTool } from "../agent/types.js";
+
 // ---------- WebMCP: tools a website offers to AI agents ----------
 // These run in the page's own JavaScript world (world: "MAIN"), where the site registered its
 // tools with navigator.modelContext. webmcp-capture.js records them as they're registered.
 
-export async function skWebMCPList() {
-  const out = [];
+export async function skWebMCPList(): Promise<SiteTool[]> {
+  const out: SiteTool[] = [];
   const seen = new Set();
-  const add = (t, source) => {
+  const add = (t?: any, source?: any) => {
     if (!t || !t.name || seen.has(t.name)) return;
     seen.add(t.name);
     let schema = t.inputSchema || t.parameters || { type: "object", properties: {} };
@@ -29,14 +31,14 @@ export async function skWebMCPList() {
   return out.slice(0, 30);
 }
 
-export async function skWebMCPCall(req) {
+export async function skWebMCPCall(req: { name: string; args: object }): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   const name = req && req.name;
   const args = (req && req.args) || {};
   try {
     const t = window.__skWebMCP && window.__skWebMCP.tools && window.__skWebMCP.tools.get(name);
     let result;
     if (t && typeof t.execute === "function") {
-      const client = { requestUserInteraction: async cb => (typeof cb === "function" ? cb() : undefined) };
+      const client = { requestUserInteraction: async (cb: any) => (typeof cb === "function" ? cb() : undefined) };
       result = await t.execute(args, client);
     } else if (navigator.modelContextTesting && typeof navigator.modelContextTesting.executeTool === "function") {
       result = await navigator.modelContextTesting.executeTool(name, JSON.stringify(args));
@@ -44,13 +46,13 @@ export async function skWebMCPCall(req) {
       return { ok: false, error: `The page doesn't offer the tool "${name}" anymore.` };
     }
     let text;
-    if (result && Array.isArray(result.content)) text = result.content.map(c => (c && c.type === "text" ? c.text : `[${c && c.type}]`)).join("\n");
+    if (result && Array.isArray(result.content)) text = result.content.map((c: any) => (c && c.type === "text" ? c.text : `[${c && c.type}]`)).join("\n");
     else if (typeof result === "string") text = result;
     else { try { text = JSON.stringify(result === undefined ? null : result); } catch { text = String(result); } }
     text = String(text).slice(0, 8000);
     if (result && result.isError) return { ok: false, error: text.slice(0, 500) };
     return { ok: true, text };
-  } catch (err) {
+  } catch (err: any) {
     return { ok: false, error: String((err && err.message) || err).slice(0, 300) };
   }
 }

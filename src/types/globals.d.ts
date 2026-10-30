@@ -34,6 +34,17 @@ declare global {
     mammoth?: { extractRawText(input: { arrayBuffer: ArrayBuffer }): Promise<{ value: string }> };
   }
 
+  // Set inside web pages by Sidekick's own page scripts (src/page) and webmcp-capture.js.
+  interface Window {
+    __skNext?: number; // next data-sk-id
+    __skWebMCP?: { tools: Map<string, any> }; // site tools captured by webmcp-capture.js
+  }
+  // WebMCP (experimental): tools a site offers to AI agents.
+  interface Navigator {
+    modelContext?: any;
+    modelContextTesting?: any;
+  }
+
   // Test hooks: shorter time limits in the suites.
   var SK_STALL_MS: number | undefined;
   var SK_PAGE_MS: number | undefined;

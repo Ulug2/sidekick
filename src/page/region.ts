@@ -3,8 +3,9 @@
 
 // Shows a crosshair overlay on the page; resolves with the dragged box (CSS pixels) or null.
 // Runs inside the page, in a shadow root so the page's CSS can't interfere.
-export function pickRegionInPage() {
-  return new Promise(resolve => {
+export interface PickedRegion { x: number; y: number; w: number; h: number; vw: number; vh: number }
+export function pickRegionInPage(): Promise<PickedRegion | null> {
+  return new Promise((resolve: any) => {
     const host = document.createElement("div");
     host.style.cssText = "all:initial;position:fixed;inset:0;z-index:2147483647;";
     const root = host.attachShadow({ mode: "closed" });
@@ -21,36 +22,36 @@ export function pickRegionInPage() {
       </style>
       <div class="ov"></div><div class="box"></div>
       <div class="hint">Drag to capture an area <button type="button">Cancel</button></div>`;
-    const ov = root.querySelector(".ov"), box = root.querySelector(".box");
-    let start = null;
+    const ov = root.querySelector<HTMLElement>(".ov")!, box = root.querySelector<HTMLElement>(".box")!;
+    let start: { x: number; y: number } | null = null;
 
-    const done = rect => {
+    const done = (rect: any) => {
       removeEventListener("keydown", onKey, true);
       host.remove();
       // Wait two frames so the overlay is gone before the screenshot is taken.
       requestAnimationFrame(() => requestAnimationFrame(() => resolve(rect)));
     };
-    const onKey = e => { if (e.key === "Escape") { e.preventDefault(); done(null); } };
+    const onKey = (e: any) => { if (e.key === "Escape") { e.preventDefault(); done(null); } };
     addEventListener("keydown", onKey, true);
-    root.querySelector("button").onclick = () => done(null);
-    ov.addEventListener("contextmenu", e => { e.preventDefault(); done(null); });
+    root.querySelector("button")!.onclick = () => done(null);
+    ov.addEventListener("contextmenu", (e: any) => { e.preventDefault(); done(null); });
 
-    const rectFrom = e => {
-      const x = Math.min(start.x, e.clientX), y = Math.min(start.y, e.clientY);
-      return { x, y, w: Math.abs(e.clientX - start.x), h: Math.abs(e.clientY - start.y) };
+    const rectFrom = (e: any) => {
+      const x = Math.min(start!.x, e.clientX), y = Math.min(start!.y, e.clientY);
+      return { x, y, w: Math.abs(e.clientX - start!.x), h: Math.abs(e.clientY - start!.y) };
     };
-    ov.addEventListener("pointerdown", e => {
+    ov.addEventListener("pointerdown", (e: any) => {
       if (e.button !== 0) return;
       start = { x: e.clientX, y: e.clientY };
       ov.setPointerCapture(e.pointerId);
       box.style.display = "block";
     });
-    ov.addEventListener("pointermove", e => {
+    ov.addEventListener("pointermove", (e: any) => {
       if (!start) return;
       const r = rectFrom(e);
       Object.assign(box.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
     });
-    ov.addEventListener("pointerup", e => {
+    ov.addEventListener("pointerup", (e: any) => {
       if (!start) return;
       const r = rectFrom(e);
       if (r.w < 6 || r.h < 6) { start = null; box.style.display = "none"; return; }

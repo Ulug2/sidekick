@@ -1,10 +1,12 @@
 // Injected into web pages with chrome.scripting.executeScript({ func }), which sends the
 // function's source text: it must not use anything outside its own body (no imports, no helpers).
 
+import type { PageAction, PageActionResult } from "../agent/types.js";
+
 // Performs one action on the element with the given data-sk-id, after briefly highlighting it.
-export async function skPageAct(a) {
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
-  const deepFind = (root, sel) => {
+export async function skPageAct(a: PageAction): Promise<PageActionResult> {
+  const sleep = (ms: any) => new Promise((r: any) => setTimeout(r, ms));
+  const deepFind = (root?: any, sel?: any): any => {
     const hit = root.querySelector(sel);
     if (hit) return hit;
     for (const el of root.querySelectorAll("*")) {
@@ -12,11 +14,11 @@ export async function skPageAct(a) {
     }
     return null;
   };
-  const clean = s => String(s || "").replace(/\s+/g, " ").trim();
-  const isMathBox = el => !!(el && el.classList && el.classList.contains("mq-editable-field"));
+  const clean = (s: any) => String(s || "").replace(/\s+/g, " ").trim();
+  const isMathBox = (el: any) => !!(el && el.classList && el.classList.contains("mq-editable-field"));
 
   if (a.op === "read_text") {
-    const main = document.querySelector("main, [role=main], article") || document.body;
+    const main = document.querySelector<HTMLElement>("main, [role=main], article") || document.body;
     const text = (main.innerText || "").replace(/\n{3,}/g, "\n\n").trim();
     return { ok: true, text: text.slice(0, a.max || 15000), truncated: text.length > (a.max || 15000) };
   }
@@ -51,7 +53,7 @@ export async function skPageAct(a) {
   if (a.op === "describe_point" || a.op === "click_point") {
     const hit = document.elementFromPoint(a.x, a.y);
     if (!hit) return { ok: false, error: `Nothing at (${a.x}, ${a.y}); it's outside the visible page.` };
-    const target = hit.closest("a[href],button,[role=button],[role=link],input,select,textarea,label,[onclick],[role=option],[role=menuitem],[role=tab],[role=checkbox],[role=radio]") || hit;
+    const target: any = hit.closest("a[href],button,[role=button],[role=link],input,select,textarea,label,[onclick],[role=option],[role=menuitem],[role=tab],[role=checkbox],[role=radio]") || hit;
     const label = clean(target.getAttribute("aria-label") || target.innerText || target.value || target.getAttribute("title") || target.getAttribute("alt") || target.tagName.toLowerCase()).slice(0, 80);
     const dot = document.createElement("div");
     dot.style.cssText = `all:initial;position:fixed;z-index:2147483647;pointer-events:none;left:${a.x - 9}px;top:${a.y - 9}px;width:18px;height:18px;border-radius:50%;border:2px solid #c8a96a;box-shadow:0 0 0 5px rgba(200,169,106,.28);transition:opacity .4s;`;
@@ -86,7 +88,7 @@ export async function skPageAct(a) {
   // ---- highlight so the user can see what's happening ----
   el.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
   await sleep(60);
-  const showBox = target => {
+  const showBox = (target: any) => {
     const r = target.getBoundingClientRect();
     const box = document.createElement("div");
     box.style.cssText = `all:initial;position:fixed;z-index:2147483647;pointer-events:none;left:${r.left - 4}px;top:${r.top - 4}px;` +
@@ -96,7 +98,7 @@ export async function skPageAct(a) {
     setTimeout(() => { box.style.opacity = "0"; setTimeout(() => box.remove(), 450); }, 700);
   };
 
-  const clickLike = target => {
+  const clickLike = (target: any) => {
     const r = target.getBoundingClientRect();
     const opts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 };
     target.dispatchEvent(new PointerEvent("pointerover", opts));
@@ -108,21 +110,21 @@ export async function skPageAct(a) {
     target.click();
   };
   // Hidden custom checkboxes/radios: click their visible label instead.
-  const visibleTarget = t => {
+  const visibleTarget = (t: any) => {
     const r = t.getBoundingClientRect();
     if ((r.width < 2 || r.height < 2 || getComputedStyle(t).opacity === "0") && t.labels && t.labels.length) return t.labels[0];
     return t;
   };
 
-  const setNativeValue = (target, value) => {
+  const setNativeValue = (target?: any, value?: any) => {
     const proto = target instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype
       : target instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
-    Object.getOwnPropertyDescriptor(proto, "value").set.call(target, value);
+    Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(target, value);
     target.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: value }));
     target.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
   };
 
-  const isShown = n => {
+  const isShown = (n: any) => {
     if (n.checkVisibility && !n.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
     const r = n.getBoundingClientRect();
     return r.width > 1 && r.height > 1;
@@ -131,24 +133,24 @@ export async function skPageAct(a) {
   // How well an option matches what was asked. Sites word things their own way ("Dulles
   // International Airport(IAD) (11 km),Washington DC" for "Washington DC (IAD)"), so this scores
   // instead of demanding the same text: exact > same code (IAD, IST) > starts/contains > shared words.
-  const norm = t => clean(t).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ı/g, "i").toLowerCase();
-  const codesIn = t => [...String(t || "").matchAll(/\(([A-Z0-9]{2,4})\)|\b([A-Z]{3})\b/g)].map(m => m[1] || m[2]);
-  const optionScore = (text, want) => {
+  const norm = (t: any) => clean(t).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ı/g, "i").toLowerCase();
+  const codesIn = (t: any) => [...String(t || "").matchAll(/\(([A-Z0-9]{2,4})\)|\b([A-Z]{3})\b/g)].map((m: any) => m[1] || m[2]);
+  const optionScore = (text?: any, want?: any) => {
     const t = norm(text), w = norm(want);
     if (!t || !w) return 0;
     if (t === w) return 100;
     const codes = codesIn(want);
-    if (codes.some(c => new RegExp(`\\(${c}\\)|\\b${c}\\b`).test(clean(text)))) return 95;
+    if (codes.some((c: any) => new RegExp(`\\(${c}\\)|\\b${c}\\b`).test(clean(text)))) return 95;
     if (t.startsWith(w)) return 90;
     if (t.includes(w)) return 85;
     if (w.length > 3 && t.length > 2 && w.includes(t)) return 70;
-    const lowCodes = codes.map(c => c.toLowerCase());
-    const words = w.split(/[^a-z0-9]+/).filter(x => x.length > 1 && !lowCodes.includes(x));
+    const lowCodes = codes.map((c: any) => c.toLowerCase());
+    const words = w.split(/[^a-z0-9]+/).filter((x: any) => x.length > 1 && !lowCodes.includes(x));
     if (!words.length) return 0;
-    const share = words.filter(x => t.includes(x)).length / words.length;
+    const share = words.filter((x: any) => t.includes(x)).length / words.length;
     return share >= 0.5 ? Math.round(40 + 40 * share) : 0;
   };
-  const optionMatch = (candidates, want) => {
+  const optionMatch = (candidates?: any, want?: any) => {
     let best = null, bestScore = 0;
     for (const c of candidates) {
       const sc = Math.max(optionScore(c.text, want), c.label ? optionScore(c.label, want) : 0);
@@ -160,70 +162,70 @@ export async function skPageAct(a) {
   // Options of a custom dropdown/autocomplete: the list the field points to (aria-controls /
   // aria-owns), else visible options near the field. Never menus in the page header or nav.
   const OPTION_SEL = '[role=option], [role=menuitem], [role=listbox] li, [id*="-option-"], ul[class*="menu"] li, [class*="option"]:not(select):not(option)';
-  const optionsFor = field => {
+  const optionsFor = (field: any) => {
     const inp = field.matches("input, textarea") ? field : field.querySelector("input, textarea");
-    const ids = [field, inp].filter(Boolean).flatMap(x => [x.getAttribute("aria-controls"), x.getAttribute("aria-owns")]).filter(Boolean).join(" ").split(/\s+/).filter(Boolean);
-    const boxes = ids.map(id => document.getElementById(id)).filter(Boolean);
-    let opts = (boxes.length ? boxes : [document]).flatMap(b => [...b.querySelectorAll(OPTION_SEL)]).filter(isShown);
-    opts = opts.filter(o => !opts.some(p => p !== o && p.contains(o)));
+    const ids = [field, inp].filter(Boolean).flatMap((x: any) => [x.getAttribute("aria-controls"), x.getAttribute("aria-owns")]).filter(Boolean).join(" ").split(/\s+/).filter(Boolean);
+    const boxes = ids.map((id: any) => document.getElementById(id)).filter(Boolean);
+    let opts = (boxes.length ? boxes : [document]).flatMap((b: any) => [...b.querySelectorAll(OPTION_SEL)]).filter(isShown);
+    opts = opts.filter((o: any) => !opts.some((p: any) => p !== o && p.contains(o)));
     if (!boxes.length) {
       const fr = field.getBoundingClientRect();
-      opts = opts.filter(o => !o.closest("nav, header, footer, [role=navigation], [role=banner]") && Math.abs(o.getBoundingClientRect().top - fr.bottom) < 700);
+      opts = opts.filter((o: any) => !o.closest("nav, header, footer, [role=navigation], [role=banner]") && Math.abs(o.getBoundingClientRect().top - fr.bottom) < 700);
     }
-    return opts.map(o => ({ el: o, text: o.innerText || o.textContent || "", label: o.getAttribute("aria-label") || "" }));
+    return opts.map((o: any) => ({ el: o, text: o.innerText || o.textContent || "", label: o.getAttribute("aria-label") || "" }));
   };
   // What to type to make an autocomplete show the right suggestion: a code first, then the name.
-  const queriesFor = want => {
+  const queriesFor = (want: any) => {
     const w = clean(want);
     const before = clean(w.split(/[(,]/)[0]);
-    return [...new Set([...codesIn(w), before, before.split(" ")[0], w].filter(q => q && q.length >= 2))];
+    return [...new Set([...codesIn(w), before, before.split(" ")[0], w].filter((q: any) => q && q.length >= 2))];
   };
 
   // ---- calendars ----
   const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
-  const isoOf = text => {
+  const isoOf = (text: any) => {
     const t = clean(text);
     let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (m) return `${m[1]}-${m[2]}-${m[3]}`;
     const d = new Date(t);
-    if (isNaN(d) || !/[a-z]{3}|\d{1,2}\/\d{1,2}\/\d{4}/i.test(t)) return null;
+    if (isNaN(d as any) || !/[a-z]{3}|\d{1,2}\/\d{1,2}\/\d{4}/i.test(t)) return null;
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
-  const pickDate = async (field, iso) => {
+  const pickDate = async (field?: any, iso?: any): Promise<PageActionResult> => {
     const [y, mo, dd] = iso.split("-").map(Number);
     if (field.tagName === "INPUT" && field.type === "date") { setNativeValue(field, iso); return { ok: true, note: `Set the date to ${iso}.` }; }
     const mon = MONTHS[mo - 1], cap = mon[0].toUpperCase() + mon.slice(1), short = cap.slice(0, 3);
     const dayRe = new RegExp(`\\b(${cap}|${short})\\.?\\s+${dd}\\b[^0-9]{0,24}${y}|\\b${dd}\\.?\\s+(${cap}|${short})\\.?[^0-9]{0,24}${y}|${iso}|\\b0?${mo}/0?${dd}/${y}\\b`, "i");
     const CELL = "button, td, [role=gridcell], [role=button], [role=option], a, [tabindex]";
-    const findDay = () => {
+    const findDay = (): any => {
       for (const c of document.querySelectorAll("button, td, [role=gridcell], [role=button], [role=option], a, abbr, time, [data-date], [data-day], [aria-label]")) {
         if (!isShown(c)) continue;
-        const attrs = ["aria-label", "title", "data-date", "data-day", "datetime", "data-value", "data-iso"].map(n => c.getAttribute(n)).filter(Boolean).join(" | ");
+        const attrs = ["aria-label", "title", "data-date", "data-day", "datetime", "data-value", "data-iso"].map((n: any) => c.getAttribute(n)).filter(Boolean).join(" | ");
         if (attrs && dayRe.test(attrs)) return c.closest(CELL) || c;
       }
       // A month heading ("December 2026") whose own grid has exactly one cell "10".
       const capRe = new RegExp(`^(${cap}|${short})\\.?\\s+${y}$`, "i");
-      for (const h of document.querySelectorAll("*")) {
+      for (const h of document.querySelectorAll<HTMLElement>("*")) {
         if (h.children.length > 2 || !isShown(h) || !capRe.test(clean(h.innerText))) continue;
         for (let box = h.parentElement, i = 0; box && i < 5; box = box.parentElement, i++) {
-          const cells = [...box.querySelectorAll("button, td, [role=gridcell]")].filter(c => isShown(c) && clean(c.innerText) === String(dd));
+          const cells = [...box.querySelectorAll("button, td, [role=gridcell]")].filter((c: any) => isShown(c) && clean(c.innerText) === String(dd));
           if (cells.length === 1) return cells[0];
           if (cells.length > 1) break;
         }
       }
       return null;
     };
-    const shownMonths = () => [...document.querySelectorAll("*")].filter(e => e.children.length <= 2 && isShown(e))
-      .map(e => clean(e.innerText).match(/^([A-Za-z]+)\.?\s+(\d{4})$/)).filter(m => m && MONTHS.some(x => x.startsWith(m[1].toLowerCase().slice(0, 3))))
-      .map(m => Number(m[2]) * 12 + MONTHS.findIndex(x => x.startsWith(m[1].toLowerCase().slice(0, 3))));
-    const navButton = dir => {
+    const shownMonths = () => [...document.querySelectorAll("*")].filter((e: any) => e.children.length <= 2 && isShown(e))
+      .map((e: any) => clean(e.innerText).match(/^([A-Za-z]+)\.?\s+(\d{4})$/)).filter((m: any) => m && MONTHS.some((x: any) => x.startsWith(m[1].toLowerCase().slice(0, 3))))
+      .map((m: any) => Number(m[2]) * 12 + MONTHS.findIndex((x: any) => x.startsWith(m[1].toLowerCase().slice(0, 3))));
+    const navButton = (dir: any) => {
       const want = dir > 0 ? /next|following|forward|ileri|siguiente|suivant/i : /prev|previous|back|geri|anterior|précédent/i;
       const arrows = dir > 0 ? /^[›»>→❯▶]$/ : /^[‹«<←❮◀]$/;
       const cands = [...document.querySelectorAll("button, [role=button], a")].filter(isShown);
-      const named = c => [c.getAttribute("aria-label"), c.getAttribute("title"), String(c.className)].join(" ");
-      return cands.find(c => /month/i.test(named(c)) && want.test(named(c)))
-        || cands.find(c => want.test(named(c)) && !/slide|carousel|banner|page|step/i.test(named(c)) && c.closest("[class*=alendar], [class*=icker], [role=dialog], [role=grid]"))
-        || cands.find(c => arrows.test(clean(c.innerText)) && c.closest("[class*=alendar], [class*=icker], [role=dialog]"));
+      const named = (c: any) => [c.getAttribute("aria-label"), c.getAttribute("title"), String(c.className)].join(" ");
+      return cands.find((c: any) => /month/i.test(named(c)) && want.test(named(c)))
+        || cands.find((c: any) => want.test(named(c)) && !/slide|carousel|banner|page|step/i.test(named(c)) && c.closest("[class*=alendar], [class*=icker], [role=dialog], [role=grid]"))
+        || cands.find((c: any) => arrows.test(clean(c.innerText)) && c.closest("[class*=alendar], [class*=icker], [role=dialog]"));
     };
     let day = findDay();
     // Some sites open the calendar by themselves (Turkish Airlines does right after you pick the
@@ -261,9 +263,9 @@ export async function skPageAct(a) {
       const y = Math.round(r.top + r.height / 2);
       if (r.width < 1 || r.height < 1) return { ok: false, error: "That element isn't visible." };
       // Is something (a cookie banner, a modal) covering it?
-      const top = document.elementFromPoint(x, y);
-      const covered = top && top !== t && !t.contains(top) && !top.contains(t) && !(t.labels && [...t.labels].some(l => l.contains(top)));
-      return { ok: true, x, y, covered: covered ? clean(top.innerText || top.getAttribute("aria-label") || top.tagName).slice(0, 80) : "" };
+      const top = document.elementFromPoint(x, y) as HTMLElement | null;
+      const covered = top && top !== t && !t.contains(top) && !top.contains(t) && !(t.labels && [...t.labels].some((l: any) => l.contains(top)));
+      return { ok: true, x, y, covered: covered ? clean(top!.innerText || top.getAttribute("aria-label") || top.tagName).slice(0, 80) : "" };
     }
 
     // Focuses a field and selects what's in it, so real typing replaces it.
@@ -286,7 +288,7 @@ export async function skPageAct(a) {
         const range = document.createRange();
         range.selectNodeContents(el);
         if (a.clear === false) range.collapse(false);
-        const sel = getSelection();
+        const sel = getSelection()!;
         sel.removeAllRanges();
         sel.addRange(range);
       } else if (a.clear === false) {
@@ -318,7 +320,7 @@ export async function skPageAct(a) {
         // Without real typing, MathQuill can't be driven from here: fill the plain answer field
         // MyOpenMath keeps next to the box (it's what gets submitted).
         const prev = el.previousElementSibling, next = el.nextElementSibling;
-        const hidden = i => i && i.tagName === "INPUT" && (getComputedStyle(i).display === "none" || i.type === "hidden" || i.offsetParent === null);
+        const hidden = (i: any) => i && i.tagName === "INPUT" && (getComputedStyle(i).display === "none" || i.type === "hidden" || i.offsetParent === null);
         const host = el.closest("[id^=qnwrap], .question") || el.parentElement;
         const plain = hidden(prev) ? prev : hidden(next) ? next : host && [...host.querySelectorAll("input")].find(hidden);
         if (!plain) return { ok: false, error: "This math box needs real typing, which isn't available right now (the tab may be in the background). Ask the user to switch to the tab, then try again." };
@@ -332,7 +334,7 @@ export async function skPageAct(a) {
       el.focus({ preventScroll: true });
       const text = a.text ?? "";
       if (el.isContentEditable) {
-        if (a.clear !== false) document.execCommand("selectAll", false, null);
+        if (a.clear !== false) document.execCommand("selectAll", false, null!);
         document.execCommand("insertText", false, text);
       } else if ("value" in el) {
         setNativeValue(el, a.clear === false ? el.value + text : text);
@@ -346,7 +348,7 @@ export async function skPageAct(a) {
       showBox(el);
       if (el.tagName === "SELECT") {
         const opt = optionMatch([...el.options], a.option);
-        if (!opt) return { ok: false, error: `No option like "${a.option}". Options: ${[...el.options].map(o => `"${clean(o.text)}"`).join(", ")}` };
+        if (!opt) return { ok: false, error: `No option like "${a.option}". Options: ${[...el.options].map((o: any) => `"${clean(o.text)}"`).join(", ")}` };
         setNativeValue(el, opt.value);
         return { ok: true, note: `Selected "${clean(opt.text)}".` };
       }
@@ -377,7 +379,7 @@ export async function skPageAct(a) {
         }
       }
       if (!hit) {
-        return { ok: false, error: `Opened the dropdown but found no option like "${a.option}".` + (opts.length ? ` Its options: ${opts.slice(0, 12).map(o => `"${clean(o.text).slice(0, 80)}"`).join(", ")}. Call select_option again with the exact wording of the one you want.` : " No options appeared. Use type to enter part of the name, then click the suggestion from the new snapshot.") };
+        return { ok: false, error: `Opened the dropdown but found no option like "${a.option}".` + (opts.length ? ` Its options: ${opts.slice(0, 12).map((o: any) => `"${clean(o.text).slice(0, 80)}"`).join(", ")}. Call select_option again with the exact wording of the one you want.` : " No options appeared. Use type to enter part of the name, then click the suggestion from the new snapshot.") };
       }
       showBox(hit.el);
       clickLike(hit.el);
@@ -406,7 +408,7 @@ export async function skPageAct(a) {
       let input = el.matches('input[type="file"]') ? el : el.querySelector('input[type="file"]');
       for (let n = el.parentElement, i = 0; !input && n && i < 5; n = n.parentElement, i++) input = n.querySelector('input[type="file"]');
       if (!input) return { ok: false, error: "No file upload field found there." };
-      const bytes = Uint8Array.from(atob(a.file.base64), c => c.charCodeAt(0));
+      const bytes = Uint8Array.from(atob(a.file.base64), (c: any) => c.charCodeAt(0));
       const file = new File([bytes], a.file.name, { type: a.file.type });
       const dt = new DataTransfer();
       dt.items.add(file);
@@ -419,7 +421,7 @@ export async function skPageAct(a) {
 
     case "press_key": {
       const key = a.key;
-      const codes = { Enter: 13, Tab: 9, Escape: 27, ArrowDown: 40, ArrowUp: 38, Backspace: 8, Space: 32 };
+      const codes: Record<string, number> = { Enter: 13, Tab: 9, Escape: 27, ArrowDown: 40, ArrowUp: 38, Backspace: 8, Space: 32 };
       const init = { key: key === "Space" ? " " : key, code: key === "Space" ? "Space" : key, keyCode: codes[key] || 0, which: codes[key] || 0, bubbles: true, cancelable: true, composed: true };
       const down = el.dispatchEvent(new KeyboardEvent("keydown", init));
       if (key === "Enter") el.dispatchEvent(new KeyboardEvent("keypress", init));
@@ -440,19 +442,19 @@ export async function skPageAct(a) {
       const filled = [], missing = [];
       for (const [name, raw] of Object.entries(a.values || {})) {
         const value = raw == null ? "" : String(raw);
-        const fields = [...el.elements].filter(f => f.name === name);
+        const fields = [...el.elements].filter((f: any) => f.name === name);
         if (!fields.length) { missing.push(name); continue; }
         const f = fields[0];
         const hints = [f.type, f.name, f.id, f.autocomplete, f.getAttribute("aria-label"), f.placeholder].join(" ");
         if (f.type === "password" || SECRET_FIELD.test(hints) || SECRET_VALUE.test(value)) return { ok: false, error: `"${name}" is a password, payment or ID field. Sidekick never fills those.` };
         if (f.type === "radio") {
-          const r = fields.find(x => x.value === value) || fields.find(x => clean(x.labels?.[0]?.innerText).toLowerCase() === value.toLowerCase());
+          const r = fields.find((x: any) => x.value === value) || fields.find((x: any) => clean(x.labels?.[0]?.innerText).toLowerCase() === value.toLowerCase());
           if (!r) { missing.push(`${name}=${value}`); continue; }
           r.checked = true; r.dispatchEvent(new Event("change", { bubbles: true }));
         } else if (f.type === "checkbox") {
           f.checked = /^(true|yes|on|1|checked)$/i.test(value); f.dispatchEvent(new Event("change", { bubbles: true }));
         } else if (f.tagName === "SELECT") {
-          const o = [...f.options].find(x => x.value === value) || optionMatch([...f.options], value);
+          const o = [...f.options].find((x: any) => x.value === value) || optionMatch([...f.options], value);
           if (!o) { missing.push(`${name}=${value}`); continue; }
           setNativeValue(f, o.value);
         } else {
