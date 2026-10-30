@@ -9,9 +9,8 @@ import type { Profile } from "../../assistant/profile-core.js";
 import { PERSONAL_LABELS, PROFILE_FIELD_NAMES } from "../../core/security/personal-data.js";
 import { deleteAdapter, getAdapters } from "../../agent/skills/shortcuts.js";
 import { getSiteNotes, saveSiteNotes } from "../../agent/skills/site-notes.js";
+import { $ } from "../shared/dom.js";
 
-// UI lookups return `any`: the elements are known from the page's own HTML, not checked here.
-export const $ = (s: string): any => document.querySelector(s);
 export const params = new URLSearchParams(location.search);
 export const isOnboarding = params.get("welcome") === "1";
 

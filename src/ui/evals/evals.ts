@@ -10,6 +10,7 @@ import type { LongTermStore } from "../../assistant/session.js";
 import { routeMessage } from "../../assistant/routing.js";
 import { runTurn } from "../../assistant/turn.js";
 import type { ChatMemoryStore, TurnInput, TurnResult } from "../../assistant/types.js";
+import { $ } from "../shared/dom.js";
 
 export const GATE = 0.85;
 
@@ -295,8 +296,6 @@ export const CASES: EvalCase[] = [
 
 // ---------- runner ----------
 
-// UI lookups return `any`: the elements are known from the page's own HTML, not checked here.
-export const $ = (s: string): any => document.querySelector(s);
 export let running = false;
 
 export function configKey(s: any) {

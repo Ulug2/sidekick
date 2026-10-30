@@ -12,7 +12,12 @@ const src = file => path.join(SRC, file);
 const PAGES = ["sidepanel", "profile", "options", "evals", "mic"];
 // Every module except the pages' own UI code, the service worker and the content script.
 const LIB = fs.readdirSync(SRC, { recursive: true }).filter(f => /\.(js|ts)$/.test(f) && !f.endsWith(".d.ts") && !/^(ui|background|content|types)\//.test(f)).sort();
-const BUNDLES = { lib: LIB, ...Object.fromEntries(PAGES.map(p => [p, [...(p === "mic" ? [] : LIB), fs.existsSync(src(`ui/${p}/${p}.ts`)) ? `ui/${p}/${p}.ts` : `ui/${p}/${p}.js`]])) };
+// A page bundle: the library plus every module in the page's folder (its entry file last).
+const pageFiles = p => {
+  const dir = fs.readdirSync(src(`ui/${p}`)).filter(f => f.endsWith(".ts")).map(f => `ui/${p}/${f}`);
+  return [...dir.filter(f => f !== `ui/${p}/${p}.ts`), `ui/${p}/${p}.ts`];
+};
+const BUNDLES = { lib: LIB, ...Object.fromEntries(PAGES.map(p => [p, [...(p === "mic" ? [] : LIB), ...pageFiles(p)]])) };
 const ENTRIES = path.join(ROOT, "node_modules", ".sk-test-entries");
 const fnNames = file => [...fs.readFileSync(src(file), "utf8").matchAll(/^export (?:async )?function\*? ?([\w$]+)/gm)].map(m => m[1]);
 
