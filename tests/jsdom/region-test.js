@@ -1,12 +1,11 @@
 const { JSDOM } = require('jsdom');
 const fs = require('fs');
-const src = fs.readFileSync(require('path').join(__dirname, '..', '..', 'src', 'ui', 'sidepanel', 'sidepanel.js'), 'utf8');
-const fn = src.slice(src.indexOf('function pickRegionInPage()'), src.indexOf('async function cropDataUrl')).replace(/export\s*$/, '');
+const H = require(require('path').join(__dirname, 'helpers.js'));
 const check = (name, ...oks) => console.log(`${oks.every(Boolean) ? 'PASS' : 'FAIL'}  ${name}`);
 const run = async (drive) => {
   const dom = new JSDOM('<!doctype html><body><h1>page</h1></body>', { runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window; w.Element.prototype.setPointerCapture = () => {};
-  w.eval(fn);
+  H.loadScripts(w, ['page/region.js']);
   const p = w.pickRegionInPage();
   const host = w.document.documentElement.lastElementChild;
   const ov = host.shadowRoot; // closed root: grab via internals isn't possible, so reach the overlay by dispatching on host's shadow? use stored reference
@@ -18,7 +17,7 @@ const run = async (drive) => {
   const w = dom.window; w.Element.prototype.setPointerCapture = () => {};
   const orig = w.Element.prototype.attachShadow; let root;
   w.Element.prototype.attachShadow = function (o) { root = orig.call(this, o); return root; };
-  w.eval(fn);
+  H.loadScripts(w, ['page/region.js']);
   let p = w.pickRegionInPage();
   const ov = root.querySelector('.ov');
   const pe = (type, x, y) => { const e = new w.MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }); e.pointerId = 1; ov.dispatchEvent(e); };

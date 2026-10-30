@@ -5,7 +5,10 @@ import { callAgentModel, getSettings, modelCall } from "../core/llm/ai.js";
 import { TrustedInput } from "../core/browser/cdp.js";
 import { redactSecrets, untrusted } from "../core/security/guard.js";
 import { memoriesFor } from "../assistant/memory/memory.js";
-import { skPageAct, skPageSnapshot, skWebMCPCall, skWebMCPList } from "../page/page-agent.js";
+import { skPageAct } from "../page/act.js";
+import { pageDisarmLeavePrompt } from "../page/leave-prompt.js";
+import { skPageSnapshot } from "../page/snapshot.js";
+import { skWebMCPCall, skWebMCPList } from "../page/webmcp.js";
 import { getProfile, logApplication, profileToPrompt } from "../assistant/profile-core.js";
 import { explainCaptureError, shrinkImage } from "../core/browser/screen.js";
 import { webSearchFallback } from "../core/web/web.js";
@@ -784,14 +787,7 @@ export async function viaTrusted(state, fn) {
 // prompt would block the tab and freeze the run. The agent chose to leave, so turn it off first.
 export async function disarmLeavePrompt(state) {
   try {
-    await pageScript({ target: { tabId: state.tabId, frameIds: [0] }, world: "MAIN", func: () => {
-      // The page's handlers can't be removed, but the prompt only appears if one of them cancels
-      // the event or sets returnValue. Make both do nothing (only for this page, which we're leaving).
-      window.onbeforeunload = null;
-      const P = BeforeUnloadEvent.prototype;
-      Object.defineProperty(P, "returnValue", { get: () => "", set: () => {}, configurable: true });
-      P.preventDefault = function () {};
-    } });
+    await pageScript({ target: { tabId: state.tabId, frameIds: [0] }, world: "MAIN", func: pageDisarmLeavePrompt });
   } catch {}
 }
 

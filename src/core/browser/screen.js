@@ -1,4 +1,5 @@
 // Seeing the current tab: screenshots and page text, with retries and clear errors.
+import { pageReadProblem, pageReadSelection, pageReadText } from "../../page/read.js";
 
 export const PROTECTED_URL = /^(chrome|chrome-extension|edge|about|devtools|view-source|chrome-search):|^https:\/\/(chrome\.google\.com\/webstore|chromewebstore\.google\.com)/;
 export const MAX_EDGE = 1568; // what vision models actually use; bigger only costs more
@@ -85,12 +86,7 @@ export async function runInPage(func, args = [], what = "read", tabId, timeoutMs
 }
 
 export async function readPageText(limit = 60000) {
-  return runInPage(max => {
-    const main = document.querySelector("article, main, [role=main]");
-    const root = main && main.innerText.trim().length > 500 ? main : document.body;
-    const text = root.innerText.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-    return { title: document.title || location.hostname, url: location.href, text: text.slice(0, max), truncated: text.length > max };
-  }, [limit]);
+  return runInPage(pageReadText, [limit]);
 }
 
 // Text of the tab including its frames (MyOpenMath and other LTI tools run inside a Moodle
@@ -103,14 +99,7 @@ export async function readProblemText(limit = 8000) {
   try {
     frames = await pageTimeout(chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
-      func: () => {
-        const main = document.querySelector("article, main, [role=main], .question, #questionwrap, form");
-        const root = main && main.innerText.trim().length > 200 ? main : document.body;
-        const text = (root?.innerText || "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-        const frames = [...document.querySelectorAll("iframe, frame")].filter(f => { const r = f.getBoundingClientRect(); return r.width >= 120 && r.height >= 80; })
-          .map(f => { try { return new URL(f.src || "about:blank", location.href).hostname; } catch { return ""; } });
-        return { url: location.href, text, frames };
-      }
+      func: pageReadProblem
     }));
   } catch (err) {
     // The whole page is off limits (site access settings, the PDF viewer, …): say so instead of silence.
@@ -136,12 +125,6 @@ export async function readProblemText(limit = 8000) {
 }
 
 export async function readSelectionFromPage() {
-  const text = await runInPage(() => {
-    const el = document.activeElement;
-    if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT") && typeof el.selectionStart === "number") {
-      return el.value.slice(el.selectionStart, el.selectionEnd);
-    }
-    return window.getSelection().toString();
-  });
+  const text = await runInPage(pageReadSelection);
   return (text || "").trim();
 }

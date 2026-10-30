@@ -1,3 +1,5 @@
+import { pickRegionInPage } from "../../page/region.js";
+import { pageReplaceSelection } from "../../page/replace-selection.js";
 import { runAgent } from "../../agent/agent.js";
 import { getSettings, modelFor } from "../../core/llm/ai.js";
 import { FAST_ONLY, runTurn } from "../../assistant/brain.js";
@@ -313,84 +315,10 @@ toBottomBtn.onclick = () => {
 
 export async function replaceSelectionOnPage(text) {
   try {
-    return !!(await runInPage(t => {
-      const el = document.activeElement;
-      if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) {
-        el.focus();
-        if (document.execCommand("insertText", false, t)) return true;
-        const s = el.selectionStart, e = el.selectionEnd;
-        el.value = el.value.slice(0, s) + t + el.value.slice(e);
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-        return true;
-      }
-      const sel = window.getSelection();
-      if (!sel.rangeCount || sel.isCollapsed) return false;
-      const node = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
-      if (node && node.isContentEditable) return document.execCommand("insertText", false, t);
-      return false;
-    }, [text]));
+    return !!(await runInPage(pageReplaceSelection, [text]));
   } catch {
     return false;
   }
-}
-
-// Shows a crosshair overlay on the page; resolves with the dragged box (CSS pixels) or null.
-// Runs inside the page, in a shadow root so the page's CSS can't interfere.
-export function pickRegionInPage() {
-  return new Promise(resolve => {
-    const host = document.createElement("div");
-    host.style.cssText = "all:initial;position:fixed;inset:0;z-index:2147483647;";
-    const root = host.attachShadow({ mode: "closed" });
-    root.innerHTML = `
-      <style>
-        .ov { position: fixed; inset: 0; cursor: crosshair; background: rgba(0,0,0,.28); }
-        .box { position: fixed; border: 1.5px solid #fff; background: rgba(255,255,255,.08);
-               box-shadow: 0 0 0 1px rgba(0,0,0,.4); display: none; pointer-events: none; }
-        .hint { position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
-                font: 500 13px/1 -apple-system, system-ui, sans-serif; color: #fff; background: rgba(20,20,20,.86);
-                padding: 9px 10px 9px 14px; border-radius: 999px; display: flex; gap: 10px; align-items: center; }
-        button { all: unset; cursor: pointer; padding: 5px 10px; border-radius: 999px; background: rgba(255,255,255,.14); }
-        button:hover { background: rgba(255,255,255,.24); }
-      </style>
-      <div class="ov"></div><div class="box"></div>
-      <div class="hint">Drag to capture an area <button type="button">Cancel</button></div>`;
-    const ov = root.querySelector(".ov"), box = root.querySelector(".box");
-    let start = null;
-
-    const done = rect => {
-      removeEventListener("keydown", onKey, true);
-      host.remove();
-      // Wait two frames so the overlay is gone before the screenshot is taken.
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve(rect)));
-    };
-    const onKey = e => { if (e.key === "Escape") { e.preventDefault(); done(null); } };
-    addEventListener("keydown", onKey, true);
-    root.querySelector("button").onclick = () => done(null);
-    ov.addEventListener("contextmenu", e => { e.preventDefault(); done(null); });
-
-    const rectFrom = e => {
-      const x = Math.min(start.x, e.clientX), y = Math.min(start.y, e.clientY);
-      return { x, y, w: Math.abs(e.clientX - start.x), h: Math.abs(e.clientY - start.y) };
-    };
-    ov.addEventListener("pointerdown", e => {
-      if (e.button !== 0) return;
-      start = { x: e.clientX, y: e.clientY };
-      ov.setPointerCapture(e.pointerId);
-      box.style.display = "block";
-    });
-    ov.addEventListener("pointermove", e => {
-      if (!start) return;
-      const r = rectFrom(e);
-      Object.assign(box.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
-    });
-    ov.addEventListener("pointerup", e => {
-      if (!start) return;
-      const r = rectFrom(e);
-      if (r.w < 6 || r.h < 6) { start = null; box.style.display = "none"; return; }
-      done({ ...r, vw: innerWidth, vh: innerHeight });
-    });
-    document.documentElement.appendChild(host);
-  });
 }
 
 export async function cropDataUrl(dataUrl, rect) {
