@@ -1,10 +1,10 @@
 // Your memory as one readable Markdown file: export it, read or edit it in any editor, import
 // it back (or into Sidekick on another computer, or into the Mac app later).
-import { getSiteNotes, saveSiteNotes } from "../../agent/skills/adapters.js";
 import { redactSecrets } from "../../core/security/guard.js";
 import { addMemory, getMemories, type Memory, type MemoryFields } from "./memory.js";
 import { getUserModel, setUserModel } from "../session.js";
 import { addSkill, getSkills } from "../skills.js";
+import { getSiteNotes, saveSiteNotes } from "../../agent/skills/site-notes.js";
 
 export const KIND_SECTIONS: [string, string][] = [
   ["preference", "How you like answers"],

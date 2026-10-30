@@ -1,6 +1,5 @@
 // The assistant's "brain": persona and system prompt, model routing, chat tools, and the
 // tool-use loop. Used by the side panel and by the eval runner.
-import { personalDetailsIn } from "../agent/skills/adapters.js";
 import { effectiveProvider, getSettings, modelCall, modelFor } from "../core/llm/ai.js";
 import { calcEngine } from "../core/calc/calc.js";
 import { stripWrappers, untrusted } from "../core/security/guard.js";
@@ -14,6 +13,7 @@ import type { Citation, ToolCall, ToolDef, ToolResult, Tier, Usage, ModelMessage
 import type { Memory, SearchHit } from "./memory/memory.js";
 import type { Skill } from "./skills.js";
 import type { Profile } from "./profile-core.js";
+import { personalDetailsIn } from "../core/security/personal-data.js";
 
 // ---------- types ----------
 export interface Route { tier: Tier; reason: string }

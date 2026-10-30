@@ -2,8 +2,8 @@
 // "never act on" sites. Rules live here in code, not only in the prompt.
 import type { AgentState, AskApproval } from "../types.js";
 import { modelCall } from "../../core/llm/ai.js";
-import { siteOf } from "../skills/adapters.js";
 import { hostOf } from "../page-calls.js";
+import { siteOf } from "../../core/security/sites.js";
 
 // Clicks on controls with these words always need your approval, whatever the model says.
 export const RISKY_WORDS = /\b(submit|send|pay|purchase|buy( now)?|place order|order now|checkout|check out|delete|remove account|publish|post|transfer|donate|unsubscribe|confirm (purchase|order|payment)|sign and submit|finish application|complete application)\b/i;

@@ -2,7 +2,6 @@
 import type { ToolCall } from "../../core/llm/ai.js";
 import type { AgentState, AgentUI, ToolOutcome } from "../types.js";
 import { logApplication, type Profile } from "../../assistant/profile-core.js";
-import { questionOfLine, nthOf, siteOf, personalDetailsIn, roleFamily, getAdapters, saveAdapters, adaptersFor } from "../skills/adapters.js";
 import { describeSafe, describeCall, quote } from "./describe.js";
 import { RISKY_WORDS, siteBlocked, gateShare, inPlan, NEVER_AUTO, gateVisit } from "../safety/gates.js";
 import { sleep, waitForTab, hostOf, pageScript } from "../page-calls.js";
@@ -16,6 +15,9 @@ import { webSearchFallback } from "../../core/web/web.js";
 import { planText } from "../loop/plan.js";
 import { shrinkImage } from "../../core/browser/screen.js";
 import { addToAgentGroup } from "../loop/tab-group.js";
+import { questionOfLine, nthOf, roleFamily, getAdapters, saveAdapters, adaptersFor } from "../skills/shortcuts.js";
+import { siteOf } from "../../core/security/sites.js";
+import { personalDetailsIn } from "../../core/security/personal-data.js";
 
 export const ACTING_TOOLS = new Set(["click", "click_at", "type", "select_option", "pick_date", "set_checked", "upload_file", "press_key", "site_tool"]);
 // Tools that end by showing the updated page.

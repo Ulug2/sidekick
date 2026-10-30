@@ -4,7 +4,9 @@ import type { SiteTool, AgentState, Capture } from "../types.js";
 import { explainCaptureError } from "../../core/browser/screen.js";
 import { pageKey, hostOf } from "../page-calls.js";
 import { untrusted } from "../../core/security/guard.js";
-import { siteOf, adaptersFor, siteKnowledgeText, getSiteNotes } from "../skills/adapters.js";
+import { siteOf } from "../../core/security/sites.js";
+import { adaptersFor } from "../skills/shortcuts.js";
+import { siteKnowledgeText, getSiteNotes } from "../skills/site-notes.js";
 
 // Rows of identical buttons or links ("Save" on every job card) become one line with all ids.
 export function groupRepeats(lines: string[]): string[] {

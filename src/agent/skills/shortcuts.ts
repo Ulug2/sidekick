@@ -1,49 +1,18 @@
-// Learned site skills ("adapters"): after the agent finishes a task, the steps that worked are
-// compiled into a shortcut for that site. Next time, use_shortcut replays the routine steps
-// (navigation, profile fields, resume upload) in milliseconds without calling the model.
-// Steps that need judgment (written answers, terms checkboxes, anything not from the profile)
-// and final actions (submit, pay, send) are always handed back to the model and to you.
-// Each site also keeps a few short notes learned from earlier runs ("the Location field is a
-// custom dropdown: type the city, then pick the first option").
-// Stored only in this browser (chrome.storage.local "adapters" and "siteNotes").
-import { modelCall } from "../../core/llm/ai.js";
+// Learned site shortcuts: after the agent finishes a task, the steps that worked are compiled
+// into a shortcut for that site. Next time, use_shortcut replays the routine steps (navigation,
+// profile fields, resume upload) in milliseconds without calling the model. Steps that need
+// judgment (written answers, terms checkboxes, anything not from the profile) and final actions
+// (submit, pay, send) are always handed back to the model and to you.
+// Stored only in this browser (chrome.storage.local "adapters").
 import { redactSecrets } from "../../core/security/guard.js";
 import { readLocal } from "../../core/storage/schema.js";
 import type { Profile } from "../../assistant/profile-core.js";
-import type { ActionLogEntry, ElementInfo, Shortcut, ShortcutStep, SiteNote } from "../types.js";
+import type { ActionLogEntry, ElementInfo, Shortcut, ShortcutStep } from "../types.js";
+import { siteOf } from "../../core/security/sites.js";
+import { profileValues } from "../../core/security/personal-data.js";
 
 export const ADAPTERS_MAX = 40;
 export const ADAPTER_STEPS_MAX = 60;
-export const SITE_NOTES_MAX = 8;
-
-// Hosting domains where every subdomain belongs to someone else (from the Public Suffix List's
-// private section): alice.github.io and evil.github.io are different sites, so approving one
-// must never cover the other.
-export const SHARED_HOSTS = new Set(["github.io", "gitlab.io", "bitbucket.io", "vercel.app", "now.sh", "netlify.app", "netlify.com", "pages.dev", "workers.dev",
-  "herokuapp.com", "herokussl.com", "web.app", "firebaseapp.com", "appspot.com", "blogspot.com", "wordpress.com", "wixsite.com", "weebly.com",
-  "squarespace.com", "myshopify.com", "azurewebsites.net", "cloudapp.net", "azurestaticapps.net", "cloudfront.net", "amazonaws.com", "s3.amazonaws.com", "elasticbeanstalk.com",
-  "onrender.com", "fly.dev", "railway.app", "up.railway.app", "glitch.me", "repl.co", "replit.app", "replit.dev", "surge.sh", "ngrok.io", "ngrok-free.app", "ngrok.app",
-  "trycloudflare.com", "neocities.org", "carrd.co", "webflow.io", "framer.app", "framer.website", "notion.site", "readthedocs.io", "gitbook.io",
-  "deno.dev", "supabase.co", "codesandbox.io", "csb.app", "stackblitz.io", "streamlit.app", "hf.space", "translate.goog", "googleusercontent.com",
-  "dyndns.org", "duckdns.org", "no-ip.org", "000webhostapp.com", "tumblr.com", "substack.com", "medium.com"]);
-
-// "boards.greenhouse.io" and "job-boards.greenhouse.io" are the same site: greenhouse.io.
-// Keeps three labels for country domains like "jobs.example.co.uk", and one more label on
-// shared hosting domains ("alice.github.io").
-export function siteOf(url: string): string {
-  let host = "";
-  try { host = new URL(url).hostname.toLowerCase(); } catch { host = String(url || "").toLowerCase(); }
-  host = host.replace(/^www\./, "").replace(/^\[|\]$/g, "").replace(/\.$/, "");
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(":")) return host; // IP addresses stay whole
-  const parts = host.split(".");
-  for (let n = Math.min(3, parts.length - 1); n >= 2; n--) {
-    if (SHARED_HOSTS.has(parts.slice(-n).join("."))) return parts.slice(-(n + 1)).join(".");
-  }
-  if (parts.length <= 2) return host;
-  const sld = parts.at(-2)!;
-  const keep = /^(co|com|ac|edu|gov|org|net)$/.test(sld) && parts.at(-1)!.length === 2 ? 3 : 2;
-  return parts.slice(-keep).join(".");
-}
 
 export async function getAdapters(): Promise<Shortcut[]> {
   const { adapters = [] } = await readLocal("adapters");
@@ -58,20 +27,6 @@ export async function deleteAdapter(id: string): Promise<void> {
 export async function adaptersFor(url: string): Promise<Shortcut[]> {
   const site = siteOf(url);
   return (await getAdapters()).filter(a => a.site === site);
-}
-
-// With a site: that site's notes. Without: every site's notes.
-export async function getSiteNotes(site: string): Promise<SiteNote[]>;
-export async function getSiteNotes(): Promise<Record<string, SiteNote[]>>;
-export async function getSiteNotes(site?: string): Promise<SiteNote[] | Record<string, SiteNote[]>> {
-  const { siteNotes = {} } = await readLocal("siteNotes");
-  return site ? siteNotes[site] || [] : siteNotes;
-}
-export async function saveSiteNotes(site: string, notes: SiteNote[]): Promise<void> {
-  const { siteNotes = {} } = await readLocal("siteNotes");
-  if (notes.length) siteNotes[site] = notes.slice(-SITE_NOTES_MAX);
-  else delete siteNotes[site];
-  await chrome.storage.local.set({ siteNotes });
 }
 
 // ---------- matching elements by meaning, not by id ----------
@@ -132,40 +87,6 @@ export function nthOf(elements: Record<string, Pick<ElementInfo, "role" | "label
   const same = Object.keys(elements).filter(k => roleFamily(elements[k].role) === roleFamily(e.role) && normLabel(elements[k].label) === normLabel(e.label) && questionOfLine(elements[k].line) === questionOfLine(e.line)).sort((a, b) => idOrder(a) - idOrder(b));
   return Math.max(0, same.indexOf(id));
 }
-
-// ---------- profile values, for {{templates}} ----------
-
-export function profileValues(p: Partial<Profile> = {}): Record<string, string> {
-  const parts = String(p.fullName || "").trim().split(/\s+/).filter(Boolean);
-  const v: Record<string, unknown> = {
-    firstName: parts[0] || "", lastName: parts.length > 1 ? parts.at(-1) : "", fullName: p.fullName,
-    preferredName: p.preferredName, pronouns: p.pronouns, email: p.email, phone: p.phone,
-    address: p.address, city: p.city, state: p.state, zip: p.zip, country: p.country,
-    location: [p.city, p.state].filter(Boolean).join(", "),
-    linkedin: p.linkedin, github: p.github, portfolio: p.portfolio,
-    workAuthorized: p.workAuthorized, needsSponsorship: p.needsSponsorship, citizenship: p.citizenship,
-    workMode: p.workMode, salaryExpectation: p.salaryExpectation, startDate: p.startDate,
-    willingToRelocate: p.willingToRelocate, howHeard: p.howHeard,
-    eeoGender: p.eeoGender, eeoRace: p.eeoRace, eeoVeteran: p.eeoVeteran, eeoDisability: p.eeoDisability
-  };
-  for (const k of Object.keys(v)) v[k] = String(v[k] || "").trim();
-  return v as Record<string, string>;
-}
-
-// Which of your personal details (name, email, phone, address, links…) appear in this text?
-// Used to stop data leaving through a URL or a site's tool without your OK.
-export function personalDetailsIn(text: unknown, profile: Partial<Profile> | null | undefined): string[] {
-  const t = String(text || "").toLowerCase();
-  let decoded = t;
-  try { decoded = decodeURIComponent(t.replace(/\+/g, " ")); } catch {}
-  const vals = profileValues(profile || {});
-  return Object.entries(vals)
-    .filter(([k, v]) => v && v.length >= 4 && !/^(yes|no|decline to self-identify|remote|hybrid|on-site)$/i.test(v) && !/^(eeo|workMode|willingToRelocate|workAuthorized|needsSponsorship)/.test(k))
-    .filter(([, v]) => t.includes(v.toLowerCase()) || decoded.includes(v.toLowerCase()) || (v.includes("@") && decoded.includes(encodeURIComponent(v).toLowerCase())))
-    .map(([k]) => PERSONAL_LABELS[k] || k);
-}
-export const PROFILE_FIELD_NAMES: Record<string, string> = { workAuthorized: "work authorization", needsSponsorship: "sponsorship", willingToRelocate: "relocation", workMode: "work mode", eeoGender: "gender (self-ID)", eeoRace: "race/ethnicity (self-ID)", eeoVeteran: "veteran status", eeoDisability: "disability status" };
-export const PERSONAL_LABELS: Record<string, string> = { firstName: "first name", lastName: "last name", fullName: "full name", preferredName: "preferred name", email: "email", phone: "phone number", address: "street address", city: "city", state: "state", zip: "ZIP code", country: "country", location: "location", linkedin: "LinkedIn", github: "GitHub", portfolio: "portfolio link", citizenship: "citizenship", salaryExpectation: "salary expectation", startDate: "start date", howHeard: "referral source", pronouns: "pronouns" };
 
 // Words in a question that tell profile fields with the same value apart ("Yes" for
 // authorization vs. "Yes" for relocation).
@@ -296,50 +217,4 @@ export async function learnFlow(log: ActionLogEntry[], profile: Profile, goal: s
   list.sort((a, b) => (b.updated + (b.replayOk || 0) * 864e5) - (a.updated + (a.replayOk || 0) * 864e5));
   await saveAdapters(list);
   return saved;
-}
-
-// Learns 1–4 short, reusable notes about a site from a run that hit problems (errors, retries,
-// your corrections). Uses the fast model; costs a fraction of a cent.
-export async function learnSiteNotes({ site, goal, steps, errors, answers, signal }: { site: string; goal: string; steps: string[]; errors: string[]; answers: string[]; signal?: AbortSignal }): Promise<string[]> {
-  if (!site || (!errors.length && !answers.length)) return [];
-  const existing = await getSiteNotes(site);
-  const log = steps.slice(-40).map((s, i) => `${i + 1}. ${redactSecrets(s).text}`).join("\n");
-  const prompt = `A browser agent just finished this task on ${site}: "${String(goal).slice(0, 200)}"
-
-Steps it took:
-${log}
-
-Problems it hit:
-${errors.slice(-10).map(e => `- ${e}`).join("\n") || "- none"}
-${answers.length ? `\nThe user had to step in:\n${answers.slice(-5).map(a => `- ${a}`).join("\n")}` : ""}
-
-Notes already saved for this site:
-${existing.map(n => `- ${n.text}`).join("\n") || "- none"}
-
-Write up to 3 NEW short notes (one sentence each) that would help an agent do tasks on ${site} faster next time: how tricky widgets work, where things are, what failed and what worked instead. Only lasting facts about the site, not about this one task. Never include personal data (names, emails, answers, numbers). If nothing new is worth saving, return an empty list.
-Reply with only JSON: {"notes": ["...", "..."]}`;
-  const r = await modelCall({ tier: "fast", system: "You write short, reusable operating notes about websites for a browser agent. Reply with JSON only.", messages: [{ role: "user", text: prompt }], signal, maxTokens: 600 });
-  let notes: string[] = [];
-  try { notes = JSON.parse(r.text.match(/\{[\s\S]*\}/)![0]).notes || []; } catch { return []; }
-  notes = notes.map(n => String(n).trim().slice(0, 240)).filter(n => n && !redactSecrets(n).count && !existing.some(e => normLabel(e.text) === normLabel(n))).slice(0, 3);
-  if (notes.length) await saveSiteNotes(site, [...existing, ...notes.map(text => ({ text, added: Date.now() }))]);
-  return notes;
-}
-
-// The short text the agent sees for a site: shortcuts it can run and notes from earlier runs.
-export function siteKnowledgeText(adapters: Shortcut[], notes: SiteNote[]): string {
-  const out: string[] = [];
-  if (adapters.length) {
-    out.push("Sidekick's learned shortcuts for this site (use_shortcut runs the routine steps instantly; it stops for written answers, choices that aren't in the profile, and before any final action):");
-    for (const a of adapters.slice(0, 5)) {
-      const auto = a.steps.filter(s => !s.needsModel && !s.final && !s.optional).length;
-      const record = a.replays ? `, worked in ${a.replayOk || 0} of ${a.replays} replay${a.replays > 1 ? "s" : ""}` : "";
-      out.push(`- [${a.id}] ${a.title} (${a.steps.length} steps, ${auto} automatic${record})`);
-    }
-  }
-  if (notes.length) {
-    out.push("Notes from earlier runs on this site:");
-    for (const n of notes.slice(-SITE_NOTES_MAX)) out.push(`- ${n.text}`);
-  }
-  return out.join("\n");
 }

@@ -1,10 +1,11 @@
 // Replaying a learned shortcut through the normal tools (every safety rule still applies).
 import type { Shortcut, AgentState, AgentUI } from "../types.js";
 import type { Profile } from "../../assistant/profile-core.js";
-import { profileValues, findTarget } from "../skills/adapters.js";
 import { captureTab } from "../perception/capture.js";
 import { sleep, waitForTab } from "../page-calls.js";
 import { runTool } from "./run-tool.js";
+import { profileValues } from "../../core/security/personal-data.js";
+import { findTarget } from "../skills/shortcuts.js";
 
 // ---------- replaying a learned shortcut ----------
 

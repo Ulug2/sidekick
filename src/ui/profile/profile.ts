@@ -1,4 +1,3 @@
-import { PERSONAL_LABELS, PROFILE_FIELD_NAMES, deleteAdapter, getAdapters, getSiteNotes, saveSiteNotes } from "../../agent/skills/adapters.js";
 import { callModel, getSettings } from "../../core/llm/ai.js";
 import { extractDocText, isDocFile } from "../../core/docs/docs.js";
 import { exportMemoryMarkdown, importMemoryMarkdown } from "../../assistant/memory/memory-io.js";
@@ -7,6 +6,9 @@ import { DECLINE, DEFAULT_PROFILE, PROFILE_SECTIONS, getApplications, getProfile
 import { getUserModel, setUserModel } from "../../assistant/session.js";
 import { addSkill, deleteSkill, getSkills, updateSkill } from "../../assistant/skills.js";
 import type { Profile } from "../../assistant/profile-core.js";
+import { PERSONAL_LABELS, PROFILE_FIELD_NAMES } from "../../core/security/personal-data.js";
+import { deleteAdapter, getAdapters } from "../../agent/skills/shortcuts.js";
+import { getSiteNotes, saveSiteNotes } from "../../agent/skills/site-notes.js";
 
 // UI lookups return `any`: the elements are known from the page's own HTML, not checked here.
 export const $ = (s: string): any => document.querySelector(s);
