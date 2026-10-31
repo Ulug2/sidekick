@@ -2,7 +2,7 @@
 
 A personal AI assistant in a Chrome side panel: it knows you (profile, resume, memories), helps with homework (math with code-checked answers), keeps track of deadlines, applies to jobs, and can operate web pages for you with your approval. Bring your own Anthropic or OpenAI API key.
 
-Status: v0.9.5, Chrome MV3 extension in TypeScript, built with Vite.
+Status: v0.9.6, Chrome MV3 extension in TypeScript, built with Vite.
 
 ## Try it
 1. `npm install` and `npm run build`, then chrome://extensions → Developer mode → Load unpacked → choose `dist/`.

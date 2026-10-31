@@ -109,11 +109,63 @@ const toolResult = (req, k = 0) => (req.messages.at(-1).content || []).filter(c 
       try { await w.fetchUrlText(u); } catch (e) { if (/local network/.test(e.message)) blocked.push(u); }
     }
     check('Local network addresses are refused (incl. decimal/hex IPs, IPv6, .local, cloud metadata)', blocked.length === 14 && !hits.length, `blocked ${blocked.length}/14; fetched: ${hits.join(', ')}`);
-    let redir = '';
-    try { await w.fetchUrlText('https://bounce.example/r'); } catch (e) { redir = e.message; }
-    check('A public link that redirects into your network is refused', /redirects to a local network address/.test(redir));
     const ok = await w.fetchUrlText('https://example.com/a');
     check('Normal public pages still work', ok.text === 'ok');
+  }
+
+  // ---------- 3b. redirects are checked before they're followed (v0.9.6) ----------
+  // A fake network that behaves like Chrome's: redirect: "follow" really requests the target;
+  // redirect: "manual" returns an opaque response, and webRequest reports where it pointed and
+  // which address answered (a little after fetch resolves).
+  {
+    const net = {
+      'https://bounce.example/r': { to: 'http://192.168.1.1/admin?reboot=1', ip: '93.184.216.34' },
+      'https://moved.example/a': { to: '/b', ip: '93.184.216.34' },
+      'https://moved.example/b': { ip: '93.184.216.34' },
+      'https://rebind.example/': { ip: '127.0.0.1' },
+      'https://loop.example/': { to: 'https://loop.example/', ip: '93.184.216.34' },
+      'https://odd.example/': { to: 'file:///etc/passwd', ip: '93.184.216.34' },
+      'https://sneaky.example/': { to: 'https://bounce.example/r', ip: '93.184.216.34' }
+    };
+    const makeWindow = withWebRequest => {
+      const w = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only', url: 'chrome-extension://abc/x.html' }).window;
+      const listeners = { onBeforeRedirect: [], onResponseStarted: [] };
+      const ev = name => ({ addListener: f => listeners[name].push(f), removeListener: f => { listeners[name] = listeners[name].filter(x => x !== f); } });
+      if (withWebRequest) w.chrome = { webRequest: { onBeforeRedirect: ev('onBeforeRedirect'), onResponseStarted: ev('onResponseStarted') } };
+      const emit = (name, d) => setTimeout(() => listeners[name].forEach(f => f({ initiator: 'chrome-extension://abc', ...d })), 20);
+      w.hits = [];
+      w.fetch = async (url, opts = {}) => {
+        for (let hops = 0; hops < 20; hops++) {
+          w.hits.push(url);
+          const r = net[url];
+          if (!r) throw new TypeError('Failed to fetch');
+          if (r.to) {
+            if (opts.redirect === 'manual') { emit('onBeforeRedirect', { url, redirectUrl: new URL(r.to, url).href, ip: r.ip }); return { type: 'opaqueredirect', ok: false, status: 0, url, headers: { get: () => null } }; }
+            url = new URL(r.to, url).href; if (!net[url]) { w.hits.push(url); throw new TypeError('Failed to fetch'); } continue;
+          }
+          emit('onResponseStarted', { url, ip: r.ip });
+          return { type: 'basic', ok: true, status: 200, url, headers: { get: () => 'text/html' }, text: async () => '<html><title>T</title><body><main>ok</main></body></html>' };
+        }
+        throw new TypeError('Failed to fetch');
+      };
+      loadScripts(w, ['guard.js', 'docs.js', 'web.js'], ['fetchUrlText']);
+      return w;
+    };
+    const w = makeWindow(true);
+    const err = async u => { try { await w.fetchUrlText(u); return ''; } catch (e) { return e.message; } };
+    const bounce = await err('https://bounce.example/r');
+    check('A public link that redirects into your network is refused before the request is sent', /redirects to a local network address/.test(bounce) && !w.hits.some(h => /192\.168/.test(h)), `${bounce} | requested: ${w.hits.join(', ')}`);
+    w.hits.length = 0;
+    const sneaky = await err('https://sneaky.example/');
+    check('…also after several hops', /redirects to a local network address/.test(sneaky) && !w.hits.some(h => /192\.168/.test(h)), `${sneaky} | ${w.hits.join(', ')}`);
+    const moved = await w.fetchUrlText('https://moved.example/a');
+    check('Ordinary redirects (relative too) are followed', moved.text === 'ok' && moved.url === 'https://moved.example/b', JSON.stringify(moved));
+    check('A public name that answers from a private address isn\'t read', /served from a local network address/.test(await err('https://rebind.example/')));
+    check('Redirect loops stop', /too many times/.test(await err('https://loop.example/')));
+    check('Redirects to non-web addresses aren\'t followed', /non-web address/.test(await err('https://odd.example/')));
+    const blind = makeWindow(false);
+    let blindMsg = ''; try { await blind.fetchUrlText('https://bounce.example/r'); } catch (e) { blindMsg = e.message; }
+    check('If Chrome can\'t say where a redirect points, it isn\'t followed', /couldn't check/.test(blindMsg) && !blind.hits.some(h => /192\.168/.test(h)), blindMsg);
   }
 
   // ---------- 4. chat: links carrying your data aren't opened; typed secrets never leave ----------

@@ -1,4 +1,4 @@
-# Sidekick (Chrome extension) — v0.9.5
+# Sidekick (Chrome extension) — v0.9.6
 
 Your personal AI assistant in a Chrome side panel. It knows who you are, remembers what you tell it, does exact math, searches the web, sees your tab, and can operate pages for you (forms, job applications) with your approval.
 
@@ -41,6 +41,7 @@ Your personal AI assistant in a Chrome side panel. It knows who you are, remembe
 - **Keeps working in the background (v0.9.1):** in Agent mode you can switch tabs; the agent stays on its own page and never pulls you back. If a page or an embedded frame (like MyOpenMath inside Moodle) is blocked, Sidekick tells you which one and what to do.
 - **Several tasks at once (v0.9.2):** "apply to these 4 jobs" gets a checklist in the agent card; each application opens in its own tab, each submit asks you, and it keeps going until every item is done. The run is saved as it goes. Agent mode now knows the earlier chat ("apply for that one"), searches the page (find) and the web instead of scrolling or guessing addresses.
 - **Safer and calmer agent runs (v0.9.3):** several tasks start with one plan card to approve (tasks + sites, optionally "submit without asking"); its tabs sit in an orange "Sidekick" tab group; Chrome notifies you when it needs you or finishes; a fast AI double-checks visits to new sites and sharing your details there; pages with hidden instructions for AI or invisible trap fields are flagged. All switchable in Settings → Agent.
+- **Links can't reach your home network (v0.9.6):** when Sidekick reads a link that redirects, it checks each next address before going there, so a web page can't use a link to poke your router or printer. Chrome now lists "webRequest" among Sidekick's permissions for this; Sidekick uses it only while reading a link, to see where its own request is redirected.
 - **The agent stays out of your way (v0.9.5):** tabs the agent opens (each application, a search) open in the background in its tab group; it never switches the tab you're looking at. In a background tab it types and clicks with page events instead of Chrome's debugger, and can't take screenshots there. Reading a page, a link or a search now gives up after a time limit with a clear message, and Stop works while it waits.
 - **Travel and booking-style forms (v0.9.4):** airport/city autocompletes (it types the code or name and picks the closest match), calendar date pickers (pick_date), and multi-city or repeated rows. It searches and compares prices but never books or pays.
 - **Documents:** profile page → Documents. Add syllabi, notes, PDFs; ask "when is my final?".

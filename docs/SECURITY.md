@@ -1,4 +1,4 @@
-# Sidekick security (v0.9.5; audited 2026-10-28, re-read 2026-10-29)
+# Sidekick security (v0.9.6; audited 2026-10-28, re-read 2026-10-29)
 
 Sidekick holds your API key, profile, resume, memories and chats, reads every page you visit when asked, and can click and type for you. The main threat is a hostile web page, search result, file or site tool trying to make Sidekick leak your data or act against you (prompt injection). The model itself is assumed to be fallible: it may follow injected text, so the important protections are in code, not in the prompt.
 
@@ -17,7 +17,7 @@ Sidekick holds your API key, profile, resume, memories and chats, reads every pa
 | Passwords, card numbers, SSNs, security codes typed by the agent | Refused in the page (field names, input types, values) and before typing (Luhn card check, SSN, API keys), for type, fill_fields, site forms and replays. | security 5, 7, engine |
 | Secrets you paste into chat | Masked before sending and before saving chat history; you're told. | security 4, real-chrome 5 |
 | Final or destructive actions | Submit/send/pay/delete/post clicks (by the model's flag *or* by the button's words), Enter in bigger forms, and non-read-only site tools all need your approval. "Never act on" sites (banks etc.) can be read but not touched. | agent-cdp, security 5, 7 |
-| Your local network (router, NAS, cloud metadata) | `read_url` refuses private, loopback, link-local, CGNAT, .local/.lan/.internal, IPv6 private and IPv4-mapped addresses, decimal/hex IP tricks, and public links that redirect into your network. Fetches never send cookies. | security 3 |
+| Your local network (router, NAS, cloud metadata) | `read_url` refuses private, loopback, link-local, CGNAT, .local/.lan/.internal, IPv6 private and IPv4-mapped addresses, decimal/hex IP tricks, and public links that redirect into your network: redirects are followed one hop at a time and each target is checked before it is requested (Chrome reports the target through `webRequest`, a read-only permission). A public name that answers from a private address is not read. Fetches never send cookies. | security 3 |
 | Injected text becoming permanent (memory, skills) | Web/file content is stripped before the end-of-chat review; skills refuse injected instructions, fence tags and secrets; you're told whenever a skill is learned and can edit/delete it. The chat `remember` tool only saves facts (never standing preferences). | phase3 1, 4 |
 | Learned data storing your answers | Shortcuts store which profile field to use, never the value; written answers are never stored; site notes are learned from a value-free step list. | sites 2, e2e |
 | Internal tags leaking into replies (`<untrusted_content>` shown as text) | Fence and pipeline tags are stripped in code from every reply before it's shown, saved or copied. | fixes 7, real-chrome 11 |
@@ -39,7 +39,7 @@ Sidekick holds your API key, profile, resume, memories and chats, reads every pa
 - **Prompt injection is not solved**, for anyone. A page can still mislead the model within what it's allowed to do without asking: give a wrong summary, pick the wrong option in a form, or type your profile details into fields on the site you're applying to. Final actions, uploads, and data leaving through URLs or site tools ask you first; review those prompts.
 - **Site notes** are learned from page labels, so a hostile site can influence the notes for *its own* site only; they're shown inside the untrusted fence.
 - **Your API key and data** are stored unencrypted in this Chrome profile (`chrome.storage.local`), like every extension. Anyone with access to your Chrome profile can read them.
-- **`read_url` and redirects:** a public link that redirects into your network is refused, but Chrome has already sent that one request by the time Sidekick sees where it went; a public name that resolves to a private address isn't detected. Fix planned (block such requests before they leave).
+- **`read_url` and private DNS names:** a public name that resolves to a private address (`127.0.0.1.nip.io`, DNS rebinding) is refused, but only after Chrome has sent that one request (extensions can't resolve a name before fetching). Redirects into your network are refused before any request is sent (v0.9.6).
 - **Built-in web search** (Claude's server-side search) runs at Anthropic; queries are written by the model.
 - **WebMCP** is an experimental standard (Chrome behind a flag); its API may change.
 - Real-site behavior (Greenhouse, Workday, MyOpenMath) still needs testing with your own accounts.

@@ -1,6 +1,6 @@
 {
   "name": "sidekick",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "private": true,
   "description": "Sidekick: a personal AI assistant in a Chrome side panel (homework, deadlines, job applications, browser agent).",
   "scripts": {

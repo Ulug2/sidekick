@@ -52,14 +52,66 @@ export async function fetchUrlText(url: string, { max = 15000, signal }: { max?:
   catch (err) { throw webError(err, "The site", signal); }
 }
 
+// What Chrome's network layer saw for each request this page made: where a redirect pointed and
+// which address answered. fetch hides a redirect's target (redirect: "manual" gives an opaque
+// response), so read_url follows redirects itself and learns each target here (webRequest).
+interface NetInfo { redirectUrl?: string; ip?: string }
+function watchRequests() {
+  const wr = globalThis.chrome?.webRequest;
+  const seen = new Map<string, NetInfo>();
+  const waiters = new Map<string, () => void>();
+  const note = (d: { url: string; initiator?: string; redirectUrl?: string; ip?: string }) => {
+    if (d.initiator && !d.initiator.startsWith("chrome-extension://")) return; // a web page's request to the same URL
+    seen.set(d.url, { redirectUrl: d.redirectUrl, ip: d.ip });
+    waiters.get(d.url)?.();
+  };
+  wr?.onBeforeRedirect.addListener(note, { urls: ["<all_urls>"] });
+  wr?.onResponseStarted.addListener(note, { urls: ["<all_urls>"] });
+  return {
+    // The event can arrive a little after fetch resolves.
+    async get(url: string, ms: number): Promise<NetInfo | undefined> {
+      if (!seen.has(url) && wr) await new Promise<void>(r => { waiters.set(url, r); setTimeout(r, ms); });
+      waiters.delete(url);
+      return seen.get(url);
+    },
+    stop() { wr?.onBeforeRedirect.removeListener(note); wr?.onResponseStarted.removeListener(note); }
+  };
+}
+const MAX_REDIRECTS = 10;
+const LOCAL_REDIRECT = "That link redirects to a local network address, which Sidekick doesn't read.";
+
 export async function fetchUrlTextInner(url: string, { max, signal }: { max: number; signal?: AbortSignal }) {
   let u;
   try { u = new URL(url); } catch { throw new Error("That isn't a valid URL."); }
   if (!/^https?:$/.test(u.protocol)) throw new Error("Only http(s) links can be read.");
   if (isPrivateHost(u.hostname)) throw new Error("Sidekick doesn't read local network addresses.");
-  const res = await fetch(u.href, webFetchOpts(signal));
-  // A public link that redirects into your network (router, printer, NAS) is refused too.
-  try { if (res.url && isPrivateHost(new URL(res.url).hostname)) throw new Error("redirect"); } catch { throw new Error("That link redirects to a local network address, which Sidekick doesn't read."); }
+  // Redirects are followed one hop at a time, and each target is checked before it's requested,
+  // so a public link can't make Sidekick send a request into your network (router, printer, NAS).
+  const opts: RequestInit = { ...webFetchOpts(signal), redirect: "manual" };
+  const net = watchRequests();
+  let res: Response;
+  try {
+    for (let hops = 0; ; hops++) {
+      res = await fetch(u.href, opts);
+      const key = (res.url || u.href).replace(/#.*$/, "");
+      if (res.type !== "opaqueredirect") {
+        // A public name can point at a private address (127.0.0.1.nip.io, DNS rebinding). The
+        // request has gone out by then; the answer is still not read.
+        const info = await net.get(key, 500);
+        if (info?.ip && isPrivateHost(info.ip) || res.url && isPrivateHost(new URL(res.url).hostname)) throw new Error("That link is served from a local network address, which Sidekick doesn't read.");
+        break;
+      }
+      if (hops >= MAX_REDIRECTS) throw new Error("That link redirects too many times.");
+      const info = await net.get(key, 3000);
+      if (!info?.redirectUrl) throw new Error("That link redirects somewhere Sidekick couldn't check, so it wasn't followed. Open it in a tab instead.");
+      if (info.ip && isPrivateHost(info.ip)) throw new Error(LOCAL_REDIRECT);
+      let next;
+      try { next = new URL(info.redirectUrl, u); } catch { throw new Error("That link redirects to an invalid address."); }
+      if (!/^https?:$/.test(next.protocol)) throw new Error("That link redirects to a non-web address, which Sidekick doesn't follow.");
+      if (isPrivateHost(next.hostname)) throw new Error(LOCAL_REDIRECT);
+      u = next;
+    }
+  } finally { net.stop(); }
   if (!res.ok) throw new Error(`The site answered ${res.status} ${res.statusText}.`);
   const type = res.headers.get("content-type") || "";
   let title = u.hostname, text: string;

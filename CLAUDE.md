@@ -15,7 +15,7 @@ Read these first:
 - For any failure on a real site, reproduce it on the real site first (he has Chrome; use Claude in Chrome or Playwright against the live page, read-only) before changing code.
 
 ## Status
-- Version 0.9.5. TypeScript (`strict`), ES modules, built with Vite into `dist/`. Behavior is the same as the plain-JavaScript v0.9.5 (see `docs/MIGRATION_PLAN.md` and `docs/adr/`).
+- Version 0.9.6. TypeScript (`strict`), ES modules, built with Vite into `dist/`. Behavior is the same as the plain-JavaScript v0.9.5 (see `docs/MIGRATION_PLAN.md` and `docs/adr/`).
 - Next (when Ulugbek says so): Phase F, the run-trace recorder and the real-site benchmark, then agent v2 (see `docs/PRODUCT_PLAN.md`, ARCHITECTURE.md "Target architecture").
 
 ## Layout
@@ -84,7 +84,7 @@ How the jsdom suites work: `scripts/build-test.mjs` bundles the same modules int
 - Never type passwords, card numbers, SSNs/government IDs, API keys; refuse secret-looking fields and values.
 - Final actions (submit/send/pay/delete/post, Enter in bigger forms, non-read-only site tools) need approval, except submits on sites the user approved in a plan with "submit without asking" (never pay/delete/post).
 - URLs carrying personal data, uploads to a new site, cross-site shortcut replay, sharing personal details with a new site (fast-model check that never sees page content), off-plan sites: all ask.
-- `read_url` blocks private/loopback/link-local addresses and redirects into them.
+- `read_url` blocks private/loopback/link-local addresses; it follows redirects one hop at a time (target from `webRequest`) and checks each before requesting it; a public name answering from a private address isn't read.
 - Learned data (shortcuts, site notes, skills) never stores what the user typed; web content can't create skills.
 - Typed secrets in chat are masked before sending and before saving.
 

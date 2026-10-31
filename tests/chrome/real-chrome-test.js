@@ -29,6 +29,7 @@ const server = http.createServer((req, res) => {
   hits.push(req.url);
   const p = req.url.split('?')[0];
   if (PAGES[p]) { res.writeHead(200, { 'content-type': 'text/html' }); res.end(PAGES[p]); return; }
+  if (p === '/bounce') { res.writeHead(302, { location: `http://127.0.0.1:${server.address().port}/secret?reboot=1` }); res.end(); return; }
   res.writeHead(404); res.end('nope');
 });
 
@@ -42,7 +43,7 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const BASE = `http://127.0.0.1:${server.address().port}`;
   const userDir = fs.mkdtempSync(require('path').join(require('os').tmpdir(), 'sidekick-prof-'));
-  const ctx = await chromium.launchPersistentContext(userDir, { headless: true, channel: 'chromium', viewport: { width: 420, height: 860 }, args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`] });
+  const ctx = await chromium.launchPersistentContext(userDir, { headless: true, channel: 'chromium', viewport: { width: 420, height: 860 }, args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--host-resolver-rules=MAP public.test 127.0.0.1'] });
   await ctx.route('https://api.anthropic.com/**', async route => {
     const body = route.request().postDataJSON();
     apiBodies.push(body);
@@ -53,7 +54,7 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   });
   // Nothing else may leave the browser during tests (e.g. no zero-click image loads).
   const outside = [];
-  await ctx.route(/^https?:\/\/(?!127\.0\.0\.1|api\.anthropic\.com)/, route => { outside.push(route.request().url()); route.abort(); });
+  await ctx.route(/^https?:\/\/(?!127\.0\.0\.1|public\.test|moved\.test|api\.anthropic\.com)/, route => { outside.push(route.request().url()); route.abort(); });
 
   let [sw] = ctx.serviceWorkers();
   if (!sw) sw = await ctx.waitForEvent('serviceworker');
@@ -160,6 +161,33 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   await ask('my card 4242 4242 4242 4242, key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123');
   check('Real Chrome: typed card numbers and keys never reach the API', !JSON.stringify(apiBodies.slice(nBodies)).match(/4242 4242 4242 4242|sk-ant-api03/));
   check('Real Chrome: you\'re told they were hidden', /Hid 2 sensitive values/.test(await panel.locator('#toast').textContent()));
+
+  // ---------- 5b. read_url checks each redirect before following it (v0.9.6) ----------
+  // public.test resolves to this machine (--host-resolver-rules), like 127.0.0.1.nip.io would.
+  await ctx.route('https://moved.test/**', route => route.request().url().endsWith('/a')
+    ? route.fulfill({ status: 301, headers: { location: 'https://moved.test/b' }, body: '' })
+    : route.fulfill({ status: 200, headers: { 'content-type': 'text/html' }, body: '<html><title>Moved</title><body><main>Arrived safely.</main></body></html>' }));
+  const PORT = server.address().port;
+  const readResult = async link => {
+    let result = '';
+    responder = b => {
+      if (/You keep the pinned notes/.test(b.system)) return H.anthropicEvents([{ type: 'text', text: '{"notes":[]}' }]);
+      const last = b.messages.at(-1);
+      const tr = Array.isArray(last.content) && last.content.find(c => c.type === 'tool_result');
+      if (!tr) return H.anthropicEvents([{ type: 'tool_use', id: 'u1', name: 'read_url', input: { url: link } }], { stop: 'tool_use' });
+      result = JSON.stringify(tr.content);
+      return H.anthropicEvents([{ type: 'text', text: 'done' }]);
+    };
+    await ask('read this link for me: ' + link);
+    return result;
+  };
+  const hitsB = hits.length;
+  const bounced = await readResult(`http://public.test:${PORT}/bounce`);
+  check('Real Chrome: a public link that redirects into your network is refused, and the private address is never requested', /redirects to a local network address/.test(bounced) && hits.slice(hitsB).includes('/bounce') && !hits.slice(hitsB).some(h => h.startsWith('/secret')), bounced + ' | ' + hits.slice(hitsB).join(', '));
+  const rebound = await readResult(`http://public.test:${PORT}/plain`);
+  check('Real Chrome: a public name that answers from a private address isn\'t read', /served from a local network address/.test(rebound) && !/Plain page/.test(rebound), rebound);
+  const moved = await readResult('https://moved.test/a');
+  check('Real Chrome: ordinary redirects are still followed', /Arrived safely/.test(moved), moved);
 
   // ---------- 6. the agent on a real page: real injection, real clicks/typing, learning ----------
   const job = await ctx.newPage();

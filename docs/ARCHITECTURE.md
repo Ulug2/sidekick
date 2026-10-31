@@ -1,6 +1,6 @@
 # Sidekick architecture
 
-Status: v0.9.5, TypeScript (2026-10-29). This document has four parts: how it works today, what's wrong with it, the target architecture, and the migration (done; see §4).
+Status: v0.9.6, TypeScript (2026-10-29; v0.9.6 2026-10-31: read_url checks each redirect). This document has four parts: how it works today, what's wrong with it, the target architecture, and the migration (done; see §4).
 
 ---
 
