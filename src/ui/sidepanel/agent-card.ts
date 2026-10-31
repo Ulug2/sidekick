@@ -100,11 +100,21 @@ export function addAgentRun(parent?: HTMLElement) {
       autoScroll();
       return card;
     },
-    finish(state: any, summary: any) {
+    // traceId: the run was recorded; "Replay" opens it on the Agent runs page.
+    finish(state: any, summary: any, traceId?: string) {
       el.classList.add("finished");
       thinkEl!.remove();
       el.querySelector(".agent-status")!.textContent = state === "done" ? "Done" : state === "stopped" ? "Stopped" : "Couldn't finish";
       el.querySelector(".agent-stop")!.remove();
+      if (traceId) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "agent-replay";
+        b.textContent = "Replay";
+        b.title = "See every step of this run: screenshots, what the AI saw and did, and the cost";
+        b.onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL(`runs.html#${encodeURIComponent(traceId)}`) });
+        el.querySelector(".agent-head")!.appendChild(b);
+      }
       el.querySelectorAll(".step.running, .step.waiting").forEach(li => {
         li.className = "step fail";
         li.querySelector(".st-icon")!.innerHTML = STEP_ICON.fail;
@@ -250,7 +260,8 @@ export async function runAgentCard(goal: string, parent?: HTMLElement, opts: { h
     })
   };
 
-  let summary, steps = [], state = "done", plan = null;
+  let summary, steps = [], state = "done", plan = null, traceId: string | undefined;
+  ui.traceStarted = id => { traceId = id; };
   try {
     const result = await runAgent(goal, ui, { history: opts.history, userMessages: opts.userMessages });
     summary = result.summary;
@@ -274,8 +285,8 @@ export async function runAgentCard(goal: string, parent?: HTMLElement, opts: { h
     agentRun = null;
     refreshSend();
   }
-  run.finish(state, parent ? "" : summary);
+  run.finish(state, parent ? "" : summary, traceId);
   notifyUser("done", state === "done" ? "Sidekick finished" : state === "stopped" ? "Sidekick stopped" : "Sidekick couldn't finish", String(summary || "").split("\n").find(l => l.trim()) || "");
   if (state === "stopped" && parent) throw new DOMException("Stopped", "AbortError");
-  return { summary, steps, state, plan };
+  return { summary, steps, state, plan, traceId };
 }

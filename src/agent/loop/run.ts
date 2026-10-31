@@ -13,7 +13,8 @@ import { SNAPSHOT_TOOLS, runTool } from "../actions/run-tool.js";
 import { learnFlow } from "../skills/shortcuts.js";
 import { learnSiteNotes } from "../skills/site-notes.js";
 import { siteOf } from "../../core/security/sites.js";
-import { callAgentModel } from "../../core/llm/call.js";
+import { callAgentModel, watchModelCalls } from "../../core/llm/call.js";
+import { startTrace, type TraceRecorder } from "../trace/trace.js";
 import { getSettings } from "../../core/llm/settings.js";
 import type { ModelMessage, ToolResult } from "../../core/llm/types.js";
 
@@ -75,61 +76,84 @@ export async function runAgent(goal: string, ui: AgentUI, opts: { history?: stri
   const transcript: ModelMessage[] = [{ role: "user", text: `${history ? `Earlier in this chat (context for the task; the user's newest message is the task):\n${history}\n\n` : ""}Task: ${goal}\n\nCurrent page:\n${await snapshotTab(state)}` }];
   let summary = null;
   let nudges = 0;
+  let outOfSteps = false;
   // Several tasks get more steps: 40 for the first, 30 for each one after, up to 160.
   const budget = () => Math.min(160, AGENT_MAX_STEPS + 30 * Math.max(0, (state.plan?.length || 1) - 1));
 
-  try {
-    for (let step = 1; step <= budget(); step++) {
-      if (ui.signal.aborted) throw new DOMException("Stopped", "AbortError");
-      trimTranscript(transcript);
-
-      const reply = await callAgentModel({ system, transcript, tools: AGENT_TOOLS, signal: ui.signal, onThinking: ui.thinking });
-      transcript.push({ role: "assistant", text: reply.text, toolCalls: reply.toolCalls, raw: reply.raw });
-      if (reply.text) ui.note(reply.text);
-
-      if (!reply.toolCalls.length) {
-        // A reply without actions ends the run. That's how it used to stop after 1 of 4 jobs
-        // ("I'll click Submit. Would you like to proceed?"). If work is left or it's asking in
-        // plain text, send it back to work (twice at most).
-        const open = planOpen(state.plan);
-        const asking = /\?\s*$|\b(would you like|shall i|should i|do you want|let me know|i'll (now )?(click|submit|continue|proceed))\b/i.test(reply.text || "");
-        if ((open.length || asking) && nudges < 2) {
-          nudges++;
-          transcript.push({ role: "user", text: open.length
-            ? `Not finished: ${open.length} checklist item${open.length > 1 ? "s are" : " is"} still open:\n${planText(state.plan!)}\nKeep going with tools. If you need the user, use ask_user; for a submit, click it with final_action: true (the user approves there). Call done only when every item is done, failed or skipped.`
-            : "A reply without a tool call ends the task. If you need the user's answer or decision, call ask_user (you'll get the answer and can continue). For a submit, click it with final_action: true; the user approves it there. If the task is complete, call done." });
-          continue;
-        }
-        summary = reply.text || "Done.";
-        break;
-      }
-
-      // Several actions in one turn: only the last one that changes the page returns a snapshot.
-      const results = [];
-      const calls = reply.toolCalls;
-      const lastSnap = calls.map(c => SNAPSHOT_TOOLS.has(c.name)).lastIndexOf(true);
-      for (const [i, call] of calls.entries()) {
-        state.deferSnapshot = i < lastSnap && SNAPSHOT_TOOLS.has(call.name);
-        const r = await runTool(call, state, ui, profile, () => { const n = newTabNote; newTabNote = ""; return n; });
-        state.deferSnapshot = false;
-        results.push({ id: call.id, name: call.name, text: r.text, images: r.images, isError: r.failed && !r.declined, snapshot: r.snapshot });
-        if (r.done) { summary = r.summary; state.finished = true; }
-      }
-      transcript.push({ role: "tool", results });
-      if (summary !== null) break;
-
-      if (step >= budget()) {
-        summary = `I stopped after ${step} steps without finishing.${state.plan ? `\n\n${planText(state.plan)}` : ""}\n\nThe page is where I left it; tell me to continue, or finish the rest yourself.`;
-      }
-    }
-  } finally {
-    await finishAgentGroup(state, state.finished);
-    chrome.tabs.onCreated.removeListener(onCreated);
-    chrome.tabs.onActivated?.removeListener(onActivated);
-    await state.input?.detach();
+  // The run's trace (Agent runs page): every step, saved as it happens. Recording never stops a run.
+  let rec: TraceRecorder | null = null;
+  if (settings.recordRuns !== false) {
+    try { rec = await startTrace(goal, state, system); ui.traceStarted?.(rec.id); ui = rec.wrapUI(ui); }
+    catch (err) { console.warn("Couldn't start the run trace", err); rec = null; }
   }
-  const learned = state.finished ? await learnFromRun(state, profile, goal, ui.signal) : null;
-  return { summary: summary as string | null, steps: state.steps, learned, plan: state.plan };
+  const unwatch = rec ? watchModelCalls(ui.signal, rec.onCall) : () => {};
+
+  try {
+    try {
+      for (let step = 1; step <= budget(); step++) {
+        if (ui.signal.aborted) throw new DOMException("Stopped", "AbortError");
+        trimTranscript(transcript);
+        const newest = transcript.at(-1)!;
+        await rec?.beginStep(state, newest.role === "user" ? newest.text : undefined);
+
+        const reply = await callAgentModel({ system, transcript, tools: AGENT_TOOLS, signal: ui.signal, onThinking: ui.thinking });
+        transcript.push({ role: "assistant", text: reply.text, toolCalls: reply.toolCalls, raw: reply.raw });
+        if (reply.text) ui.note(reply.text);
+
+        if (!reply.toolCalls.length) {
+          // A reply without actions ends the run. That's how it used to stop after 1 of 4 jobs
+          // ("I'll click Submit. Would you like to proceed?"). If work is left or it's asking in
+          // plain text, send it back to work (twice at most).
+          const open = planOpen(state.plan);
+          const asking = /\?\s*$|\b(would you like|shall i|should i|do you want|let me know|i'll (now )?(click|submit|continue|proceed))\b/i.test(reply.text || "");
+          if ((open.length || asking) && nudges < 2) {
+            nudges++;
+            transcript.push({ role: "user", text: open.length
+              ? `Not finished: ${open.length} checklist item${open.length > 1 ? "s are" : " is"} still open:\n${planText(state.plan!)}\nKeep going with tools. If you need the user, use ask_user; for a submit, click it with final_action: true (the user approves there). Call done only when every item is done, failed or skipped.`
+              : "A reply without a tool call ends the task. If you need the user's answer or decision, call ask_user (you'll get the answer and can continue). For a submit, click it with final_action: true; the user approves it there. If the task is complete, call done." });
+            continue;
+          }
+          summary = reply.text || "Done.";
+          break;
+        }
+
+        // Several actions in one turn: only the last one that changes the page returns a snapshot.
+        const results = [];
+        const calls = reply.toolCalls;
+        const lastSnap = calls.map(c => SNAPSHOT_TOOLS.has(c.name)).lastIndexOf(true);
+        for (const [i, call] of calls.entries()) {
+          state.deferSnapshot = i < lastSnap && SNAPSHOT_TOOLS.has(call.name);
+          const t0 = Date.now();
+          const r = await runTool(call, state, ui, profile, () => { const n = newTabNote; newTabNote = ""; return n; });
+          await rec?.action(call, r, Date.now() - t0);
+          state.deferSnapshot = false;
+          results.push({ id: call.id, name: call.name, text: r.text, images: r.images, isError: r.failed && !r.declined, snapshot: r.snapshot });
+          if (r.done) { summary = r.summary; state.finished = true; }
+        }
+        transcript.push({ role: "tool", results });
+        await rec?.save();
+        if (summary !== null) break;
+
+        if (step >= budget()) {
+          outOfSteps = true;
+          summary = `I stopped after ${step} steps without finishing.${state.plan ? `\n\n${planText(state.plan)}` : ""}\n\nThe page is where I left it; tell me to continue, or finish the rest yourself.`;
+        }
+      }
+    } finally {
+      await finishAgentGroup(state, state.finished);
+      chrome.tabs.onCreated.removeListener(onCreated);
+      chrome.tabs.onActivated?.removeListener(onActivated);
+      await state.input?.detach();
+    }
+    const learned = state.finished ? await learnFromRun(state, profile, goal, ui.signal) : null;
+    await rec?.finish(outOfSteps ? "out_of_steps" : "done", summary);
+    return { summary: summary as string | null, steps: state.steps, learned, plan: state.plan, ...(rec && { traceId: rec.id }) };
+  } catch (err: any) {
+    await rec?.finish(err?.name === "AbortError" ? "stopped" : "failed", null, err?.name === "AbortError" ? undefined : String(err?.message || err));
+    throw err;
+  } finally {
+    unwatch();
+  }
 }
 
 // After a finished task: save the steps that worked as a shortcut for the site, and (if the run

@@ -30,6 +30,7 @@ Sidekick holds your API key, profile, resume, memories and chats, reads every pa
 | The page switching sites between "look" and "act" | The tab's site is re-checked right before every click or keystroke; if it changed, nothing happens and the new page is shown. | safety 5 |
 | "Submit without asking" going too far | Only after you approve a plan with that option, only on the plan's sites, never for pay/buy/delete/post. | safety 3, real-chrome 13 |
 | Websites detecting Sidekick | The WebMCP capture script adds nothing to pages that don't use WebMCP. | security 6, real-chrome 7 |
+| Run traces (Agent runs page) | Saved only in this Chrome profile, like chats. They hold page text and what the agent typed (your profile details), never passwords or card numbers (the agent can't type those). Export masks card numbers, API keys and ID numbers again; the page warns that the file has page text and your details. Traces are shown as text only (an exported file someone sends you can't run code or load anything; only JPEG/PNG screenshots are shown). Turn recording off in Settings → Agent. | traces 4, 5 |
 | A wrong double-check replacing a right answer | Replacement needs code evidence (objective/residuals under both setups, or the checker's answer fails its own code check → rejected). | verify, phase3 5, hardening 3 (property test) |
 
 ## Remaining risks (be aware)

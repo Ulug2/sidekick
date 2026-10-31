@@ -9,6 +9,8 @@ import type { UserModel } from "../../assistant/session.js";
 import type { Shortcut, SiteNote } from "../../agent/types.js";
 import type { Settings } from "../llm/settings.js";
 import type { UsageLog } from "../llm/usage.js";
+import type { RunTrace } from "../../agent/trace/trace.js";
+import type { TraceIndexEntry } from "../../agent/trace/store.js";
 
 // ---------- chats (ui/sidepanel) ----------
 export interface ChatIndexEntry { id: string; title: string; updatedAt: number }
@@ -31,6 +33,7 @@ export interface ChatMessage {
   agentRuns?: any[];
   agentSteps?: string[];
   agentPlan?: any[];
+  traceId?: string; // the agent run's trace (Agent runs page)
   stopped?: boolean;
   [extra: string]: unknown;
 }
@@ -61,8 +64,11 @@ export interface LocalSchema extends Settings {
   chatIndex: ChatIndexEntry[]; // ui/sidepanel; each chat is under chat:<id>
   usage: UsageLog; // core/llm
   evalRuns: EvalRun[]; // ui/evals
+  traceIndex: TraceIndexEntry[]; // agent/trace/store: one line per recorded agent run, newest first
   [chat: `chat:${string}`]: Chat;
   [doc: `doc:${string}`]: DocChunks;
+  [trace: `trace:${string}`]: RunTrace; // a run without its images
+  [shot: `traceShot:${string}`]: string; // a screenshot (JPEG data URL), written once
 }
 export interface SessionSchema {
   // The context menu's hand-off to the panel (background → sidepanel).

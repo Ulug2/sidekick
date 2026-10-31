@@ -68,7 +68,7 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   };
 
   // ---------- 1. every page loads clean under the real CSP ----------
-  for (const p of ['sidepanel.html', 'profile.html', 'options.html', 'evals.html', 'mic.html']) {
+  for (const p of ['sidepanel.html', 'profile.html', 'options.html', 'evals.html', 'mic.html', 'runs.html']) {
     const page = await ctx.newPage();
     watch(page, p);
     const csp = [];
@@ -238,6 +238,28 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   check('Real Chrome agent: radio steps say which question they answer', stepTexts.some(t => /^Choose “Yes” for “Are you legally authorized/.test(t)) && stepTexts.some(t => /^Choose “No” for “Will you now/.test(t)), stepTexts.join(' | '));
   check('Real Chrome agent: the consent checkbox isn\'t given a section heading as its question', (store.adapters[0].steps.find(st => /I agree/.test(st.label))?.question || '') === '', JSON.stringify(store.adapters[0].steps.find(st => /I agree/.test(st.label))));
   await shot(panel, '05-agent-done');
+
+  // ---------- 6b. the run was recorded; Replay opens it (Phase F run traces) ----------
+  const traceIndex = (await panel.evaluate(() => chrome.storage.local.get('traceIndex'))).traceIndex || [];
+  const tr = traceIndex[0] && (await panel.evaluate(k => chrome.storage.local.get(k), 'trace:' + traceIndex[0].id))['trace:' + traceIndex[0].id];
+  check('Real Chrome traces: the run is recorded (done, a screenshot per step, the approvals, the cost)', tr?.outcome === 'done' && tr.steps.length >= 3 && tr.steps.every(s => s.shot) && tr.steps.flatMap(s => s.events).filter(e => e.kind === 'approve' && e.answer === 'allowed').length === 2 && tr.totals.costKnown && tr.totals.cost > 0,
+    JSON.stringify({ o: tr?.outcome, n: tr?.steps.length, notes: tr?.steps.map(s => s.shot ? 'shot' : s.shotNote), ev: tr?.steps.flatMap(s => s.events), cost: tr?.totals }));
+  const [runsPage] = await Promise.all([ctx.waitForEvent('page', { timeout: 10000 }), panel.locator('.agent-run.finished .agent-replay').last().click()]);
+  watch(runsPage, 'runs.html');
+  await runsPage.waitForSelector('#stage .shot img', { timeout: 10000 }).catch(() => {});
+  const shotSize = await runsPage.evaluate(() => { const i = document.querySelector('#stage .shot img'); return i ? i.naturalWidth : 0; });
+  check('Real Chrome traces: Replay opens the run on the Agent runs page with the first screenshot', runsPage.url().endsWith(`runs.html#${tr?.id}`) && shotSize > 100 && /^Step 1 of \d+$/.test(await runsPage.locator('#stepCounter').textContent()), `${runsPage.url()} img ${shotSize}`);
+  await runsPage.click('#nextStep');
+  for (const [w, name] of [[760, 'half'], [420, 'narrow']]) {
+    await runsPage.setViewportSize({ width: w, height: 900 });
+    await runsPage.waitForTimeout(150);
+    const ov = await runsPage.evaluate(() => document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth);
+    check(`Real Chrome traces: the replay fits at ${w}px (no sideways scroll)`, ov <= 1, `overflow ${ov}px`);
+    await shot(runsPage, `06-run-replay-${name}`);
+  }
+  await runsPage.setViewportSize({ width: 1280, height: 900 });
+  await shot(runsPage, '06-run-replay-wide');
+  await runsPage.close();
 
   // Second run on a fresh copy of the page: the shortcut does the routine part.
   await job.goto(`${BASE}/job?again=1`);

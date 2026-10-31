@@ -23,14 +23,14 @@ ES modules, bundled by Vite into `dist/` (ADR-002). One typed storage schema: `s
 
 | Folder | What's there |
 |---|---|
-| `core/llm` (≈560) | `settings` (defaults, model IDs, provider/model choice), `call` (`modelCall` with the stall watchdog), `anthropic` (Messages API, adaptive thinking, caching), `openai` (Responses API, store:false), `sse`, `usage`, `types` |
+| `core/llm` (≈600) | `settings` (defaults, model IDs, provider/model choice), `call` (`modelCall` with the stall watchdog; `watchModelCalls` for traces), `anthropic` (Messages API, adaptive thinking, caching), `openai` (Responses API, store:false), `sse`, `usage`, `prices` (dollars per call), `types` |
 | `core/security` (≈220) | `guard` (redaction, `untrusted()` fence, injection scan, `stripWrappers`), `sites` (`siteOf`, shared hosting list), `personal-data` (`personalDetailsIn`, profile values) |
 | `core/browser`, `core/web`, `core/docs`, `core/calc` | page reads and captures with time limits, `TrustedInput`; `read_url` (SSRF-guarded) and keyless search; PDF/DOCX text; the calculator (math.js + nerdamer, `scanCurve`) |
 | `core/storage/schema.ts` | every chrome.storage key and its type; `readLocal()` |
 | `assistant` (≈1,700) | `turn` (one chat turn, tool loop), `routing`, `prompt`, `tools` (chat tools), `review/` (math double-check: `parse`, `check`, `review`), `memory/` (memories, documents, Markdown export/import), `skills`, `session` (pinned notes, end-of-chat reflection), `profile-core` |
-| `agent` (≈1,900) | `loop/run` (the loop, budgets, nudges), `loop/plan`, `loop/tab-group`, `perception/capture` + `format` (full or change-only snapshots), `actions/run-tool` (gates then action), `actions/input` (page events or debugger), `actions/describe`, `actions/replay`, `safety/gates`, `skills/shortcuts` + `site-notes`, `tools` (tool schemas), `prompt`, `page-calls`, `types` |
+| `agent` (≈1,900) | `loop/run` (the loop, budgets, nudges), `loop/plan`, `loop/tab-group`, `perception/capture` + `format` (full or change-only snapshots), `actions/run-tool` (gates then action), `actions/input` (page events or debugger), `actions/describe`, `actions/replay`, `safety/gates`, `skills/shortcuts` + `site-notes`, `trace/trace` + `trace/store` (run traces), `tools` (tool schemas), `prompt`, `page-calls`, `types` |
 | `page` (≈850) | `snapshot`, `act`, `webmcp`, `read`, `region`, `replace-selection`, `leave-prompt`: self-contained, checked by `scripts/check-build.mjs` |
-| `ui` (≈2,700) | `sidepanel/` (entry + state, `markdown`, `messages`, `chats`, `agent-card`, `notify`, `icons`), `profile/`, `options/`, `evals/`, `mic/`, `shared/` |
+| `ui` (≈2,700) | `sidepanel/` (entry + state, `markdown`, `messages`, `chats`, `agent-card`, `notify`, `icons`), `profile/`, `options/`, `evals/`, `runs/` (Agent runs: replay, export, import), `mic/`, `shared/` |
 
 ### Main flows
 
@@ -42,18 +42,19 @@ ES modules, bundled by Vite into `dist/` (ADR-002). One typed storage schema: `s
 3. `runTool` → gates in order: never-act sites → site re-check (tab moved?) → personal-data sharing check (fast model) → per-tool approvals (final actions, uploads, risky URLs, off-plan sites) → action via CDP (trusted) or page events (fallback) → snapshot.
 4. Plan/checklist with approval; nudges when the model stops early; step budget 40 + 30 per extra task.
 5. At the end: learn a shortcut and site notes (value-free).
+6. Throughout: the run's trace (`agent/trace`) records each step before the model call (page, screenshot, prompt), the model's reply and every model call made with the run's Stop signal (cost from `core/llm/prices`), each action and result, and approvals while they wait. Saved after every change; replayed on `runs.html`.
 
 **Learning:** end-of-chat reflection writes memories and skills (never from web content); agent runs compile shortcuts.
 
 ### Storage (`chrome.storage.local`)
-All keys and their types: `src/core/storage/schema.ts`. Settings fields (`DEFAULT_SETTINGS`), `profile`, `applications`, `memories`, `docIndex` + `doc:<id>`, `skills`, `userModel`, `adapters` (shortcuts), `siteNotes`, `chatIndex` + `chat:<id>`, `usage`, `evalRuns`. Session storage: `pending` (context-menu hand-off).
+All keys and their types: `src/core/storage/schema.ts`. Settings fields (`DEFAULT_SETTINGS`), `profile`, `applications`, `memories`, `docIndex` + `doc:<id>`, `skills`, `userModel`, `adapters` (shortcuts), `siteNotes`, `chatIndex` + `chat:<id>`, `usage`, `evalRuns`, `traceIndex` + `trace:<id>` + `traceShot:<id>:<n>` (run traces, last 30). Session storage: `pending` (context-menu hand-off).
 
 ### Tests
 - `tests/jsdom/*-test.js`: jsdom suites that load test bundles of the same modules into a fake window with fake `chrome.*` and fake model streams (about 580 checks; ADR-006). `prompts-test` pins every prompt and tool definition.
 - `tests/unit/*.test.ts`: Vitest unit tests on the TypeScript modules.
 - `tests/chrome/real-chrome-test.js`: Playwright launches Chromium with the built extension (`dist/`), serves local test pages, fakes the model API at the network layer, and checks real CSP, real debugger input, tab groups, the fixed extension ID, and so on (about 56 checks). It asserts nothing reaches outside servers.
 - Fixtures reproduce real sites (`fixtures/airline.html` = turkishairlines.com booking form).
-- Missing: a benchmark on **real** sites with a **real** model, and run traces from real use.
+- Missing: a benchmark on **real** sites with a **real** model (Phase F item 4; run traces now record what such runs do).
 
 ---
 

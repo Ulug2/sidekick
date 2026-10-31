@@ -27,16 +27,17 @@ src/
   content/               webmcp-capture.js: MAIN-world content script, copied byte for byte
   page/                  functions injected into web pages (snapshot, act, webmcp, read, region, …)
   core/
-    llm/                 model calls: settings + model IDs, Claude Messages API, OpenAI Responses API, streaming, usage
+    llm/                 model calls: settings + model IDs, Claude Messages API, OpenAI Responses API, streaming, usage, prices
     storage/schema.ts    one typed schema for every chrome.storage key; readLocal()
     security/            guard (redaction, untrusted fence, injection scan, stripWrappers), sites (siteOf), personal-data
     browser/             screen (captures, page reads with time limits), cdp (TrustedInput: debugger input)
     web/ docs/ calc/     read_url + search, PDF/DOCX text, calculator engine
   assistant/             chat brain: turn, routing, prompt, tools, types; review/ (math double-check); memory/, skills, session, profile-core
   agent/                 browser agent: loop/ (run, plan, tab group), perception/ (capture, format), actions/ (run-tool, input,
-                         describe, replay), safety/gates, skills/ (shortcuts, site notes), tools, prompt, page-calls, types
+                         describe, replay), safety/gates, skills/ (shortcuts, site notes), trace/ (run traces), tools, prompt,
+                         page-calls, types
   ui/                    sidepanel/ (sidepanel = entry and state, markdown, messages, chats, agent-card, notify, icons),
-                         profile/, options/, evals/, mic/, shared/ (page.css, dom.ts)
+                         profile/, options/, evals/, runs/ (Agent runs: replay, export), mic/, shared/ (page.css, dom.ts)
   types/globals.d.ts     vendored-library globals and test hooks
 public/                  icons/, vendor/ (third-party libraries, pinned copies + licenses), copied as is
 tests/
@@ -53,10 +54,10 @@ docs/                    product plan, architecture, lessons, security, adr/, ar
 npm install
 npx playwright install chromium      # once, for the real-Chrome suite
 npm run build                        # typecheck, build dist/, check it (npm run dev: rebuild on change)
-npm test                             # builds .test-build/, then all jsdom suites (about 580 checks, ~3 min)
+npm test                             # builds .test-build/, then all jsdom suites (about 615 checks, ~3 min)
 node tests/jsdom/run-all.js forms safety   # selected suites
 npm run test:unit                    # Vitest unit tests
-npm run test:chrome                  # real Chromium with dist/ (about 56 checks; builds first); screenshots in .artifacts/shots
+npm run test:chrome                  # real Chromium with dist/ (about 64 checks; builds first); screenshots in .artifacts/shots
 npm run lint                         # ESLint (typescript-eslint)
 npm run check                        # all of the above
 ```
@@ -97,5 +98,6 @@ How the jsdom suites work: `scripts/build-test.mjs` bundles the same modules int
 - The debugger's mouse input stalls in background tabs (checked in un-instrumented Chromium: clicks time out; typing, keys and CDP screenshots work); the agent falls back to page events (`viaTrusted`). Screenshots of background tabs are refused today rather than switching tabs. The agent's own tabs open in the background.
 - Claude 5.x hides thinking unless asked: requests use `thinking: { type: "adaptive", display: "summarized" }`, with a fallback for models that reject it. Model IDs live in `DEFAULT_SETTINGS` in `src/core/llm/settings.ts`; don't change them without being asked.
 - OpenAI calls use the Responses API with `store: false`; reasoning items are replayed with `encrypted_content`.
-- Storage is `chrome.storage.local` (unencrypted, like every extension). Every key and its shape is in `src/core/storage/schema.ts`: settings fields, `profile`, `applications`, `memories`, `docIndex` + `doc:<id>`, `skills`, `userModel`, `adapters` (shortcuts), `siteNotes`, `chatIndex` + `chat:<id>`, `usage`, `evalRuns`; session storage: `pending`.
+- Storage is `chrome.storage.local` (unencrypted, like every extension). Every key and its shape is in `src/core/storage/schema.ts`: settings fields, `profile`, `applications`, `memories`, `docIndex` + `doc:<id>`, `skills`, `userModel`, `adapters` (shortcuts), `siteNotes`, `chatIndex` + `chat:<id>`, `usage`, `evalRuns`, `traceIndex` + `trace:<id>` + `traceShot:<id>:<n>` (run traces); session storage: `pending`.
+- Run traces: `agent/trace` records an agent run as it happens; model calls are recorded through `watchModelCalls(signal)`, so any new model call inside a run must pass the run's signal (`state.signal`) to be counted. Prices live in `core/llm/prices.ts` (Claude only; unknown models cost "unknown", never a guess).
 - UI code (`src/ui`) looks elements up with `$` (returns `any`) and narrows DOM types with type-only assertions; the typed parts are the data (chats, settings, agent UI contract). Tighten it when a UI file is next changed for real.

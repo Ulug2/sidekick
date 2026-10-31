@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS = {
   notifyAgent: true, // a Chrome notification when the agent needs you or finishes and you're elsewhere
   agentTabGroup: true, // tabs the agent opens go into a "Sidekick" tab group
   actionCheck: true, // the fast model double-checks visits to new sites and sharing your details there
+  recordRuns: true, // save each agent run step by step (screenshots, model calls, cost) for the Agent runs page
   blockedSites: "paypal.com\nvenmo.com\nchase.com\nbankofamerica.com\nwellsfargo.com\ncapitalone.com\ncoinbase.com\nrobinhood.com\naccounts.google.com\nappleid.apple.com"
 };
 

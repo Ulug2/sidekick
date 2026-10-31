@@ -53,9 +53,18 @@ export async function modelCall({ tier = "fast", model, effort, system, messages
   }
   const out: ModelResult = Object.assign(result, { model, provider, ms: Date.now() - started });
   recordUsage(model, result.usage).catch(() => {});
+  if (signal) try { callWatchers.get(signal)?.(out, system); } catch (err) { console.warn("Call watcher failed", err); }
   return out;
 }
 export const STALL_MS = 90000;
+
+// Every call made with a given Stop signal is reported to its watcher (an agent run's trace
+// records its own calls this way, including the safety checks and notes it triggers).
+const callWatchers = new WeakMap<AbortSignal, (r: ModelResult, system: string) => void>();
+export function watchModelCalls(signal: AbortSignal, fn: (r: ModelResult, system: string) => void): () => void {
+  callWatchers.set(signal, fn);
+  return () => { if (callWatchers.get(signal) === fn) callWatchers.delete(signal); };
+}
 
 // Kept for the profile page's resume parsing: plain text in, text out.
 export async function callModel(messages: ModelMessage[], onText: (text: string) => void = () => {}, signal?: AbortSignal, opts: { tier?: Tier; system?: string } = {}): Promise<string> {

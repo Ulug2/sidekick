@@ -308,14 +308,14 @@ export async function openChat(id: any) {
       const run = addAgentRun();
       if ((m as any).agentPlan) run.plan((m as any).agentPlan);
       for (const t of (m as any).agentSteps) run.addStep(t).done(true);
-      run.finish((m as any).stopped ? "stopped" : "done", (m as any).text);
+      run.finish((m as any).stopped ? "stopped" : "done", (m as any).text, (m as any).traceId);
     } else {
       const ai = addAiMessage();
       restoreThoughts(ai, (m as any).thoughts);
       for (const run of (m as any).agentRuns || []) {
         const card = addAgentRun(ai.el);
         for (const t of run.steps) card.addStep(t).done(true);
-        card.finish(run.state, "");
+        card.finish(run.state, "", run.traceId);
       }
       renderMarkdown(ai.md, (m as any).text || "_(empty reply)_");
       renderReview(ai.el, (m as any).review);
@@ -529,7 +529,7 @@ export async function send(prompt: any, { forceScreen = false, quickAction, tier
       onMemory: evt => memoryChip(ai.chips, evt),
       runAgent: async task => {
         const r = await runAgentCard(task, ai.el);
-        agentRuns.push({ steps: r.steps, state: r.state });
+        agentRuns.push({ steps: r.steps, state: r.state, ...(r.traceId && { traceId: r.traceId }) });
         return r.summary;
       }
     });
@@ -621,12 +621,12 @@ export async function sendAgent(goal: any) {
   controller = new AbortController();
   setBusy(true);
   const userMessages = chat.messages.slice(0, -2).filter(m => (m as any).role === "user").slice(-6).map(m => (m as any).display?.prompt ?? (m as any).text ?? "");
-  const { summary, steps, state, plan } = await runAgentCard(fullGoal, undefined, { history, progress, userMessages });
+  const { summary, steps, state, plan, traceId } = await runAgentCard(fullGoal, undefined, { history, progress, userMessages });
   clearTimeout(saveTimer);
   controller = null;
   setBusy(false);
   input.placeholder = agentMode ? "Tell Sidekick what to do on this page" : "Ask anything";
-  Object.assign(msg, { text: summary, agentSteps: steps, ...(plan && { agentPlan: plan }) });
+  Object.assign(msg, { text: summary, agentSteps: steps, ...(plan && { agentPlan: plan }), ...(traceId && { traceId }) });
   if (state === "done") delete msg.stopped;
   saveChat().catch(e => console.warn("Couldn't save chat", e));
   refreshNotes(chat, chat.messages[chat.messages.length - 2], summary);
