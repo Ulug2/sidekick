@@ -37,7 +37,7 @@ Homework help with answers that are checked, not guessed. Reminders for assignme
 ## Next, in order
 
 ### Phase F: Foundation (now)
-1. ~~Local git history~~ (done 2026-10-29); GitHub repo (next).
+1. ~~Local git history and GitHub repo~~ (done 2026-10-31: github.com/Ulug2/sidekick, public).
 2. ~~Organize the repo and migrate to TypeScript with a build~~ (done 2026-10-29: Vite, strict TypeScript, src/ by concern, all tests green throughout; ARCHITECTURE.md §4, docs/adr/).
 3. Run traces: record every agent step (observation, screenshot, model call, action, result, cost); export; replay viewer.
 4. Real-site benchmark: 10 tasks run on the Mac with a real model, scored per version:
