@@ -39,6 +39,11 @@ Homework help with answers that are checked, not guessed. Reminders for assignme
 ### Phase F: Foundation (now)
 1. ~~Local git history and GitHub repo~~ (done 2026-10-31: github.com/Ulug2/sidekick, public).
 2. ~~Organize the repo and migrate to TypeScript with a build~~ (done 2026-10-29: Vite, strict TypeScript, src/ by concern, all tests green throughout; ARCHITECTURE.md §4, docs/adr/).
+   Leftovers from the migration review (docs/ASSUMPTIONS.md), each with a regression test:
+   - **`read_url` redirects into a private network** (security, do first): `fetch` follows redirects, so the request reaches the private address before the check refuses to read it; a public hostname that resolves to a private IP (`127.0.0.1.nip.io`, DNS rebinding) isn't caught. Fix: follow redirects by hand and check every hop.
+   - **Full Public Suffix List for "site"**: `siteOf` is a two-label rule plus a short list of shared hosts. Use the full list (e.g. `tldts`) so shortcuts, plan approvals, uploads and sharing checks stay per site on every shared host.
+   - **Queue storage writes**: read-modify-write in about 10 places with no queue (`saveChat`/chatIndex, `addMemory`, `saveAdapters`, `saveSkills`); two saves at once can lose one (e.g. end-of-chat reflection while a chat saves). One write queue per key; only `recordUsage` has one today.
+   - **Model price table**: usage is tokens per model per day, never dollars. Needed for cost per run in traces (item 3), the benchmark (item 4), the spend meter (item 16) and rule 11. Do it with item 3.
 3. Run traces: record every agent step (observation, screenshot, model call, action, result, cost); export; replay viewer.
 4. Real-site benchmark: 10 tasks run on the Mac with a real model, scored per version:
    1. Turkish Airlines multi-city search IAD→IST→ALA→IAD, report the best total (stop before booking)
