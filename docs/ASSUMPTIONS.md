@@ -87,7 +87,7 @@ Confidence tags: **(high)** I checked it in the code or by running it; **(medium
 3. **The rule-4 timeout gaps** (chat page reads, `read_url`, `web_search`): same question. They're real bugs, but fixing them isn't "behavior-preserving". My default is after the migration, as the first fixes.
 4. **WXT:** are you attached to WXT (from ARCHITECTURE.md), or OK with plain Vite if the plan makes the case?
 5. **`open_tab` / `switch_tab` activating tabs:** intended (the agent chose to go there), or should it follow the "never change your tab" rule? Not changing it now either way.
-6. **Git identity:** commits use your global git config (`Ulug2 <jordan@example.edu>`). Fine, or do you want a different name or email (for example GitHub's noreply address) before anything is pushed?
+6. **Git identity:** commits used your global git config (your school email). Fine, or do you want a different name or email (for example GitHub's noreply address) before anything is pushed?
 
 ## 8. Your answers (2026-10-29) and what happened
 
@@ -96,4 +96,4 @@ Confidence tags: **(high)** I checked it in the code or by running it; **(medium
 3. Timeouts: fixed in v0.9.5 (chat page reads and captures, `read_url`, web search; Stop works on the network ones).
 4. Build tool: open; MIGRATION_PLAN recommends plain Vite.
 5. Tabs: the agent opens and switches its own tabs in the background (v0.9.5).
-6. Git identity: kept.
+6. Git identity: kept at first; before publishing (2026-10-31) the history was rewritten to your GitHub noreply address, and test data with your surname and school email was replaced with fictional values.
