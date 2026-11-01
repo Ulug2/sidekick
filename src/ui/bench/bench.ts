@@ -95,7 +95,7 @@ function startTask(task: BenchTask, status: HTMLElement) {
 async function renderSpend() {
   const { usage = {} } = await readLocal("usage");
   const spend = monthSpend(usage);
-  $("#monthSpend").textContent = `${formatCost(spend.cost)} (Claude models${spend.unpriced.length ? `; not priced: ${spend.unpriced.join(", ")}` : ""})`;
+  $("#monthSpend").textContent = `${formatCost(spend.cost)}${spend.unpriced.length ? ` (not counted, no price: ${spend.unpriced.join(", ")})` : ""}`;
 }
 export async function render(): Promise<void> {
   const runs = await listBenchRuns();
@@ -104,7 +104,7 @@ export async function render(): Promise<void> {
   await renderSpend();
   const warn = $("#priceWarning");
   warn.hidden = modelPriced;
-  warn.textContent = modelPriced ? "" : `The agent model (${model}) has no price in Sidekick, so the per-run limit can't work. Use a Claude model (Settings → provider) to run the benchmark.`;
+  warn.textContent = modelPriced ? "" : `The agent model (${model}) has no price in Sidekick, so the per-run limit can't work. Pick a priced model in Settings (Claude Haiku/Sonnet/Opus 5.5, GPT-5.6 Luna or Terra) to run the benchmark.`;
   const tbody = $("#scores tbody");
   tbody.replaceChildren(...scoreByVersion(runs).map(s => h("tr", {}, h("td", {}, `v${s.version}`), h("td", {}, `${s.passedTasks} of ${s.graded}`), h("td", {}, `${s.graded} of ${BENCH_TASKS.length}`), h("td", {}, String(s.medianSteps)), h("td", {}, secs(s.medianMs)), h("td", {}, formatCost(s.medianCost)), h("td", {}, formatCost(s.totalCost)))));
   $("#noScores").hidden = runs.some(r => r.verdict);

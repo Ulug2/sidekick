@@ -59,7 +59,7 @@ async function page(store = {}) {
   check('Run opens the side panel, opens the task in a new tab, and hands it over', p.calls.open[0]?.windowId === 3 && p.calls.tabs[0]?.url === 'https://moodle.example.edu/my/' && p.calls.tabs[0].active === true && pending?.taskId === 'moodle-due' && pending.tabId === 42 && pending.mode === 'agent' && pending.maxCost === 0.6 && /List every assignment/.test(pending.goal), JSON.stringify({ calls: p.calls, pending }));
 
   // OpenAI: no price, so no limit, so no Run
-  const o = await page({ provider: 'openai', anthropicKey: '', openaiKey: 'k' });
+  const o = await page({ provider: 'openai', anthropicKey: '', openaiKey: 'k', openaiSmart: 'gpt-6-astra' });
   check('With a model Sidekick can\'t price, Run is off and it says why', [...o.doc.querySelectorAll('.run')].every(b => b.disabled) && !o.doc.querySelector('#priceWarning').hidden && /no price/.test(o.doc.querySelector('#priceWarning').textContent));
 
   console.log(results.join('\n'));

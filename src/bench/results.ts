@@ -85,7 +85,7 @@ export function scoreByVersion(runs: BenchRun[]): VersionScore[] {
 export const COST_PER_STEP = 0.025;
 export const estimateCost = (estSteps: number) => ({ low: estSteps * COST_PER_STEP * 0.5, high: estSteps * COST_PER_STEP * 1.6 });
 
-// This month's spend in dollars from the usage log (Claude models; others aren't priced).
+// This month's spend in dollars from the usage log (models in the price table; others are listed, not guessed).
 export function monthSpend(usage: UsageLog, now = new Date()): { cost: number; unpriced: string[] } {
   const month = now.toLocaleDateString("en-CA").slice(0, 7);
   let cost = 0;

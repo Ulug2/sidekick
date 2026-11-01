@@ -3,8 +3,10 @@ import { expect, it } from "vitest";
 import { PRICES, costOf, formatCost } from "../../src/core/llm/prices.js";
 import { DEFAULT_SETTINGS } from "../../src/core/llm/settings.js";
 
-it("prices every default Claude model", () => {
-  for (const m of [DEFAULT_SETTINGS.anthropicFast, DEFAULT_SETTINGS.anthropicSmart, DEFAULT_SETTINGS.anthropicBest]) expect(PRICES[m], m).toBeTruthy();
+it("prices every default model except the OpenAI tie-breaker", () => {
+  for (const m of [DEFAULT_SETTINGS.anthropicFast, DEFAULT_SETTINGS.anthropicSmart, DEFAULT_SETTINGS.anthropicBest, DEFAULT_SETTINGS.openaiFast, DEFAULT_SETTINGS.openaiSmart]) expect(PRICES[m], m).toBeTruthy();
+  // OpenAI usage: input excludes cached tokens, which are billed at 0.1×.
+  expect(costOf("gpt-5.6-terra", { input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000, cacheWrite: 0 })).toBeCloseTo(2 + 12 + 0.2, 10);
 });
 
 it("adds input, output and cache tokens at their own prices", () => {
@@ -19,7 +21,7 @@ it("uses Haiku's higher price once the prompt is over 100K tokens", () => {
 });
 
 it("never guesses: models without a price cost null, shown as unknown", () => {
-  expect(costOf(DEFAULT_SETTINGS.openaiSmart, { input: 10, output: 10, cacheRead: 0, cacheWrite: 0 })).toBeNull();
+  expect(costOf(DEFAULT_SETTINGS.openaiBest, { input: 10, output: 10, cacheRead: 0, cacheWrite: 0 })).toBeNull();
   expect(formatCost(null)).toBe("unknown");
   expect(formatCost(0.0041)).toBe("$0.0041");
   expect(formatCost(1.234)).toBe("$1.23");

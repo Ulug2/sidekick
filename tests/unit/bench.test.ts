@@ -72,8 +72,8 @@ describe("scoring", () => {
 });
 
 it("this month's spend counts priced models and names the others", () => {
-  const usage = { "2026-11-01": { "claude-sonnet-5-5": { calls: 1, input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0 }, "gpt-5.6-terra": { calls: 1, input: 5, output: 5, cacheRead: 0, cacheWrite: 0 } }, "2026-10-31": { "claude-sonnet-5-5": { calls: 1, input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0 } } };
-  expect(monthSpend(usage, today)).toEqual({ cost: 2, unpriced: ["gpt-5.6-terra"] });
+  const usage = { "2026-11-01": { "claude-sonnet-5-5": { calls: 1, input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0 }, "gpt-6-astra": { calls: 1, input: 5, output: 5, cacheRead: 0, cacheWrite: 0 } }, "2026-10-31": { "claude-sonnet-5-5": { calls: 1, input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0 } } };
+  expect(monthSpend(usage, today)).toEqual({ cost: 2, unpriced: ["gpt-6-astra"] });
 });
 
 it("estimates and CSV", () => {
