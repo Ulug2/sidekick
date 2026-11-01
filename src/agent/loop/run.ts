@@ -27,9 +27,12 @@ export const KEEP_FULL_SNAPSHOTS = 2; // older page snapshots are shortened to s
 //       ask(question) -> Promise<string>, signal }
 // opts.history: the chat so far, so a follow-up like "apply for the backend one" knows what
 // "the backend one" is and which company you were looking at.
-export async function runAgent(goal: string, ui: AgentUI, opts: { history?: string; userMessages?: string[] } = {}): Promise<AgentRunResult> {
+// opts.maxCost: stop once the run has cost this many dollars (benchmark runs); needs a priced model
+// and recording, so it turns recording on. opts.record: record even if "Record agent runs" is off.
+// opts.tabId: the tab to work in (benchmark runs); otherwise the active tab of this window.
+export async function runAgent(goal: string, ui: AgentUI, opts: { history?: string; userMessages?: string[]; maxCost?: number; record?: boolean; tabId?: number } = {}): Promise<AgentRunResult> {
   const profile = await getProfile();
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const [tab] = opts.tabId ? [await chrome.tabs.get(opts.tabId)] : await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) throw new Error("No active tab.");
   const settings = await getSettings();
   const memories = await memoriesFor(goal, { relevant: 10, recent: 3 }).catch(() => []);
@@ -76,13 +79,13 @@ export async function runAgent(goal: string, ui: AgentUI, opts: { history?: stri
   const transcript: ModelMessage[] = [{ role: "user", text: `${history ? `Earlier in this chat (context for the task; the user's newest message is the task):\n${history}\n\n` : ""}Task: ${goal}\n\nCurrent page:\n${await snapshotTab(state)}` }];
   let summary = null;
   let nudges = 0;
-  let outOfSteps = false;
+  let outOfSteps = false, overBudget = false;
   // Several tasks get more steps: 40 for the first, 30 for each one after, up to 160.
   const budget = () => Math.min(160, AGENT_MAX_STEPS + 30 * Math.max(0, (state.plan?.length || 1) - 1));
 
   // The run's trace (Agent runs page): every step, saved as it happens. Recording never stops a run.
   let rec: TraceRecorder | null = null;
-  if (settings.recordRuns !== false) {
+  if (settings.recordRuns !== false || opts.record || opts.maxCost) {
     try { rec = await startTrace(goal, state, system); ui.traceStarted?.(rec.id); ui = rec.wrapUI(ui); }
     catch (err) { console.warn("Couldn't start the run trace", err); rec = null; }
   }
@@ -92,6 +95,11 @@ export async function runAgent(goal: string, ui: AgentUI, opts: { history?: stri
     try {
       for (let step = 1; step <= budget(); step++) {
         if (ui.signal.aborted) throw new DOMException("Stopped", "AbortError");
+        if (opts.maxCost && rec && rec.trace.totals.cost >= opts.maxCost) {
+          overBudget = true;
+          summary = `I stopped at the cost limit for this run ($${opts.maxCost.toFixed(2)}; spent $${rec.trace.totals.cost.toFixed(2)}).${state.plan ? `\n\n${planText(state.plan)}` : ""}\n\nThe page is where I left it.`;
+          break;
+        }
         trimTranscript(transcript);
         const newest = transcript.at(-1)!;
         await rec?.beginStep(state, newest.role === "user" ? newest.text : undefined);
@@ -146,7 +154,7 @@ export async function runAgent(goal: string, ui: AgentUI, opts: { history?: stri
       await state.input?.detach();
     }
     const learned = state.finished ? await learnFromRun(state, profile, goal, ui.signal) : null;
-    await rec?.finish(outOfSteps ? "out_of_steps" : "done", summary);
+    await rec?.finish(overBudget ? "over_budget" : outOfSteps ? "out_of_steps" : "done", summary);
     return { summary: summary as string | null, steps: state.steps, learned, plan: state.plan, ...(rec && { traceId: rec.id }) };
   } catch (err: any) {
     await rec?.finish(err?.name === "AbortError" ? "stopped" : "failed", null, err?.name === "AbortError" ? undefined : String(err?.message || err));

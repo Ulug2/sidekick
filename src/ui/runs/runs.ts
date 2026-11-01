@@ -6,7 +6,7 @@ import { formatCost } from "../../core/llm/prices.js";
 import { deleteAllTraces, deleteTrace, exportTrace, listTraces, loadShots, loadTrace, parseTraceExport, type TraceIndexEntry } from "../../agent/trace/store.js";
 import type { RunTrace, TraceAction, TraceOutcome, TraceStep } from "../../agent/trace/trace.js";
 
-const OUTCOME: Record<TraceOutcome, string> = { running: "Running", done: "Done", out_of_steps: "Ran out of steps", stopped: "Stopped", failed: "Failed", interrupted: "Interrupted" };
+const OUTCOME: Record<TraceOutcome, string> = { running: "Running", done: "Done", out_of_steps: "Ran out of steps", over_budget: "Hit the cost limit", stopped: "Stopped", failed: "Failed", interrupted: "Interrupted" };
 const IMAGE = /^data:image\/(jpeg|png);base64,/;
 
 // Small DOM builder: text children only.

@@ -9,7 +9,7 @@ const ROOT = path.resolve(import.meta.dirname, "..");
 const OUT = path.join(ROOT, ".test-build");
 const SRC = path.join(ROOT, "src");
 const src = file => path.join(SRC, file);
-const PAGES = ["sidepanel", "profile", "options", "evals", "mic", "runs"];
+const PAGES = ["sidepanel", "profile", "options", "evals", "mic", "runs", "bench"];
 // Every module except the pages' own UI code, the service worker and the content script.
 const LIB = fs.readdirSync(SRC, { recursive: true }).filter(f => /\.(js|ts)$/.test(f) && !f.endsWith(".d.ts") && !/^(ui|background|content|types)\//.test(f)).sort();
 // A page bundle: the library plus every module in the page's folder (its entry file last).

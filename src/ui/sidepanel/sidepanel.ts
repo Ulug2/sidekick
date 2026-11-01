@@ -12,6 +12,7 @@ import { newChat, saveChat, reflectChat, togglePin, renderPin, waitForNotes, ref
 import { createTypewriter, addError, showToast, addUserMessage, addAiMessage, restoreThoughts, addActions, showEmpty, createStatus, addToolChip, TOOL_LABEL, memoryChip } from "./messages.js";
 import { ICON, LOGO } from "./icons.js";
 import { addAgentRun, agentRun, runAgentCard, agentHistory, INTERRUPTED } from "./agent-card.js";
+import { checkBenchPending } from "./bench-run.js";
 import { renderMarkdown, renderReview } from "./markdown.js";
 import { notifyIds, clearNotice } from "./notify.js";
 import { $ } from "../shared/dom.js";
@@ -421,7 +422,8 @@ export async function tryTool(fn: any) {
   }
 }
 
-export async function send(prompt: any, { forceScreen = false, quickAction, tier, retryOf }: { forceScreen?: boolean; quickAction?: string; tier?: Tier; retryOf?: ChatMessage } = {}) {
+// onSignal: called with the turn's Stop signal as it starts (the benchmark counts the turn's model calls with it).
+export async function send(prompt: any, { forceScreen = false, quickAction, tier, retryOf, onSignal }: { forceScreen?: boolean; quickAction?: string; tier?: Tier; retryOf?: ChatMessage; onSignal?: (signal: AbortSignal) => void } = {}) {
   prompt = prompt.trim();
   if ((agentRun as any)?.answer && prompt) return (agentRun as any).answer(prompt);
   if (busy || !prompt) return;
@@ -472,6 +474,7 @@ export async function send(prompt: any, { forceScreen = false, quickAction, tier
   dot.className = "gen-dot";
   dot.innerHTML = LOGO;
   controller = new AbortController();
+  onSignal?.(controller.signal);
   currentTw = null;
   let received = "";
   let holding = false; // "just the answer": nothing is shown until the double-check is done
@@ -592,7 +595,8 @@ export async function runAction(action: any) {
   send(PROMPTS[action], { forceScreen: action === "screen", quickAction: action });
 }
 
-export async function sendAgent(goal: any) {
+// opts.maxCost: dollar limit for the run; opts.tabId: the tab to work in (benchmark). Returns what runAgentCard returned.
+export async function sendAgent(goal: any, opts: { maxCost?: number; tabId?: number } = {}) {
   if (busy) return;
   if (listening) stopDictation();
   const atts = attachments;
@@ -621,7 +625,8 @@ export async function sendAgent(goal: any) {
   controller = new AbortController();
   setBusy(true);
   const userMessages = chat.messages.slice(0, -2).filter(m => (m as any).role === "user").slice(-6).map(m => (m as any).display?.prompt ?? (m as any).text ?? "");
-  const { summary, steps, state, plan, traceId } = await runAgentCard(fullGoal, undefined, { history, progress, userMessages });
+  const result = await runAgentCard(fullGoal, undefined, { history, progress, userMessages, maxCost: opts.maxCost, tabId: opts.tabId });
+  const { summary, steps, state, plan, traceId } = result;
   clearTimeout(saveTimer);
   controller = null;
   setBusy(false);
@@ -632,6 +637,7 @@ export async function sendAgent(goal: any) {
   refreshNotes(chat, chat.messages[chat.messages.length - 2], summary);
   autoScroll();
   input.focus();
+  return result;
 }
 try {
   chrome.notifications?.onClicked?.addListener(async id => {
@@ -771,6 +777,7 @@ export async function checkPending() {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "session" && changes.pending?.newValue) checkPending();
+  if (area === "session" && changes.benchPending?.newValue) checkBenchPending().catch(err => addError(`Benchmark: ${err.message}`));
   if (area === "local" && Object.keys(changes).some(k => !k.startsWith("chat"))) updateBadge();
 });
 
@@ -823,6 +830,7 @@ $("#chatSearch").addEventListener("input", renderChatList);
   // Every time Sidekick opens (or reloads after an update) it starts a new chat. The last one is
   // already saved in history (open it from the menu) and gets its end-of-chat review below.
   await checkPending();
+  checkBenchPending().catch(err => addError(`Benchmark: ${err.message}`));
   setTimeout(() => reflectStaleChats().catch(() => {}), 1500);
   input.focus();
 })();

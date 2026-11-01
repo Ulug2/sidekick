@@ -1,0 +1,45 @@
+main { max-width: 900px; margin: 0 auto; padding: 24px 24px 80px; }
+h1 { font-size: 24px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 6px; }
+h2 { font-size: 16px; font-weight: 600; margin: 26px 0 8px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 ui-monospace, Menlo, monospace; background: var(--surface); border-radius: 10px; padding: 10px; margin: 6px 0 0; max-height: 300px; overflow: auto; }
+.row.tight { gap: 6px; margin: 0; }
+.budget { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 28px; background: var(--surface); border-radius: 14px; padding: 12px 16px; margin-top: 14px; }
+.budget .k { color: var(--muted); font-size: 13px; }
+.budget .v { font-weight: 600; }
+.budget .cap { flex-direction: row; align-items: center; gap: 8px; font-weight: 400; color: var(--muted); }
+.budget .dollar { display: inline-flex; align-items: center; gap: 2px; color: var(--text); }
+.budget input { width: 80px; padding: 4px 8px; background: var(--bg); }
+.warn { color: var(--err); flex-basis: 100%; margin: 0; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; }
+.tasks { list-style: none; padding: 0; margin: 0; }
+.task { border-top: 1px solid var(--border); padding: 16px 0; }
+.task-head { display: flex; gap: 12px; align-items: flex-start; }
+.task-head .n { width: 26px; height: 26px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; font-size: 12.5px; font-weight: 600; flex: none; }
+.task-head .grow { flex: 1; min-width: 0; }
+.task-head .title { font-weight: 600; }
+.success { margin: 8px 0 0 38px; }
+.params { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 12px; margin: 10px 0 0 38px; }
+.params label { font-weight: 400; color: var(--muted); font-size: 12.5px; gap: 4px; }
+.params input { padding: 6px 10px; }
+.status { margin: 8px 0 0 38px; color: var(--muted); }
+.status:empty { display: none; }
+.runs { list-style: none; padding: 0; margin: 10px 0 0 38px; display: flex; flex-direction: column; gap: 8px; }
+.run { border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; min-width: 0; overflow-wrap: anywhere; }
+.run.pass { border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
+.run.fail { border-color: color-mix(in srgb, var(--err) 45%, var(--border)); }
+.checks { list-style: none; padding: 0; margin: 4px 0 0; }
+.checks .ok { color: var(--ok); }
+.checks .bad { color: var(--err); }
+.grade { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.grade button { padding: 4px 12px; font-size: 12.5px; }
+.grade .grade-pass.on { background: color-mix(in srgb, var(--ok) 20%, transparent); border-color: var(--ok); }
+.grade .grade-fail.on { background: color-mix(in srgb, var(--err) 15%, transparent); border-color: var(--err); }
+.grade .note { flex: 1; min-width: 160px; padding: 4px 10px; font-size: 12.5px; }
+.grade a { color: inherit; }
+@media (max-width: 560px) {
+  main { padding: 16px 16px 60px; }
+  .success, .params, .status, .runs { margin-left: 0; }
+}

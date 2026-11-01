@@ -12,7 +12,7 @@ import { saveTrace, saveShot, startIndexEntry, type TraceIndexEntry } from "./st
 export const TRACE_SHOT_EDGE = 900; // enough to see the page; ~50 KB per step
 export const TRACE_SHOT_MS = 4000;
 
-export type TraceOutcome = "running" | "done" | "out_of_steps" | "stopped" | "failed" | "interrupted";
+export type TraceOutcome = "running" | "done" | "out_of_steps" | "over_budget" | "stopped" | "failed" | "interrupted";
 export interface TraceCall { purpose: string; model: string; ms: number; usage: Usage; cost: number | null; stop: string | null }
 export interface TraceAction {
   tool: string;

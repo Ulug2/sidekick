@@ -15,7 +15,7 @@ const FORM = `<!doctype html><html><head><title>Contact form</title></head><body
 const lastId = (all, label) => { const re = new RegExp(String.raw`\[(\d+)\] [a-z:]+ \\"` + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'); let m, id = null; while ((m = re.exec(all))) id = m[1]; return id; };
 
 // One tab with the form, a fake model that follows a script, and a fake screenshot.
-async function agent({ script, goal = 'Send my name through the contact form', store = {}, approve = true, stopAt = null, onApprove }) {
+async function agent({ script, goal = 'Send my name through the contact form', store = {}, approve = true, stopAt = null, onApprove, opts = {} }) {
   const local = makeStore({ anthropicKey: 'k', profile: { fullName: 'Ulugbek Rivera', email: 'jordan@example.edu' }, ...store });
   const url = 'https://acme.example/contact';
   const page = new JSDOM(FORM, { runScripts: 'dangerously', pretendToBeVisual: true, url }).window;
@@ -57,7 +57,7 @@ async function agent({ script, goal = 'Send my name through the contact form', s
   const ui = { signal: ctl.signal, step: () => ({ waiting() {}, done() {} }), note() {}, thinking() {}, plan() {}, ask: async () => 'ok',
     approve: async ({ title }) => { approvals.push(title); await onApprove?.(w); return approve; }, traceStarted: id => (ui.started = id) };
   let r, error;
-  await w.runAgent(goal, ui, {}).then(x => (r = x), e => (error = e));
+  await w.runAgent(goal, ui, opts).then(x => (r = x), e => (error = e));
   return { r, error, w, local, page, reqs, approvals, ui };
 }
 
@@ -161,6 +161,14 @@ const happy = [
     check('Runs page: the list shows each run with outcome, steps and cost', !doc.querySelector('#listView').hidden && doc.querySelectorAll('#runList li').length === 1 && /3 steps/.test(doc.querySelector('#runList').textContent) && /Done/.test(doc.querySelector('#runList .pill').textContent) && !doc.querySelector('#runList img'));
     w.renderList([]);
     check('Runs page: with no runs, it says how to make one', /No runs recorded yet/.test(doc.querySelector('#listStatus').textContent));
+  }
+
+  // ---------- 6. a dollar limit per run (benchmark runs) ----------
+  {
+    const capped = await agent({ script: happy, store: { recordRuns: false }, opts: { maxCost: SONNET_CALL * 1.5 } });
+    const [e] = (await capped.local.get('traceIndex')).traceIndex || [];
+    check('A run with a cost limit stops between steps once it is reached, and says so', !capped.error && /cost limit for this run \(\$0\.01; spent \$0\.01\)/.test(capped.r.summary) && capped.reqs.filter(b => !/You check one step/.test(b.system)).length === 2 && e?.outcome === 'over_budget', JSON.stringify({ err: capped.error?.message, s: capped.r?.summary, calls: capped.reqs.length, e }));
+    check('…and it is recorded even with "Record agent runs" off (the limit needs the cost)', !!e && capped.r.traceId === e.id);
   }
 
   console.log(results.join('\n'));

@@ -3,10 +3,10 @@
 ```
 npm install
 npx playwright install chromium          # once
-npm test                                 # builds .test-build/, then every jsdom suite: one line each + total (about 615 checks)
+npm test                                 # builds .test-build/, then every jsdom suite: one line each + total (about 628 checks)
 node tests/jsdom/run-all.js forms e2e    # just some suites (run npm run build:test first if src/ changed)
 npm run test:unit                        # Vitest unit tests (tests/unit)
-npm run test:chrome                      # builds dist/, then real Chromium with the real extension (about 64 checks); screenshots in .artifacts/shots
+npm run test:chrome                      # builds dist/, then real Chromium with the real extension (about 71 checks); screenshots in .artifacts/shots
 ```
 
 ## Layout
@@ -25,6 +25,7 @@ npm run test:chrome                      # builds dist/, then real Chromium with
 ## Suites
 | Suite | Covers |
 |---|---|
+| bench | the Benchmark page: tasks, settings, Run hands the task to the panel, grading, score per version, results as text only, Run off for unpriced models |
 | traces | run traces: every step saved as it happens (prompt, reply, actions, approvals while waiting, screenshots, cost), stopped/failed/interrupted runs, last 30 kept, export masks secrets, import keeps only images, the Agent runs page shows everything as text (v0.9.6) |
 | timeouts | chat page reads, screenshots, read_url and web search give up after a time limit and obey Stop (v0.9.5) |
 | prompts | system prompts and tool definitions unchanged (fixtures/prompts.json) |
@@ -43,4 +44,4 @@ npm run test:chrome                      # builds dist/, then real Chromium with
 | docs | PDF and DOCX text extraction |
 | real-chrome | the real extension in Chromium: CSP, debugger input, agent runs on local pages, tab groups, nothing leaves the machine |
 
-Unit tests (`unit/`): `security.test.ts` (redaction, the untrusted fence, wrapper stripping, siteOf, local addresses, personal data in URLs, skill text), `prices.test.ts` (dollars per call).
+Unit tests (`unit/`): `security.test.ts` (redaction, the untrusted fence, wrapper stripping, siteOf, local addresses, personal data in URLs, skill text), `prices.test.ts` (dollars per call), `bench.test.ts` (benchmark tasks, checks, scoring, spend, CSV).

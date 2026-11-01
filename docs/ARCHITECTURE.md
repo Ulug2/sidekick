@@ -30,7 +30,8 @@ ES modules, bundled by Vite into `dist/` (ADR-002). One typed storage schema: `s
 | `assistant` (≈1,700) | `turn` (one chat turn, tool loop), `routing`, `prompt`, `tools` (chat tools), `review/` (math double-check: `parse`, `check`, `review`), `memory/` (memories, documents, Markdown export/import), `skills`, `session` (pinned notes, end-of-chat reflection), `profile-core` |
 | `agent` (≈1,900) | `loop/run` (the loop, budgets, nudges), `loop/plan`, `loop/tab-group`, `perception/capture` + `format` (full or change-only snapshots), `actions/run-tool` (gates then action), `actions/input` (page events or debugger), `actions/describe`, `actions/replay`, `safety/gates`, `skills/shortcuts` + `site-notes`, `trace/trace` + `trace/store` (run traces), `tools` (tool schemas), `prompt`, `page-calls`, `types` |
 | `page` (≈850) | `snapshot`, `act`, `webmcp`, `read`, `region`, `replace-selection`, `leave-prompt`: self-contained, checked by `scripts/check-build.mjs` |
-| `ui` (≈2,700) | `sidepanel/` (entry + state, `markdown`, `messages`, `chats`, `agent-card`, `notify`, `icons`), `profile/`, `options/`, `evals/`, `runs/` (Agent runs: replay, export, import), `mic/`, `shared/` |
+| `bench` | the real-site benchmark: `tasks` (ten tasks: start page, goal, settings, automatic checks), `results` (run records, scoring per version, month spend, CSV) |
+| `ui` (≈2,700) | `sidepanel/` (entry + state, `markdown`, `messages`, `chats`, `agent-card`, `notify`, `icons`), `profile/`, `options/`, `evals/`, `runs/` (Agent runs: replay, export, import), `bench/` (Benchmark page; the panel side is `sidepanel/bench-run`), `mic/`, `shared/` |
 
 ### Main flows
 
@@ -47,7 +48,7 @@ ES modules, bundled by Vite into `dist/` (ADR-002). One typed storage schema: `s
 **Learning:** end-of-chat reflection writes memories and skills (never from web content); agent runs compile shortcuts.
 
 ### Storage (`chrome.storage.local`)
-All keys and their types: `src/core/storage/schema.ts`. Settings fields (`DEFAULT_SETTINGS`), `profile`, `applications`, `memories`, `docIndex` + `doc:<id>`, `skills`, `userModel`, `adapters` (shortcuts), `siteNotes`, `chatIndex` + `chat:<id>`, `usage`, `evalRuns`, `traceIndex` + `trace:<id>` + `traceShot:<id>:<n>` (run traces, last 30). Session storage: `pending` (context-menu hand-off).
+All keys and their types: `src/core/storage/schema.ts`. Settings fields (`DEFAULT_SETTINGS`), `profile`, `applications`, `memories`, `docIndex` + `doc:<id>`, `skills`, `userModel`, `adapters` (shortcuts), `siteNotes`, `chatIndex` + `chat:<id>`, `usage`, `evalRuns`, `traceIndex` + `trace:<id>` + `traceShot:<id>:<n>` (run traces, last 30), `benchRuns`, `benchParams`, `benchMaxCost`. Session storage: `pending` (context-menu hand-off), `benchPending` (Benchmark page → panel, taken under a Web Lock so only one panel runs it).
 
 ### Tests
 - `tests/jsdom/*-test.js`: jsdom suites that load test bundles of the same modules into a fake window with fake `chrome.*` and fake model streams (about 580 checks; ADR-006). `prompts-test` pins every prompt and tool definition.

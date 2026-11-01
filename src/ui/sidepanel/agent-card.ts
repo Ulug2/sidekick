@@ -162,7 +162,7 @@ export function agentHistory(messages: any, notes: string[] = []) {
 // Runs the browser agent with a live card. Used by Agent mode and by the chat's
 // operate_browser tool (then the card sits inside the chat reply). Returns { summary, steps, state, plan }.
 // opts: { history, progress(partial) } — progress gets the steps and checklist as they change.
-export async function runAgentCard(goal: string, parent?: HTMLElement, opts: { history?: string; userMessages?: string[]; progress?: (p: Record<string, unknown>) => void } = {}) {
+export async function runAgentCard(goal: string, parent?: HTMLElement, opts: { history?: string; userMessages?: string[]; progress?: (p: Record<string, unknown>) => void; maxCost?: number; tabId?: number } = {}) {
   const run = addAgentRun(parent);
   const signal = (controller! as any).signal;
   agentRun = { el: run.el };
@@ -263,7 +263,7 @@ export async function runAgentCard(goal: string, parent?: HTMLElement, opts: { h
   let summary, steps = [], state = "done", plan = null, traceId: string | undefined;
   ui.traceStarted = id => { traceId = id; };
   try {
-    const result = await runAgent(goal, ui, { history: opts.history, userMessages: opts.userMessages });
+    const result = await runAgent(goal, ui, { history: opts.history, userMessages: opts.userMessages, ...(opts.maxCost && { maxCost: opts.maxCost }), ...(opts.tabId && { tabId: opts.tabId }) });
     summary = result.summary;
     steps = result.steps;
     plan = result.plan || null;

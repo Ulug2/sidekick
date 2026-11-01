@@ -11,6 +11,7 @@ import type { Settings } from "../llm/settings.js";
 import type { UsageLog } from "../llm/usage.js";
 import type { RunTrace } from "../../agent/trace/trace.js";
 import type { TraceIndexEntry } from "../../agent/trace/store.js";
+import type { BenchPending, BenchRun } from "../../bench/results.js";
 
 // ---------- chats (ui/sidepanel) ----------
 export interface ChatIndexEntry { id: string; title: string; updatedAt: number }
@@ -65,6 +66,9 @@ export interface LocalSchema extends Settings {
   usage: UsageLog; // core/llm
   evalRuns: EvalRun[]; // ui/evals
   traceIndex: TraceIndexEntry[]; // agent/trace/store: one line per recorded agent run, newest first
+  benchRuns: BenchRun[]; // bench/results: one record per benchmark run, graded on the Benchmark page
+  benchParams: Record<string, Record<string, string>>; // ui/bench: what you entered per task (URLs, dates…)
+  benchMaxCost: number; // ui/bench: dollar limit per benchmark run
   [chat: `chat:${string}`]: Chat;
   [doc: `doc:${string}`]: DocChunks;
   [trace: `trace:${string}`]: RunTrace; // a run without its images
@@ -73,6 +77,8 @@ export interface LocalSchema extends Settings {
 export interface SessionSchema {
   // The context menu's hand-off to the panel (background → sidepanel).
   pending: { mode: "rewrite" | "ask"; text: string; ts: number };
+  // Run a benchmark task (ui/bench → sidepanel).
+  benchPending: BenchPending;
 }
 
 export async function readLocal<K extends keyof LocalSchema>(keys: K | K[]): Promise<Partial<Pick<LocalSchema, K>>> {

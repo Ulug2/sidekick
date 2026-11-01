@@ -68,7 +68,7 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   };
 
   // ---------- 1. every page loads clean under the real CSP ----------
-  for (const p of ['sidepanel.html', 'profile.html', 'options.html', 'evals.html', 'mic.html', 'runs.html']) {
+  for (const p of ['sidepanel.html', 'profile.html', 'options.html', 'evals.html', 'mic.html', 'runs.html', 'bench.html']) {
     const page = await ctx.newPage();
     watch(page, p);
     const csp = [];
@@ -581,9 +581,51 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   await panel.locator('.agent-run').last().locator('.steps-toggle').click().catch(() => {});
   await shot(panel, '14-airline-steps');
 
+  // ---------- 15. the benchmark: Run on the Benchmark page → the panel runs it → graded (Phase F item 4) ----------
+  await panel.evaluate(u => chrome.storage.local.set({ benchParams: { 'tricky-form': { url: u, what: 'Use my profile' } } }), `${BASE}/plain`);
+  responder = b => {
+    if (/browser agent/.test(b.system)) return H.anthropicEvents([{ type: 'tool_use', id: 'b1', name: 'done', input: { summary: 'Filled the date and the dropdown; nothing submitted.' } }], { stop: 'tool_use' });
+    return H.anthropicEvents([{ type: 'text', text: /You keep the pinned notes|reusable operating notes/.test(b.system) ? '{"notes":[]}' : '{}' }]);
+  };
+  const bench = await ctx.newPage();
+  watch(bench, 'bench.html');
+  await bench.goto(url('bench.html'));
+  await bench.waitForSelector('#task-tricky-form .run');
+  // Run opens Chrome's real side panel too, and its requests bypass Playwright's routing (they'd reach
+  // the real API with the fake key). The test's panel tab takes the task instead.
+  await bench.evaluate(() => { chrome.sidePanel.open = async () => {}; });
+  await bench.click('#task-tricky-form .run');
+  const benchRuns = await (async () => { for (let i = 0; i < 60; i++) { const r = (await bench.evaluate(() => chrome.storage.local.get('benchRuns'))).benchRuns; if (r?.length) return r; await bench.waitForTimeout(500); } return []; })();
+  const br = benchRuns[0];
+  check('Real Chrome benchmark: Run hands the task to the side panel, which runs it on the task\'s page and records the result', benchRuns.length === 1 && br.taskId === 'tricky-form' && br.outcome === 'done' && br.steps === 1 && br.version === '0.9.6' && br.traceId && /Filled the date/.test(br.summary) && br.checks.length === 4,
+    JSON.stringify(benchRuns).slice(0, 800));
+  const tracedOn = br && (await bench.evaluate(k => chrome.storage.local.get(k), 'trace:' + br.traceId))['trace:' + br.traceId];
+  check('Real Chrome benchmark: the run was on the task\'s page, with the task\'s goal', tracedOn?.start.url === `${BASE}/plain` && /Fill in the form on this page: Use my profile\. Stop before submitting\./.test(tracedOn.goal), JSON.stringify(tracedOn?.start) + ' ' + tracedOn?.goal);
+  await bench.waitForSelector(`[data-run="${br?.id}"] .grade-fail`, { timeout: 5000 }).catch(() => {});
+  await bench.click(`[data-run="${br?.id}"] .grade-fail`).catch(() => {});
+  await bench.waitForTimeout(300);
+  check('Real Chrome benchmark: grading it updates the score for this version', (await bench.evaluate(() => chrome.storage.local.get('benchRuns'))).benchRuns[0]?.verdict === 'fail' && /v0\.9\.6\s*0 of 1/.test(await bench.locator('#scores tbody').innerText()), await bench.locator('#scores').innerText());
+  // A chat task (8: the agent has no memory tool, so it goes through the chat): its calls are counted too.
+  await panel.evaluate(u => chrome.storage.local.set({ benchParams: { 'article-dates': { url: u } } }), `${BASE}/plain`);
+  responder = b => H.anthropicEvents([{ type: 'text', text: /You keep the pinned notes|reusable operating notes/.test(b.system) ? '{"notes":[]}' : (b.tools || []).some(t => t.name === 'remember') ? 'Summary: ' + 'the article explains things. '.repeat(12) : '{}' }]);
+  await bench.click('#task-article-dates .run');
+  const chatRun = await (async () => { for (let i = 0; i < 60; i++) { const r = (await bench.evaluate(() => chrome.storage.local.get('benchRuns'))).benchRuns; if (r?.length > 1) return r[0]; await bench.waitForTimeout(500); } return null; })();
+  if (!chatRun?.summary) console.log('chat bench debug:', (await panel.locator('#messages').innerText().catch(() => '')).slice(-800));
+  check('Real Chrome benchmark: a chat task runs as a chat message and records its calls and cost', chatRun?.taskId === 'article-dates' && chatRun.mode === 'chat' && chatRun.outcome === 'done' && chatRun.steps >= 1 && chatRun.cost > 0 && /Summary: the article/.test(chatRun.summary) && chatRun.checks[0].ok && !chatRun.checks[1].ok, JSON.stringify(chatRun).slice(0, 600));
+  for (const [w, name] of [[760, 'half'], [420, 'narrow']]) {
+    await bench.setViewportSize({ width: w, height: 900 });
+    await bench.waitForTimeout(150);
+    const ov = await bench.evaluate(() => document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth);
+    check(`Real Chrome benchmark: the page fits at ${w}px`, ov <= 1, `overflow ${ov}px`);
+    await shot(bench, `15-bench-${name}`);
+  }
+  await bench.setViewportSize({ width: 1280, height: 900 });
+  await shot(bench, '15-bench-wide');
+
   check('Nothing tried to reach any outside server during the whole run', !outside.length, outside.join(', '));
   check('No console errors on any page', !problems.length, problems.join('\n'));
 
+  if (process.env.SK_DUMP_BODIES) fs.writeFileSync(process.env.SK_DUMP_BODIES, JSON.stringify(apiBodies)); // request sizes for cost estimates (scripts/bench/estimate.mjs)
   await ctx.close();
   server.close();
   console.log(results.join('\n'));
