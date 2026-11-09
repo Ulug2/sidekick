@@ -4,7 +4,7 @@ import { redactSecrets } from "../../core/security/guard.js";
 import { addMemory, getMemories, type Memory, type MemoryFields } from "./memory.js";
 import { getUserModel, setUserModel } from "../session.js";
 import { addSkill, getSkills } from "../skills.js";
-import { getSiteNotes, saveSiteNotes } from "../../agent/skills/site-notes.js";
+import { addSiteNotes, getSiteNotes } from "../../agent/skills/site-notes.js";
 
 export const KIND_SECTIONS: [string, string][] = [
   ["preference", "How you like answers"],
@@ -123,12 +123,7 @@ export async function importMemoryMarkdown(md: string): Promise<{ memories: numb
     if (site && m && m[1].trim() !== "(none)") (add[site] ||= []).push(m[1].trim().slice(0, 240));
   }
   for (const [s, list] of Object.entries(add)) {
-    const existing = await getSiteNotes(s);
-    const fresh = list.filter(n => !redactSecrets(n).count && !existing.some(e => e.text.toLowerCase() === n.toLowerCase()));
-    if (fresh.length) {
-      await saveSiteNotes(s, [...existing, ...fresh.map(t => ({ text: t, added: Date.now() }))]);
-      result.notes += fresh.length;
-    }
+    result.notes += (await addSiteNotes(s, list.filter(n => !redactSecrets(n).count))).length;
   }
   return result;
 }

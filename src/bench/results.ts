@@ -5,6 +5,7 @@ import type { RunTrace } from "../agent/trace/trace.js";
 import { costOf, PRICES } from "../core/llm/prices.js";
 import type { UsageLog } from "../core/llm/usage.js";
 import { BENCH_TASKS, taskById, type CheckResult } from "./tasks.js";
+import { storageSettled, updateLocal } from "../core/storage/update.js";
 
 export const DEFAULT_MAX_COST = 0.6; // dollars per run; the agent stops there (Settings: Benchmark page)
 export const MAX_INTERVENTIONS = 1;
@@ -35,17 +36,11 @@ export interface BenchPending { taskId: string; goal: string; mode: "agent" | "c
 export const interventionsIn = (t: RunTrace | null) => (t?.steps || []).flatMap(s => s.events).filter(e => e.kind !== "note").length;
 export const passed = (r: BenchRun) => r.verdict === "pass" && r.interventions <= MAX_INTERVENTIONS;
 
-let queue: Promise<unknown> = Promise.resolve();
-function update(fn: (runs: BenchRun[]) => BenchRun[]): Promise<void> {
-  const next = queue.then(async () => {
-    const { benchRuns = [] } = (await chrome.storage.local.get("benchRuns")) as { benchRuns?: BenchRun[] };
-    await chrome.storage.local.set({ benchRuns: fn(benchRuns) });
-  });
-  queue = next.catch(() => {});
-  return next;
-}
+// Under the "benchRuns" lock (core/storage/update): the panel saving a run and the Benchmark page
+// grading another are different pages.
+const update = (fn: (runs: BenchRun[]) => BenchRun[]) => updateLocal("benchRuns", (runs = []) => fn(runs));
 export async function listBenchRuns(): Promise<BenchRun[]> {
-  await queue;
+  await storageSettled("benchRuns");
   return ((await chrome.storage.local.get("benchRuns")) as { benchRuns?: BenchRun[] }).benchRuns || [];
 }
 export const saveBenchRun = (run: BenchRun) => update(runs => [run, ...runs.filter(r => r.id !== run.id)]);

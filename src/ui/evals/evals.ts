@@ -5,6 +5,7 @@ import { redactSecrets, untrusted } from "../../core/security/guard.js";
 import { bm25 } from "../../assistant/memory/memory.js";
 import { reflectOnChat, updateSessionNotes } from "../../assistant/session.js";
 import { readLocal, type Chat } from "../../core/storage/schema.js";
+import { updateLocal } from "../../core/storage/update.js";
 import type { LongTermStore } from "../../assistant/session.js";
 import { routeMessage } from "../../assistant/routing.js";
 import { runTurn } from "../../assistant/turn.js";
@@ -378,8 +379,7 @@ export async function runAll() {
     render(results);
   }
   const run = { date: Date.now(), configKey: configKey(s), passed, total: CASES.length, models: [modelFor(s, "fast"), modelFor(s, "smart")], results: Object.fromEntries(Object.entries(results).map(([k, v]) => [k, { pass: v.pass, note: v.note }])) };
-  const { evalRuns = [] } = await readLocal("evalRuns");
-  await chrome.storage.local.set({ evalRuns: [run, ...evalRuns].slice(0, 20) });
+  await updateLocal("evalRuns", (evalRuns = []) => [run, ...evalRuns].slice(0, 20));
   showSummary(run);
   renderHistory();
   running = false;

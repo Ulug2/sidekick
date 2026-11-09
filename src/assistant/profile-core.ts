@@ -1,6 +1,7 @@
 // Your profile: everything Sidekick knows about you. Stored only in this browser.
 
 import { readLocal } from "../core/storage/schema.js";
+import { updateLocal } from "../core/storage/update.js";
 
 export const DECLINE = "Decline to self-identify";
 
@@ -97,9 +98,13 @@ export async function getApplications(): Promise<Application[]> {
   return applications;
 }
 
+// Read-modify-write under the "applications" lock (core/storage/update): the agent logging an
+// application and the profile page removing one can't lose each other's change.
 export async function logApplication(entry: Omit<Application, "id" | "date" | "status"> & { status?: string }): Promise<Application> {
-  const list = await getApplications();
-  list.unshift({ id: crypto.randomUUID(), date: new Date().toISOString(), status: "submitted", ...entry });
-  await chrome.storage.local.set({ applications: list.slice(0, 1000) });
-  return list[0];
+  const app: Application = { id: crypto.randomUUID(), date: new Date().toISOString(), status: "submitted", ...entry };
+  await updateLocal("applications", (list = []) => [app, ...list].slice(0, 1000));
+  return app;
+}
+export function deleteApplication(id: string): Promise<void> {
+  return updateLocal("applications", (list = []) => list.filter(a => a.id !== id));
 }

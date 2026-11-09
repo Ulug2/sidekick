@@ -34,7 +34,7 @@ Confidence tags: **(high)** I checked it in the code or by running it; **(medium
 
 **Fragile**
 - **The snapshot is a text protocol.** `skPageSnapshot` returns formatted lines; `captureTab` parses them back with `/^\[([\d:]+)\] (\S+) "(.*?)"/`, and `adapters.questionOfLine`, `replayShortcut` (`line.includes('value: "…')`) and `find` parse the same text again. A label containing `"` is cut short. Matters a lot for traces and agent v2: the page should return objects, and text should be made only at the edge, for the model. (high)
-- **Storage writes race.** Read-modify-write in about 10 files with no serialization (only `recordUsage` queues). `saveChat` (chatIndex), `addMemory`, `saveAdapters`, `saveSkills` can lose an update when two run at once (end-of-chat reflection while a chat saves). (medium: possible, not seen)
+- **Storage writes race.** (Fixed 2026-11-08: `core/storage/update.ts`, Web Lock per key; tests/jsdom/storage-test.js.) Read-modify-write in about 10 files with no serialization (only `recordUsage` queues). `saveChat` (chatIndex), `addMemory`, `saveAdapters`, `saveSkills` can lose an update when two run at once (end-of-chat reflection while a chat saves). (medium: possible, not seen)
 - **Module-level run state** in `agent.js`: `agentSignal` is a global, so only one agent run can exist at a time. True today, but it will matter when runs move to the service worker or run in parallel. (high)
 - **Small leak in `runAgent`:** `onCreated`/`onActivated` listeners are added before the `try`, and the first `snapshotTab` (inside the first transcript message) runs outside it. If that throws (tab closed), the listeners are never removed. (high, minor)
 - **Implicit dependencies** found only by reading: `cdp.js` uses `shrinkImage` (screen.js), `web.js` uses `extractDocText` (docs.js), `adapters.js` calls `modelCall`, `brain.js` calls `runAgent` through `env`, plus 6 `typeof X === "function"` guards for optional ones. (high)
@@ -92,7 +92,7 @@ Confidence tags: **(high)** I checked it in the code or by running it; **(medium
 ## 8. Your answers (2026-10-29) and what happened
 
 1. Start fresh: loading `dist/` with a new extension ID is fine (MIGRATION_PLAN §6 suggests pinning the ID with a manifest key).
-2. `siteOf`: fixed in v0.9.5 (shared hosting list; full Public Suffix List after the migration). The `read_url` redirect gap is documented in SECURITY.md and comes after the migration.
+2. `siteOf`: fixed in v0.9.5 (shared hosting list); full Public Suffix List added 2026-11-08 (`tldts`). The `read_url` redirect gap is documented in SECURITY.md and comes after the migration.
 3. Timeouts: fixed in v0.9.5 (chat page reads and captures, `read_url`, web search; Stop works on the network ones).
 4. Build tool: open; MIGRATION_PLAN recommends plain Vite.
 5. Tabs: the agent opens and switches its own tabs in the background (v0.9.5).

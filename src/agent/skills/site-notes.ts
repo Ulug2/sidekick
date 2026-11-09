@@ -3,6 +3,7 @@
 // Learned from value-free step lists only. Stored in chrome.storage.local "siteNotes".
 import type { SiteNote, Shortcut } from "../types.js";
 import { readLocal } from "../../core/storage/schema.js";
+import { updateLocal } from "../../core/storage/update.js";
 import { redactSecrets } from "../../core/security/guard.js";
 import { normLabel } from "./shortcuts.js";
 import { modelCall } from "../../core/llm/call.js";
@@ -16,11 +17,28 @@ export async function getSiteNotes(site?: string): Promise<SiteNote[] | Record<s
   const { siteNotes = {} } = await readLocal("siteNotes");
   return site ? siteNotes[site] || [] : siteNotes;
 }
-export async function saveSiteNotes(site: string, notes: SiteNote[]): Promise<void> {
-  const { siteNotes = {} } = await readLocal("siteNotes");
-  if (notes.length) siteNotes[site] = notes.slice(-SITE_NOTES_MAX);
-  else delete siteNotes[site];
-  await chrome.storage.local.set({ siteNotes });
+// Changes are read-modify-write under the "siteNotes" lock (core/storage/update), so a note
+// learned after a run and one deleted on the profile page can't undo each other.
+function changeSiteNotes(site: string, fn: (notes: SiteNote[]) => SiteNote[]): Promise<void> {
+  return updateLocal("siteNotes", (all = {}) => {
+    const notes = fn(all[site] || []);
+    if (notes.length) all[site] = notes.slice(-SITE_NOTES_MAX);
+    else delete all[site];
+    return all;
+  });
+}
+// Adds the notes that aren't there yet (same text, ignoring case and spacing). Returns those added.
+const noteKey = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+export async function addSiteNotes(site: string, texts: string[]): Promise<string[]> {
+  let added: string[] = [];
+  await changeSiteNotes(site, notes => {
+    added = texts.filter((t, i) => noteKey(t) && !notes.some(n => noteKey(n.text) === noteKey(t)) && texts.findIndex(x => noteKey(x) === noteKey(t)) === i);
+    return [...notes, ...added.map(text => ({ text, added: Date.now() }))];
+  });
+  return added;
+}
+export function deleteSiteNote(site: string, text: string): Promise<void> {
+  return changeSiteNotes(site, notes => notes.filter(n => n.text !== text));
 }
 
 // Learns 1–4 short, reusable notes about a site from a run that hit problems (errors, retries,
@@ -47,8 +65,7 @@ Reply with only JSON: {"notes": ["...", "..."]}`;
   let notes: string[] = [];
   try { notes = JSON.parse(r.text.match(/\{[\s\S]*\}/)![0]).notes || []; } catch { return []; }
   notes = notes.map(n => String(n).trim().slice(0, 240)).filter(n => n && !redactSecrets(n).count && !existing.some(e => normLabel(e.text) === normLabel(n))).slice(0, 3);
-  if (notes.length) await saveSiteNotes(site, [...existing, ...notes.map(text => ({ text, added: Date.now() }))]);
-  return notes;
+  return notes.length ? addSiteNotes(site, notes) : [];
 }
 
 // The short text the agent sees for a site: shortcuts it can run and notes from earlier runs.

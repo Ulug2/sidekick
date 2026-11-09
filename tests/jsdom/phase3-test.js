@@ -18,7 +18,7 @@ function boot(init, responder) {
   if (!w.crypto.randomUUID) w.crypto.randomUUID = () => require('crypto').randomUUID();
   const reqs = [];
   w.fetch = async (u, o) => { const b = JSON.parse(o.body); { const __ck = H.checkerReply(b); if (__ck) return __ck; } reqs.push(b); return responder ? responder(b, reqs) : text('ok'); };
-  loadScripts(w, BRAIN, ['runTurn', 'addSkill', 'patchSkill', 'getSkills', 'skillFor', 'applySkillOps', 'reflectOnChat', 'addMemory', 'getMemories', 'upcomingMemories', 'memoryLine', 'confirmAnswer', 'parseSetup', 'exportMemoryMarkdown', 'importMemoryMarkdown', 'saveSiteNotes', 'setUserModel', 'calcEngine', 'buildTurnContext']);
+  loadScripts(w, BRAIN, ['runTurn', 'addSkill', 'patchSkill', 'getSkills', 'skillFor', 'applySkillOps', 'reflectOnChat', 'addMemory', 'getMemories', 'upcomingMemories', 'memoryLine', 'confirmAnswer', 'parseSetup', 'exportMemoryMarkdown', 'importMemoryMarkdown', 'addSiteNotes', 'setUserModel', 'calcEngine', 'buildTurnContext']);
   return { w, reqs, local };
 }
 const userText = b => JSON.stringify(b.messages.at(-1));

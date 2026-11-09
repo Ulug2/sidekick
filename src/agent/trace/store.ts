@@ -3,25 +3,19 @@
 // MAX_TRACES runs are kept. Export makes one JSON file with the screenshots inside.
 import { redactSecrets } from "../../core/security/guard.js";
 import type { RunTrace, TraceOutcome } from "./trace.js";
+import { storageSettled, updateLocal } from "../../core/storage/update.js";
 
 export const MAX_TRACES = 30;
 export const EXPORT_FORMAT = "sidekick-run";
 export interface TraceIndexEntry { id: string; goal: string; startedAt: number; endedAt?: number; outcome: TraceOutcome; steps: number; cost: number; costKnown: boolean; site: string }
 export interface TraceExport { format: typeof EXPORT_FORMAT; version: 1; exported: string; trace: RunTrace; shots: Record<string, string> }
 
-// Index changes are queued: a run saving a step and the runs page deleting one can't lose each other's write.
-let indexQueue: Promise<unknown> = Promise.resolve();
-function updateIndex(fn: (index: TraceIndexEntry[]) => TraceIndexEntry[] | Promise<TraceIndexEntry[]>): Promise<void> {
-  const next = indexQueue.then(async () => {
-    const { traceIndex = [] } = (await chrome.storage.local.get("traceIndex")) as { traceIndex?: TraceIndexEntry[] };
-    await chrome.storage.local.set({ traceIndex: await fn(traceIndex) });
-  });
-  indexQueue = next.catch(() => {});
-  return next;
-}
+// Index changes happen under the "traceIndex" lock (core/storage/update): a run saving a step in
+// the panel and the runs page deleting one can't lose each other's write.
+const updateIndex = (fn: (index: TraceIndexEntry[]) => TraceIndexEntry[] | Promise<TraceIndexEntry[]>) => updateLocal("traceIndex", (index = []) => fn(index));
 
 export async function listTraces(): Promise<TraceIndexEntry[]> {
-  await indexQueue;
+  await storageSettled("traceIndex");
   const { traceIndex = [] } = (await chrome.storage.local.get("traceIndex")) as { traceIndex?: TraceIndexEntry[] };
   return traceIndex;
 }

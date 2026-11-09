@@ -14,7 +14,7 @@ import { webSearchFallback } from "../../core/web/web.js";
 import { planText } from "../loop/plan.js";
 import { shrinkImage } from "../../core/browser/screen.js";
 import { addToAgentGroup } from "../loop/tab-group.js";
-import { questionOfLine, nthOf, roleFamily, getAdapters, saveAdapters, adaptersFor } from "../skills/shortcuts.js";
+import { questionOfLine, nthOf, roleFamily, getAdapters, changeAdapters, adaptersFor } from "../skills/shortcuts.js";
 import { siteOf } from "../../core/security/sites.js";
 import { personalDetailsIn } from "../../core/security/personal-data.js";
 import type { ToolCall } from "../../core/llm/types.js";
@@ -248,11 +248,13 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
         step.done(true);
         const r = await replayShortcut(shortcut, state, ui, profile);
         const ok = !r.failedAt;
-        shortcut.replays = (shortcut.replays || 0) + 1;
-        if (ok) shortcut.replayOk = (shortcut.replayOk || 0) + 1;
-        const list = await getAdapters();
-        const saved = list.find(x => x.id === shortcut.id);
-        if (saved) { Object.assign(saved, { replays: shortcut.replays, replayOk: shortcut.replayOk }); await saveAdapters(list); }
+        await changeAdapters(list => {
+          const saved = list.find(x => x.id === shortcut.id);
+          if (!saved) return undefined;
+          saved.replays = (saved.replays || 0) + 1;
+          if (ok) saved.replayOk = (saved.replayOk || 0) + 1;
+          return list;
+        });
         const head = `Shortcut "${shortcut.title}": did ${r.done.length} of ${shortcut.steps.length} steps${r.done.length ? ` (${r.done.slice(0, 20).join("; ")})` : ""}.\n${r.stop ? `Stopped: ${r.stop}` : "All steps done."}\nContinue the task from here.\n\n`;
         return withSnapshot(head, { forceFull: true });
       }

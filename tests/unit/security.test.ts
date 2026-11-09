@@ -46,6 +46,14 @@ describe("siteOf", () => {
     expect(siteOf("https://alice.github.io/x")).not.toBe(siteOf("https://evil.github.io/x"));
     expect(siteOf("https://b.s3.amazonaws.com/k")).toBe("b.s3.amazonaws.com");
   });
+  it("uses the full Public Suffix List (shared hosts not in Sidekick's own list, deeper suffixes)", () => {
+    expect(siteOf("https://alice.pythonanywhere.com")).not.toBe(siteOf("https://bob.pythonanywhere.com"));
+    expect(siteOf("https://a.eu-west-1.elasticbeanstalk.com")).toBe("a.eu-west-1.elasticbeanstalk.com");
+    expect(siteOf("https://city.kyoto.jp")).toBe("city.kyoto.jp");
+    expect(siteOf("https://alice.medium.com")).toBe("alice.medium.com"); // Sidekick's own list still counts
+    expect(siteOf("https://github.io")).toBe("github.io");
+    expect(siteOf("https://localhost:3000/")).toBe("localhost");
+  });
 });
 
 it("isPrivateHost refuses your machine and local network, in any spelling", () => {

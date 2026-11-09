@@ -2,6 +2,7 @@
 // Retrieval is local (BM25 keyword ranking), so it works with any provider and costs nothing.
 import { redactSecrets } from "../../core/security/guard.js";
 import { readLocal, type Chat } from "../../core/storage/schema.js";
+import { withStorageLock } from "../../core/storage/update.js";
 
 export type MemoryKind = "preference" | "pattern" | "fact" | "goal";
 export interface MemoryFields { due?: string; status?: "active" | "done"; origin?: "stated" | "inferred"; url?: string }
@@ -55,9 +56,13 @@ export async function getMemories(): Promise<Memory[]> {
   return memories;
 }
 
-export async function setMemories(list: Memory[]): Promise<void> {
-  await chrome.storage.local.set({ memories: list.slice(0, MAX_MEMORIES) });
+const writeMemories = (list: Memory[]) => chrome.storage.local.set({ memories: list.slice(0, MAX_MEMORIES) });
+export function setMemories(list: Memory[]): Promise<void> {
+  return withStorageLock("memories", () => writeMemories(list));
 }
+// Every change is read-modify-write under the "memories" lock (core/storage/update), so two at
+// once (end-of-chat learning, the profile page, an import) can't drop each other's change.
+const changeMemories = <T>(fn: (list: Memory[]) => Promise<T>) => withStorageLock("memories", async () => fn(await getMemories()));
 
 export function similarity(a: string, b: string): number {
   const A = new Set(tokenize(a)), B = new Set(tokenize(b));
@@ -90,41 +95,44 @@ export async function addMemory(text: string, source = "chat", kind: string = "f
   if (!text) throw new Error("Nothing to remember.");
   const { count } = redactSecrets(text);
   if (count) throw new Error("That contains a password, card number, ID number or key. Sidekick doesn't store those.");
-  const list = await getMemories();
-  const now = Date.now();
-  const fields = memoryFields(extra);
-  const dup = list.find(m => similarity(m.text, text) >= 0.8);
-  if (dup) {
-    dup.text = text;
-    dup.updated = now;
-    if (kind && kind !== "fact") dup.kind = kind;
-    Object.assign(dup, fields);
-    await setMemories([dup, ...list.filter(m => m !== dup)]);
-    return { memory: dup, updated: true };
-  }
-  const memory: Memory = { id: crypto.randomUUID(), text, created: now, updated: now, source, kind, status: "active", origin: kind === "pattern" ? "inferred" : "stated", ...fields };
-  await setMemories([memory, ...list]);
-  return { memory, updated: false };
+  return changeMemories(async list => {
+    const now = Date.now();
+    const fields = memoryFields(extra);
+    const dup = list.find(m => similarity(m.text, text) >= 0.8);
+    if (dup) {
+      dup.text = text;
+      dup.updated = now;
+      if (kind && kind !== "fact") dup.kind = kind;
+      Object.assign(dup, fields);
+      await writeMemories([dup, ...list.filter(m => m !== dup)]);
+      return { memory: dup, updated: true };
+    }
+    const memory: Memory = { id: crypto.randomUUID(), text, created: now, updated: now, source, kind, status: "active", origin: kind === "pattern" ? "inferred" : "stated", ...fields };
+    await writeMemories([memory, ...list]);
+    return { memory, updated: false };
+  });
 }
 
-export async function updateMemory(id: string, text?: string | null, kind?: string | null, extra: Record<string, any> = {}): Promise<Memory | null> {
-  const list = await getMemories();
-  const m = list.find(x => x.id === id);
-  if (!m) return null;
-  if (text != null) m.text = String(text).trim().slice(0, 500);
-  if (kind) m.kind = kind;
-  Object.assign(m, memoryFields(extra));
-  if (extra.due === "") delete m.due;
-  m.updated = Date.now();
-  await setMemories(list);
-  return m;
+export function updateMemory(id: string, text?: string | null, kind?: string | null, extra: Record<string, any> = {}): Promise<Memory | null> {
+  return changeMemories(async list => {
+    const m = list.find(x => x.id === id);
+    if (!m) return null;
+    if (text != null) m.text = String(text).trim().slice(0, 500);
+    if (kind) m.kind = kind;
+    Object.assign(m, memoryFields(extra));
+    if (extra.due === "") delete m.due;
+    m.updated = Date.now();
+    await writeMemories(list);
+    return m;
+  });
 }
 
-export async function deleteMemory(id: string): Promise<Memory | null> {
-  const list = await getMemories();
-  const gone = list.find(m => m.id === id);
-  await setMemories(list.filter(m => m.id !== id));
-  return gone || null;
+export function deleteMemory(id: string): Promise<Memory | null> {
+  return changeMemories(async list => {
+    const gone = list.find(m => m.id === id);
+    if (gone) await writeMemories(list.filter(m => m.id !== id));
+    return gone || null;
+  });
 }
 
 // How they like to work: always part of the system prompt.
@@ -204,15 +212,15 @@ export async function addDocument(name: string, text: string): Promise<DocIndexE
   if (!chunks.length) throw new Error(`${name} has no readable text.`);
   const id = crypto.randomUUID();
   const entry = { id, name, added: Date.now(), chars: clean.length, chunks: chunks.length };
-  const index = await getDocIndex();
-  await chrome.storage.local.set({ ["doc:" + id]: { chunks }, docIndex: [entry, ...index] });
+  await withStorageLock("docs", async () => chrome.storage.local.set({ ["doc:" + id]: { chunks }, docIndex: [entry, ...await getDocIndex()] }));
   return entry;
 }
 
-export async function deleteDocument(id: string): Promise<void> {
-  const index = (await getDocIndex()).filter(d => d.id !== id);
-  await chrome.storage.local.set({ docIndex: index });
-  await chrome.storage.local.remove("doc:" + id);
+export function deleteDocument(id: string): Promise<void> {
+  return withStorageLock("docs", async () => {
+    await chrome.storage.local.set({ docIndex: (await getDocIndex()).filter(d => d.id !== id) });
+    await chrome.storage.local.remove("doc:" + id);
+  });
 }
 
 // ---------- unified search ----------

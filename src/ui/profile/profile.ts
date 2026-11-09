@@ -1,13 +1,13 @@
 import { extractDocText, isDocFile } from "../../core/docs/docs.js";
 import { exportMemoryMarkdown, importMemoryMarkdown } from "../../assistant/memory/memory-io.js";
-import { addDocument, addMemory, bm25, deleteDocument, deleteMemory, getDocIndex, getMemories, updateMemory } from "../../assistant/memory/memory.js";
-import { DECLINE, DEFAULT_PROFILE, PROFILE_SECTIONS, getApplications, getProfile, saveProfile } from "../../assistant/profile-core.js";
+import { addDocument, addMemory, bm25, deleteDocument, deleteMemory, getDocIndex, getMemories, setMemories, updateMemory } from "../../assistant/memory/memory.js";
+import { DECLINE, DEFAULT_PROFILE, PROFILE_SECTIONS, deleteApplication, getApplications, getProfile, saveProfile } from "../../assistant/profile-core.js";
 import { getUserModel, setUserModel } from "../../assistant/session.js";
 import { addSkill, deleteSkill, getSkills, updateSkill } from "../../assistant/skills.js";
 import type { Profile } from "../../assistant/profile-core.js";
 import { PERSONAL_LABELS, PROFILE_FIELD_NAMES } from "../../core/security/personal-data.js";
 import { deleteAdapter, getAdapters } from "../../agent/skills/shortcuts.js";
-import { getSiteNotes, saveSiteNotes } from "../../agent/skills/site-notes.js";
+import { deleteSiteNote, getSiteNotes } from "../../agent/skills/site-notes.js";
 import { $ } from "../shared/dom.js";
 import { callModel } from "../../core/llm/call.js";
 import { getSettings } from "../../core/llm/settings.js";
@@ -201,7 +201,7 @@ export async function renderSites() {
       li.append(body, del);
       ul.appendChild(li);
     }
-    (notes[site] || []).forEach((n, i) => {
+    (notes[site] || []).forEach(n => {
       const li = document.createElement("li");
       const body = document.createElement("div");
       body.className = "site-item";
@@ -209,8 +209,7 @@ export async function renderSites() {
       body.firstChild!.textContent = `Note: ${n.text}`;
       const del = xBtn("Delete note");
       del.onclick = async () => {
-        const list = (await getSiteNotes(site)).filter((_, k) => k !== i);
-        await saveSiteNotes(site, list);
+        await deleteSiteNote(site, n.text);
         renderSites();
       };
       li.append(body, del);
@@ -255,8 +254,7 @@ export async function renderApps() {
     const del = document.createElement("td");
     del.innerHTML = `<button class="icon-btn" type="button" aria-label="Remove"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
     (del.firstChild as any).onclick = async () => {
-      const list = (await getApplications()).filter(x => x.id !== a.id);
-      await chrome.storage.local.set({ applications: list });
+      await deleteApplication(a.id);
       renderApps();
     };
     tr.appendChild(del);
@@ -531,7 +529,7 @@ export function wire() {
   $("#memSearch").oninput = renderMemories;
   $("#memClear").onclick = async () => {
     if (!confirm("Delete all memories and the 'How Sidekick sees you' summary? This can't be undone.")) return;
-    await chrome.storage.local.set({ memories: [] });
+    await setMemories([]);
     await setUserModel("");
     $("#userModel").value = "";
     renderMemories();

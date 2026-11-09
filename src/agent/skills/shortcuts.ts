@@ -6,6 +6,7 @@
 // Stored only in this browser (chrome.storage.local "adapters").
 import { redactSecrets } from "../../core/security/guard.js";
 import { readLocal } from "../../core/storage/schema.js";
+import { updateLocal } from "../../core/storage/update.js";
 import type { Profile } from "../../assistant/profile-core.js";
 import type { ActionLogEntry, ElementInfo, Shortcut, ShortcutStep } from "../types.js";
 import { siteOf } from "../../core/security/sites.js";
@@ -18,11 +19,13 @@ export async function getAdapters(): Promise<Shortcut[]> {
   const { adapters = [] } = await readLocal("adapters");
   return adapters;
 }
-export async function saveAdapters(list: Shortcut[]): Promise<void> {
-  await chrome.storage.local.set({ adapters: list.slice(0, ADAPTERS_MAX) });
+// Changes go through the "adapters" lock (core/storage/update): fn gets the stored list and
+// returns the new one (or undefined to keep it).
+export function changeAdapters(fn: (list: Shortcut[]) => Shortcut[] | undefined): Promise<void> {
+  return updateLocal("adapters", list => { const next = fn(list || []); return next && next.slice(0, ADAPTERS_MAX); });
 }
-export async function deleteAdapter(id: string): Promise<void> {
-  await saveAdapters((await getAdapters()).filter(a => a.id !== id));
+export function deleteAdapter(id: string): Promise<void> {
+  return changeAdapters(list => list.filter(a => a.id !== id));
 }
 export async function adaptersFor(url: string): Promise<Shortcut[]> {
   const site = siteOf(url);
@@ -202,19 +205,19 @@ export function flowSimilarity(a: ShortcutStep[], b: ShortcutStep[]): number {
 export async function learnFlow(log: ActionLogEntry[], profile: Profile, goal: string): Promise<Shortcut | null> {
   const flow = compileFlow(log, profile, goal);
   if (!flow) return null;
-  const list = await getAdapters();
-  const same = list.find(a => a.site === flow.site && flowSimilarity(a.steps, flow.steps) >= 0.6);
-  const now = Date.now();
-  let saved: Shortcut;
-  if (same) {
-    Object.assign(same, { steps: flow.steps, updated: now, runs: (same.runs || 1) + 1 });
-    saved = same;
-  } else {
-    saved = { id: "s_" + Math.random().toString(36).slice(2, 8), ...flow, created: now, updated: now, runs: 1, replays: 0, replayOk: 0 };
-    list.unshift(saved);
-  }
-  // Keep the most useful: recently updated and often used.
-  list.sort((a, b) => (b.updated + (b.replayOk || 0) * 864e5) - (a.updated + (a.replayOk || 0) * 864e5));
-  await saveAdapters(list);
+  let saved: Shortcut | null = null;
+  await changeAdapters(list => {
+    const same = list.find(a => a.site === flow.site && flowSimilarity(a.steps, flow.steps) >= 0.6);
+    const now = Date.now();
+    if (same) {
+      Object.assign(same, { steps: flow.steps, updated: now, runs: (same.runs || 1) + 1 });
+      saved = same;
+    } else {
+      saved = { id: "s_" + Math.random().toString(36).slice(2, 8), ...flow, created: now, updated: now, runs: 1, replays: 0, replayOk: 0 };
+      list.unshift(saved);
+    }
+    // Keep the most useful: recently updated and often used.
+    return list.sort((a, b) => (b.updated + (b.replayOk || 0) * 864e5) - (a.updated + (a.replayOk || 0) * 864e5));
+  });
   return saved;
 }

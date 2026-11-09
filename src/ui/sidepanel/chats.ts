@@ -1,6 +1,7 @@
 // Chat history: saving and loading chats, the history drawer, pinned notes, and end-of-chat
 // learning (reflection).
 import { readLocal, type Chat, type ChatIndexEntry } from "../../core/storage/schema.js";
+import { withStorageLock } from "../../core/storage/update.js";
 import { chat, MAX_CHATS, startNewChat, openChat } from "./sidepanel.js";
 import { FAST_ONLY } from "../../assistant/routing.js";
 import { getProfile } from "../../assistant/profile-core.js";
@@ -11,7 +12,9 @@ import { $ } from "../shared/dom.js";
 import { getSettings } from "../../core/llm/settings.js";
 
 // ---------- chat storage ----------
-// Chats live in chrome.storage.local: an index ("chatIndex") plus one key per chat.
+// Chats live in chrome.storage.local: an index ("chatIndex") plus one key per chat. Every change
+// to them happens under the "chats" lock (core/storage/update), so a chat saving while the
+// end-of-chat reflection patches another (or another panel deletes one) loses nothing.
 
 export function newChat(): Chat {
   const now = Date.now();
@@ -30,20 +33,24 @@ export async function saveChat(c = chat) {
     const first = c.messages.find(m => (m as any).role === "user");
     c.title = ((first as any)?.display?.prompt || "New chat").replace(/\s+/g, " ").slice(0, 60);
   }
-  let index = (await loadIndex()).filter((x: any) => x.id !== c.id);
-  index.unshift({ id: c.id, title: c.title, updatedAt: c.updatedAt });
-  const dropped = index.slice(MAX_CHATS);
-  index = index.slice(0, MAX_CHATS);
-  await chrome.storage.local.set({ chatIndex: index, ["chat:" + c.id]: c });
-  if (dropped.length) await chrome.storage.local.remove(dropped.map((x: any) => "chat:" + x.id));
+  await withStorageLock("chats", async () => {
+    let index = (await loadIndex()).filter(x => x.id !== c.id);
+    index.unshift({ id: c.id, title: c.title, updatedAt: c.updatedAt });
+    const dropped = index.slice(MAX_CHATS);
+    index = index.slice(0, MAX_CHATS);
+    await chrome.storage.local.set({ chatIndex: index, ["chat:" + c.id]: c });
+    if (dropped.length) await chrome.storage.local.remove(dropped.map(x => "chat:" + x.id));
+  });
   if (drawerOpen) renderChatList();
 }
 
 // Updates a stored chat's fields without moving it in the history list.
-export async function patchStoredChat(id: any, fields: any) {
+export function patchStoredChat(id: any, fields: any) {
   const key = "chat:" + id;
-  const data = await chrome.storage.local.get(key);
-  if (data[key]) await chrome.storage.local.set({ [key]: { ...data[key], ...fields } });
+  return withStorageLock("chats", async () => {
+    const data = await chrome.storage.local.get(key);
+    if (data[key]) await chrome.storage.local.set({ [key]: { ...data[key], ...fields } });
+  });
 }
 
 // ---------- session memory ----------
@@ -160,9 +167,10 @@ export function togglePin(open?: boolean) {
 }
 
 export async function deleteChat(id: any) {
-  const index = (await loadIndex()).filter((c: any) => c.id !== id);
-  await chrome.storage.local.set({ chatIndex: index });
-  await chrome.storage.local.remove("chat:" + id);
+  await withStorageLock("chats", async () => {
+    await chrome.storage.local.set({ chatIndex: (await loadIndex()).filter(c => c.id !== id) });
+    await chrome.storage.local.remove("chat:" + id);
+  });
   if (chat.id === id) startNewChat();
   renderChatList();
 }

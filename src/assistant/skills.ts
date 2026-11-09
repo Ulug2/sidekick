@@ -11,6 +11,7 @@
 import { redactSecrets } from "../core/security/guard.js";
 import { bm25 } from "./memory/memory.js";
 import { readLocal } from "../core/storage/schema.js";
+import { withStorageLock } from "../core/storage/update.js";
 
 export interface Skill { id: string; name: string; when: string; body: string; created: number; updated: number; uses: number; version: number; source: string; lastUsed?: number }
 // What the end-of-chat review asks for.
@@ -23,9 +24,12 @@ export async function getSkills(): Promise<Skill[]> {
   const { skills = [] } = await readLocal("skills");
   return skills;
 }
-export async function saveSkills(list: Skill[]): Promise<void> {
-  await chrome.storage.local.set({ skills: list.slice(0, SKILLS_MAX) });
+const writeSkills = (list: Skill[]) => chrome.storage.local.set({ skills: list.slice(0, SKILLS_MAX) });
+export function saveSkills(list: Skill[]): Promise<void> {
+  return withStorageLock("skills", () => writeSkills(list));
 }
+// Every change reads and writes the list under the "skills" lock (core/storage/update).
+const changeSkills = <T>(fn: (list: Skill[]) => Promise<T>) => withStorageLock("skills", async () => fn(await getSkills()));
 
 export const skillName = (s: unknown) => String(s || "").replace(/[^\p{L}\p{N} _.,:()/&+-]/gu, "").replace(/\s+/g, " ").trim().slice(0, 60);
 export const sameName = (a: unknown, b: unknown) => skillName(a).toLowerCase() === skillName(b).toLowerCase();
@@ -45,60 +49,64 @@ export async function addSkill({ name, when, body, source = "learned" }: { name:
   body = String(body || "").trim().slice(0, SKILL_BODY_MAX);
   const problem = skillTextProblem(`${name}\n${when}\n${body}`);
   if (!name || !body || problem) throw new Error(`Can't save that skill${problem ? `: it ${problem}` : ""}.`);
-  const list = await getSkills();
-  const now = Date.now();
-  const existing = list.find(s => sameName(s.name, name));
-  if (existing) {
-    if (existing.body === body && (!when || existing.when === when)) return { skill: existing, updated: false, unchanged: true };
-    Object.assign(existing, { when: when || existing.when, body, updated: now, version: (existing.version || 1) + 1 });
-    await saveSkills([existing, ...list.filter(s => s !== existing)]);
-    return { skill: existing, updated: true };
-  }
-  const skill: Skill = { id: "k_" + Math.random().toString(36).slice(2, 8), name, when, body, created: now, updated: now, uses: 0, version: 1, source };
-  await saveSkills([skill, ...list]);
-  return { skill, updated: false };
+  return changeSkills(async list => {
+    const now = Date.now();
+    const existing = list.find(s => sameName(s.name, name));
+    if (existing) {
+      if (existing.body === body && (!when || existing.when === when)) return { skill: existing, updated: false, unchanged: true };
+      Object.assign(existing, { when: when || existing.when, body, updated: now, version: (existing.version || 1) + 1 });
+      await writeSkills([existing, ...list.filter(s => s !== existing)]);
+      return { skill: existing, updated: true };
+    }
+    const skill: Skill = { id: "k_" + Math.random().toString(36).slice(2, 8), name: name!, when, body: body!, created: now, updated: now, uses: 0, version: 1, source };
+    await writeSkills([skill, ...list]);
+    return { skill, updated: false };
+  });
 }
 
 // A small edit instead of a rewrite, so a skill that works isn't lost (old text → new text).
-export async function patchSkill(name: string, oldText?: string, newText?: string): Promise<Skill> {
-  const list = await getSkills();
-  const s = list.find(x => sameName(x.name, name));
-  if (!s) throw new Error(`No skill named "${name}".`);
-  const old = String(oldText || ""), neu = String(newText || "");
-  let body: string;
-  if (old && s.body.includes(old)) body = s.body.replace(old, neu);
-  else if (!old && neu) body = `${s.body}\n${neu}`;
-  else throw new Error("The text to change isn't in that skill.");
-  body = body.trim().slice(0, SKILL_BODY_MAX);
-  const problem = skillTextProblem(body);
-  if (problem) throw new Error(`Can't save that change: it ${problem}.`);
-  Object.assign(s, { body, updated: Date.now(), version: (s.version || 1) + 1 });
-  await saveSkills(list);
-  return s;
+export function patchSkill(name: string, oldText?: string, newText?: string): Promise<Skill> {
+  return changeSkills(async list => {
+    const s = list.find(x => sameName(x.name, name));
+    if (!s) throw new Error(`No skill named "${name}".`);
+    const old = String(oldText || ""), neu = String(newText || "");
+    let body: string;
+    if (old && s.body.includes(old)) body = s.body.replace(old, neu);
+    else if (!old && neu) body = `${s.body}\n${neu}`;
+    else throw new Error("The text to change isn't in that skill.");
+    body = body.trim().slice(0, SKILL_BODY_MAX);
+    const problem = skillTextProblem(body);
+    if (problem) throw new Error(`Can't save that change: it ${problem}.`);
+    Object.assign(s, { body, updated: Date.now(), version: (s.version || 1) + 1 });
+    await writeSkills(list);
+    return s;
+  });
 }
 
-export async function updateSkill(id: string, fields: Partial<Skill>): Promise<Skill | null> {
-  const list = await getSkills();
-  const s = list.find(x => x.id === id);
-  if (!s) return null;
-  const next = { ...s, ...fields };
-  next.name = skillName(next.name) || s.name;
-  next.body = String(next.body || "").trim().slice(0, SKILL_BODY_MAX);
-  const problem = skillTextProblem(`${next.name}\n${next.when}\n${next.body}`);
-  if (problem) throw new Error(`Can't save that skill: it ${problem}.`);
-  Object.assign(s, next, { updated: Date.now() });
-  await saveSkills(list);
-  return s;
+export function updateSkill(id: string, fields: Partial<Skill>): Promise<Skill | null> {
+  return changeSkills(async list => {
+    const s = list.find(x => x.id === id);
+    if (!s) return null;
+    const next = { ...s, ...fields };
+    next.name = skillName(next.name) || s.name;
+    next.body = String(next.body || "").trim().slice(0, SKILL_BODY_MAX);
+    const problem = skillTextProblem(`${next.name}\n${next.when}\n${next.body}`);
+    if (problem) throw new Error(`Can't save that skill: it ${problem}.`);
+    Object.assign(s, next, { updated: Date.now() });
+    await writeSkills(list);
+    return s;
+  });
 }
 
-export async function deleteSkill(id: string): Promise<void> {
-  await saveSkills((await getSkills()).filter(s => s.id !== id));
+export function deleteSkill(id: string): Promise<void> {
+  return changeSkills(list => writeSkills(list.filter(s => s.id !== id)));
 }
 
-export async function markSkillUsed(id: string): Promise<void> {
-  const list = await getSkills();
-  const s = list.find(x => x.id === id);
-  if (s) { s.uses = (s.uses || 0) + 1; s.lastUsed = Date.now(); await saveSkills(list); }
+export function markSkillUsed(id: string): Promise<void> {
+  return changeSkills(async list => {
+    const s = list.find(x => x.id === id);
+    if (s) { s.uses = (s.uses || 0) + 1; s.lastUsed = Date.now(); await writeSkills(list); }
+  });
 }
 
 // The skill that clearly fits this message, if any (keyword ranking on name + when + body).

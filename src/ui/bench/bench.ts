@@ -5,6 +5,7 @@ import { $ } from "../shared/dom.js";
 import { formatCost } from "../../core/llm/prices.js";
 import { getSettings, modelFor } from "../../core/llm/settings.js";
 import { readLocal } from "../../core/storage/schema.js";
+import { updateLocal } from "../../core/storage/update.js";
 import { BENCH_TASKS, paramsFor, type BenchTask } from "../../bench/tasks.js";
 import { benchCsv, DEFAULT_MAX_COST, deleteBenchRun, estimateCost, gradeBenchRun, isPriced, listBenchRuns, MAX_INTERVENTIONS, monthSpend, passed, scoreByVersion, type BenchPending, type BenchRun } from "../../bench/results.js";
 
@@ -34,7 +35,8 @@ export function renderTask(task: BenchTask, runs: BenchRun[]): HTMLElement {
     input.value = params[p.key] || "";
     input.onchange = async () => {
       saved[task.id] = { ...saved[task.id], [p.key]: input.value.trim() };
-      await chrome.storage.local.set({ benchParams: saved });
+      const value = input.value.trim();
+      await updateLocal("benchParams", (all = {}) => ({ ...all, [task.id]: { ...all[task.id], [p.key]: value } }));
     };
     fields.append(h("label", {}, p.label, input));
   }
