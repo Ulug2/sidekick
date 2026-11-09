@@ -8,7 +8,9 @@ import { siteOf } from "../../core/security/sites.js";
 import { adaptersFor } from "../skills/shortcuts.js";
 import { siteKnowledgeText, getSiteNotes } from "../skills/site-notes.js";
 
-// Rows of identical buttons or links ("Save" on every job card) become one line with all ids.
+// Rows of identical buttons or links ("Save" on every job card) become one line with all ids, in
+// page order. Each id is still its own button: "Save" on job 3 is the third id, and the four
+// "Expand Graph" buttons on a homework page each open a different graph.
 export function groupRepeats(lines: string[]): string[] {
   const keyOf = (l: string) => { const m = l.match(/^\[[\d:]+\] (.*)$/); return m ? stripOffscreen(m[1]) : null; };
   const counts: Record<string, number> = {};
@@ -20,7 +22,7 @@ export function groupRepeats(lines: string[]): string[] {
     if (done.has(k)) continue;
     done.add(k);
     const ids = lines.filter(x => keyOf(x) === k).map(x => x.match(/^\[([\d:]+)\]/)![1]);
-    out.push(`[${ids.join(",")}] ${k} ×${ids.length} (any of these ids works)`);
+    out.push(`[${ids.join(",")}] ${k} ×${ids.length} (in page order; each belongs to its own item)`);
   }
   return out;
 }

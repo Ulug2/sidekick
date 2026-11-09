@@ -57,6 +57,7 @@ Homework help with answers that are checked, not guessed. Reminders for assignme
    9. A form with a date picker, a custom dropdown and a file upload (any real site)
    10. Gmail web: find the latest email from a sender and draft (not send) a reply
    Success = task done with ≤ 1 user intervention. Track success rate, steps, time and cost per task.
+   **First runs (2026-11-09, v0.9.6, GPT-5.6 Terra): 2 of 3.** Task 7 Amazon passed (2 steps, 13 s, $0.07), task 3 Moodle passed (5 steps, 21 s, $0.05), task 2 MyOpenMath failed (18 steps, 70 s, $0.14; 4 of 16 boxes wrong: misread a graph, LESSONS 16). Fixed after it: `read_text` reads frames, `zoom`, check before done. Still to run: 1, 4, 5, 6, 8, 9, 10 (4, 5 and 9 are the job-application tasks), and 2 again.
 
 ### Phase A: Agent v2 (reliability)
 5. Decide build vs. fork (ADR-001): run the benchmark on Nanobrowser too.

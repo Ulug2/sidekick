@@ -227,7 +227,7 @@ const toolResults = req => (req.messages.at(-1).content || []).filter(c => c.typ
         () => ['done', { summary: 'ok' }]
       ]
     });
-    check('Six identical "Save" buttons → one line with all ids', /\[\d+(,\d+){5}\] button \\"Save\\" ×6 \(any of these ids works\)/.test(first) && (first.match(/button \\"Save\\"/g) || []).length === 1, first.slice(0, 900));
+    check('Six identical "Save" buttons → one line with all ids', /\[\d+(,\d+){5}\] button \\"Save\\" ×6 \(in page order; each belongs to its own item\)/.test(first) && (first.match(/button \\"Save\\"/g) || []).length === 1, first.slice(0, 900));
     check('Clicking one of the grouped ids hits the right button', pages['https://jobs.example.com/list'].log.includes('save2'));
   }
 

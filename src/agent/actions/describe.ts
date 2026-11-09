@@ -49,6 +49,7 @@ export function describeCall(call: ToolCall, state: AgentState): string {
     case "web_search": return `Search the web for “${String(a.query || "").slice(0, 50)}”`;
     case "plan": return a.items ? `Plan: ${Array.isArray(a.items) ? a.items.length : 0} tasks` : `Task ${a.update?.item}: ${a.update?.status}`;
     case "screenshot": return "Look at the screen";
+    case "zoom": return a.description ? `Zoom in: ${String(a.description).slice(0, 60)}` : "Zoom in";
     case "click_at": return a.description || `Click at (${Math.round(a.x)}, ${Math.round(a.y)})`;
     case "navigate": return `Go to ${hostOf(a.url) || a.url}`;
     case "go_back": return "Go back";

@@ -1,5 +1,6 @@
 // Runs one tool call: safety gates first, then the action, then the updated page.
-import type { AgentState, AgentUI, ToolOutcome } from "../types.js";
+import type { AgentState, AgentUI, PageActionResult, ToolOutcome } from "../types.js";
+import { skPageAct } from "../../page/act.js";
 import { logApplication, type Profile } from "../../assistant/profile-core.js";
 import { describeSafe, describeCall, quote } from "./describe.js";
 import { RISKY_WORDS, siteBlocked, gateShare, inPlan, NEVER_AUTO, gateVisit } from "../safety/gates.js";
@@ -12,13 +13,16 @@ import { skWebMCPCall } from "../../page/webmcp.js";
 import { captureTab, stripOffscreen } from "../perception/capture.js";
 import { webSearchFallback } from "../../core/web/web.js";
 import { planText } from "../loop/plan.js";
-import { shrinkImage } from "../../core/browser/screen.js";
+import { cropImage, pageTimeout, shrinkImage } from "../../core/browser/screen.js";
 import { addToAgentGroup } from "../loop/tab-group.js";
 import { questionOfLine, nthOf, roleFamily, getAdapters, changeAdapters, adaptersFor } from "../skills/shortcuts.js";
 import { siteOf } from "../../core/security/sites.js";
 import { personalDetailsIn } from "../../core/security/personal-data.js";
 import type { ToolCall } from "../../core/llm/types.js";
 
+export const CHECK_BEFORE_DONE = "Not finished yet: you typed values after looking at a screenshot and haven't looked since. Take a screenshot, zoom into every graph, chart, table or number you read a value from, and compare each typed value with what's really there (read each figure's own scale; never assume two figures share one). Fix any mistake, then call done again.";
+// Zoomed views are drawn so their long side is about this many pixels.
+export const ZOOM_EDGE = 1200;
 export const ACTING_TOOLS = new Set(["click", "click_at", "type", "select_option", "pick_date", "set_checked", "upload_file", "press_key", "site_tool"]);
 // Tools that end by showing the updated page.
 export const SNAPSHOT_TOOLS = new Set(["click", "click_at", "type", "select_option", "pick_date", "set_checked", "upload_file", "press_key", "scroll", "navigate", "go_back", "open_tab", "switch_tab", "wait", "fill_fields", "use_shortcut", "site_tool"]);
@@ -83,6 +87,7 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
 
   try {
     if (["click", "click_at", "press_key", "site_tool", "type", "select_option"].includes(call.name)) state.lastActionAt = Date.now();
+    if (state.lookedAt && ["type", "select_option", "pick_date"].includes(call.name)) state.typedAfterLook = Date.now();
     // Site rules and "ask before every action" mode.
     if (ACTING_TOOLS.has(call.name)) {
       const tab = await chrome.tabs.get(state.tabId);
@@ -366,11 +371,8 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
         return { text: `Checklist:\n${planText(state.plan!)}${approvedNote}` };
       }
       case "read_text": {
-        const r = await actInPage(state, { op: "read_text", max: 15000 });
-        if (!r.ok) return fail(r.error);
         step.done(true);
-        const tab = await chrome.tabs.get(state.tabId);
-        return { text: untrusted(tab.url, `Page text${r.truncated ? " (shortened)" : ""}:\n${r.text}`) };
+        return { text: await readAllText(state) };
       }
       case "screenshot": {
         // Only the visible tab can be photographed. If you've switched to another tab, the agent
@@ -387,7 +389,33 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
           shot = await shrinkImage(raw, 99999, state.viewport?.width);
         }
         step.done(true);
+        state.lookedAt = Date.now();
         return { text: `Screenshot of the visible part of the tab is attached (${shot.width}×${shot.height} px; click_at uses these coordinates).`, images: [shot.dataUrl] };
+      }
+      case "zoom": {
+        const tab = await chrome.tabs.get(state.tabId);
+        if (tab.active === false) return fail("The page is in a background tab, so it can't be photographed right now. Work from the snapshot and read_text, or use ask_user to have them switch to it.");
+        const vw = state.viewport?.width || 0, vh = state.viewport?.height || 0;
+        const x = Math.max(0, Number(a.x) || 0), y = Math.max(0, Number(a.y) || 0);
+        const r = { x, y, width: Math.min(Number(a.width) || 0, vw ? vw - x : Infinity), height: Math.min(Number(a.height) || 0, vh ? vh - y : Infinity) };
+        if (!(r.width >= 10 && r.height >= 10)) return fail(`That area (${Math.round(r.width)}×${Math.round(r.height)} px) is too small or outside the screen${vw ? ` (${vw}×${vh})` : ""}. Use coordinates from the latest screenshot.`);
+        const scale = Math.max(1, Math.min(4, ZOOM_EDGE / Math.max(r.width, r.height)));
+        const input = await trustedInput(state);
+        let img: { dataUrl: string; width: number; height: number } | null = null;
+        if (input) {
+          try { img = await input.screenshotRegion(r, scale); } catch (err: any) { if (err.name !== "TrustedInputTimeout") throw err; }
+        }
+        if (!img) {
+          // Without the debugger: crop Chrome's own capture (sharper on Retina screens, where it has
+          // more pixels than the page has CSS pixels).
+          const raw = await pageTimeout(chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" }));
+          const bmp = await createImageBitmap(await (await fetch(raw)).blob());
+          const k = vw ? bmp.width / vw : 1;
+          img = await cropImage(raw, { x: r.x * k, y: r.y * k, width: r.width * k, height: r.height * k }, Math.round(r.width * scale), Math.round(r.height * scale));
+        }
+        step.done(true);
+        state.lookedAt = Date.now();
+        return { text: `Enlarged view (${scale.toFixed(1)}×) of the area at (${Math.round(r.x)}, ${Math.round(r.y)}), ${Math.round(r.width)}×${Math.round(r.height)} px of the screenshot, is attached. It's for reading only: click_at uses the full screenshot's coordinates.`, images: [img.dataUrl] };
       }
       case "navigate": {
         if (!/^https?:\/\//i.test(a.url || "")) return fail("Only http(s) URLs are allowed.");
@@ -450,6 +478,14 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
         return { text: "Logged." };
       }
       case "done": {
+        // Values typed after reading them off a screenshot (a graph, a chart, a scanned table) get
+        // one look back before the run ends: the 2026-11-09 MyOpenMath run assumed a graph's scale
+        // from a cut-off view and typed it without checking.
+        if (state.typedAfterLook && (state.lookedAt || 0) < state.typedAfterLook && !state.checkAsked) {
+          state.checkAsked = true;
+          step.done(true, "Checking the typed values first");
+          return { text: CHECK_BEFORE_DONE };
+        }
         step.done(true);
         return { text: "Finished.", done: true, summary: a.summary || "Done." };
       }
@@ -461,3 +497,35 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
     return fail(err.message || String(err));
   }
 }
+
+// The page's text and the text of every frame embedded in it (homework, forms and job boards often
+// sit in a frame from another site). Frames it can't read are named, never skipped silently.
+export async function readAllText(state: AgentState, max = 15000): Promise<string> {
+  const tab = await chrome.tabs.get(state.tabId);
+  const results = (await pageScript({ target: { tabId: state.tabId, allFrames: true }, func: skPageAct, args: [{ op: "read_text", max }] }))
+    .filter(r => r.result?.ok).sort((x, y) => x.frameId - y.frameId);
+  const parts: string[] = [];
+  let left = max, cut = false;
+  const readHosts = new Set<string>();
+  for (const r of results) {
+    const res = r.result as Extract<PageActionResult, { ok: true }>;
+    if (r.frameId !== 0) readHosts.add(hostOf(res.url || ""));
+    const text = String(res.text || "").trim();
+    if (!text || left <= 0) { cut ||= !!text; continue; }
+    const piece = text.slice(0, left);
+    left -= piece.length;
+    cut ||= piece.length < text.length || !!res.truncated;
+    const where = r.frameId === 0 ? "Page text" : `Text inside an embedded frame from ${hostOf(res.url || "") || "this page"}`;
+    parts.push(untrusted(res.url || tab.url, `${where}:\n${piece}`));
+  }
+  // Visible frames listed by their parents, minus the ones that answered.
+  const seen = results.flatMap(r => (r.result as { frames?: string[] }).frames || []);
+  const missing = seen.length - results.filter(r => r.frameId !== 0).length;
+  const hosts = [...new Set(seen.filter(h => h && !readHosts.has(h)))];
+  const notes: string[] = [];
+  if (!parts.length) notes.push("The page has no readable text: its content may be pictures, a canvas or a PDF. Use screenshot to see it (and zoom to read small print).");
+  if (cut) notes.push("The text was shortened.");
+  if (missing > 0) notes.push(`Couldn't read ${missing} embedded frame${missing > 1 ? "s" : ""}${hosts.length ? ` (from ${hosts.join(", ")})` : ""}: Chrome kept Sidekick out, or it's still loading. Use screenshot to see it.`);
+  return [...parts, ...notes].join("\n\n");
+}
+

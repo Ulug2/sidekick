@@ -80,6 +80,15 @@ export class TrustedInput {
     return { dataUrl: shrunk.dataUrl, width: vp.clientWidth, height: vp.clientHeight };
   }
 
+  // Part of the viewport (CSS pixels, as in screenshot()) rendered `scale` times larger: Chrome
+  // draws it again at that size, so small print is sharp, not just blown up.
+  async screenshotRegion(r: { x: number; y: number; width: number; height: number }, scale: number): Promise<{ dataUrl: string; width: number; height: number }> {
+    const metrics = await this.send("Page.getLayoutMetrics");
+    const vv = metrics.cssVisualViewport || metrics.visualViewport || { pageX: 0, pageY: 0 };
+    const { data } = await this.send("Page.captureScreenshot", { format: "jpeg", quality: 90, clip: { x: r.x + (vv.pageX || 0), y: r.y + (vv.pageY || 0), width: r.width, height: r.height, scale } });
+    return { dataUrl: "data:image/jpeg;base64," + data, width: Math.round(r.width * scale), height: Math.round(r.height * scale) };
+  }
+
   async detach(): Promise<void> {
     chrome.debugger.onDetach.removeListener(this.onDetach);
     if (this.attached) {

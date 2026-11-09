@@ -39,7 +39,7 @@ export type PageActionResult =
   | {
       ok: true;
       note?: string;
-      text?: string; truncated?: boolean; // read_text
+      text?: string; truncated?: boolean; url?: string; frames?: string[]; // read_text (frames: hosts of the visible embedded frames)
       x?: number; y?: number; covered?: string; // locate
       label?: string; tag?: string; isFrame?: boolean; // describe_point, click_point
       math?: boolean; erase?: number; focused?: boolean; // prepare_type
@@ -144,6 +144,11 @@ export interface AgentState {
   finished?: boolean;
   inputTimedOut?: boolean;
   inputFailedFor?: number;
+  // Answers read from images: when it last looked (screenshot, zoom), when it typed after
+  // looking, and whether done already sent it back once to check them.
+  lookedAt?: number;
+  typedAfterLook?: number;
+  checkAsked?: boolean;
 }
 // A step card in the panel.
 export interface StepHandle { done(ok: boolean, detail?: string): void; waiting(): void }

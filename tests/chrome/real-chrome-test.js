@@ -23,12 +23,21 @@ const PAGES = {
     </head><body><main><h1>Careers</h1><p>Search our roles.</p></main>
     <script>navigator.modelContext.registerTool({ name: 'search_jobs', description: 'Search open roles', inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] }, annotations: { readOnlyHint: true }, execute: async ({ query }) => { window.toolCalls.push(query); return { content: [{ type: 'text', text: '2 roles match ' + query + ': Intern, SWE I' }] }; } });</script>
     </body></html>`,
-  '/plain': '<!doctype html><html><head><title>Plain</title></head><body><main><h1>Plain page</h1><p>Nothing here.</p></main></body></html>'
+  '/plain': '<!doctype html><html><head><title>Plain</title></head><body><main><h1>Plain page</h1><p>Nothing here.</p></main></body></html>',
+  // Homework in a frame from another site (Moodle embedding MyOpenMath), with a red square far down
+  // the page for checking where zoom looks after the page has scrolled.
+  '/polar': `<!doctype html><html><head><title>Homework 5.3 | Moodle</title></head><body style="margin:0;height:3000px">
+    <main><h2>Homework 5.3</h2><iframe src="http://public.test:__PORT__/polarframe" style="width:700px;height:420px;border:0"></iframe></main>
+    <div id="red" style="position:absolute;left:400px;top:1300px;width:80px;height:80px;background:#f00"></div></body></html>`,
+  '/polarframe': `<!doctype html><html><head><title>MyOpenMath</title></head><body><main>
+    <p>Set up limits of integration to integrate over each polar region shown.</p>
+    <svg width="160" height="90"><path d="M0 80 A80 80 0 0 1 160 80 Z" fill="#88f"/><text x="150" y="88" font-size="6">8</text></svg>
+    <label>Question 1 Part 4 of 16 <input id="r1"></label></main></body></html>`
 };
 const server = http.createServer((req, res) => {
   hits.push(req.url);
   const p = req.url.split('?')[0];
-  if (PAGES[p]) { res.writeHead(200, { 'content-type': 'text/html' }); res.end(PAGES[p]); return; }
+  if (PAGES[p]) { res.writeHead(200, { 'content-type': 'text/html' }); res.end(PAGES[p].replace(/__PORT__/g, server.address().port)); return; }
   if (p === '/bounce') { res.writeHead(302, { location: `http://127.0.0.1:${server.address().port}/secret?reboot=1` }); res.end(); return; }
   res.writeHead(404); res.end('nope');
 });
@@ -621,6 +630,52 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   }
   await bench.setViewportSize({ width: 1280, height: 900 });
   await shot(bench, '15-bench-wide');
+
+  // ---------- 16. homework in a frame: read_text reads it, zoom sees the right place, typed values are checked ----------
+  {
+    const hwPage = await ctx.newPage();
+    watch(hwPage, 'hw');
+    await hwPage.setViewportSize({ width: 1000, height: 700 });
+    await hwPage.goto(`${BASE}/polar`);
+    await hwPage.waitForTimeout(500);
+    await hwPage.evaluate(() => scrollTo(0, 1200)); // the red square is now at (400, 100) in the window
+    const homeworkTab = await panel.evaluate(async u => (await chrome.tabs.query({})).find(t => t.url === u).id, `${BASE}/polar`);
+    await panel.evaluate(tabId => { const real = chrome.tabs.query.bind(chrome.tabs); chrome.tabs.query = async q => (q && q.active ? [await chrome.tabs.get(tabId)] : real(q)); }, homeworkTab);
+    let readResult = '', backResult = '', zoomData = '';
+    const hscript = [
+      () => [['read_text', {}]],
+      all => { readResult = all; return [['screenshot', {}]]; },
+      () => [['zoom', { x: 390, y: 90, width: 100, height: 100, description: 'the red square' }]],
+      all => [['type', { id: all.match(/\[(\d+:\d+)\] textbox \\"Question 1 Part 4 of 16/)?.[1], text: '8' }]],
+      () => [['done', { summary: 'Typed r ≤ 8.' }]],
+      all => { backResult = all; return [['screenshot', {}]]; },
+      () => [['done', { summary: 'Typed r ≤ 8; checked it against the graph.' }]]
+    ];
+    responder = b => {
+      if (/You keep the pinned notes|reusable operating notes/.test(b.system)) return H.anthropicEvents([{ type: 'text', text: '{"notes":[]}' }]);
+      if (/browser agent/.test(b.system)) {
+        const st = b.messages.filter(m => m.role === 'assistant').length;
+        if (st === 3) zoomData = (b.messages.at(-1).content.flatMap(c => c.content || []).find(c => c.type === 'image') || {}).source?.data || '';
+        return H.anthropicEvents(hscript[st](JSON.stringify(b.messages)).map(([name, input], k) => ({ type: 'tool_use', id: `h${st}_${k}`, name, input })), { stop: 'tool_use' });
+      }
+      return H.anthropicEvents([{ type: 'text', text: 'ok' }]);
+    };
+    await panel.evaluate(() => { if (document.querySelector('#agentToggle').getAttribute('aria-pressed') !== 'true') document.querySelector('#agentToggle').click(); });
+    await panel.fill('#input', 'Read the math problem on this page, work out the answer, and type it into the answer box.');
+    await panel.click('#send');
+    await hwPage.bringToFront(); // screenshots are only taken of the tab you're looking at
+    await panel.waitForFunction(() => /checked it against the graph/.test([...document.querySelectorAll('.agent-run')].pop()?.innerText || ''), null, { timeout: 60000 }).catch(() => {});
+    await panel.bringToFront();
+    check('Real Chrome: read_text reads the homework inside a frame from another site, and says where it came from', /Text inside an embedded frame from public\.test:\\n/.test(readResult) && /Set up limits of integration/.test(readResult), readResult.slice(-700));
+    const red = zoomData && await panel.evaluate(async d => {
+      const bmp = await createImageBitmap(await (await fetch('data:image/jpeg;base64,' + d)).blob());
+      const c = new OffscreenCanvas(bmp.width, bmp.height); const x = c.getContext('2d'); x.drawImage(bmp, 0, 0);
+      const [r, g, b] = x.getImageData(bmp.width / 2, bmp.height / 2, 1, 1).data; return { w: bmp.width, r, g, b };
+    }, zoomData);
+    check('Real Chrome: zoom shows the area the model pointed at on the scrolled page, 4× larger', red && red.w === 400 && red.r > 200 && red.g < 60 && red.b < 60, JSON.stringify(red));
+    check('Real Chrome: the value was typed into the frame, and done right after sent it back to check against the screen', await hwPage.frames().find(f => /polarframe/.test(f.url()))?.evaluate(() => document.querySelector('#r1').value) === '8' && /Not finished yet: you typed values after looking at a screenshot/.test(backResult), backResult.slice(-400));
+    await hwPage.close();
+  }
 
   check('Nothing tried to reach any outside server during the whole run', !outside.length, outside.join(', '));
   check('No console errors on any page', !problems.length, problems.join('\n'));

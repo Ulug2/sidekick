@@ -75,7 +75,7 @@ function fakeDebugger(page, { failAttach = false } = {}) {
           const el = d.activeElement;
           if (el?.form) el.form.requestSubmit();
         }
-        if (method === 'Page.getLayoutMetrics') return { cssLayoutViewport: { clientWidth: 1024, clientHeight: 768 } };
+        if (method === 'Page.getLayoutMetrics') return { cssLayoutViewport: { clientWidth: 1024, clientHeight: 768 }, cssVisualViewport: { pageX: 0, pageY: 250 } };
         if (method === 'Page.captureScreenshot') return { data: Buffer.from('jpegbytes').toString('base64') };
         return {};
       }
@@ -202,6 +202,36 @@ async function runScenario({ url = 'https://tickets.example.com/checkout', setti
   {
     const { steps, cmds } = await runScenario({ plan: [({ id }) => ['type', { id: id('Notes'), text: 'card 4242 4242 4242 4242' }], () => ['done', { summary: 'ok' }]] });
     check('Card numbers refused before any keystroke', /never types those/.test(steps[0].d) && !cmds.some(c => c[0] === 'Input.insertText'));
+  }
+
+  // ---------- 7. zoom into a picture; values typed from a screenshot are checked before done ----------
+  // From the 2026-11-09 MyOpenMath run: it read a graph's radius from a cut-off view, typed it and
+  // finished without looking again.
+  {
+    const { r, steps, cmds, reqs } = await runScenario({
+      plan: [
+        () => ['screenshot', {}],
+        () => ['zoom', { x: 100, y: 200, width: 300, height: 150, description: 'the axis numbers of graph (b)' }],
+        ({ id }) => ['type', { id: id('Notes'), text: '8' }],
+        () => ['done', { summary: 'Typed the answer.' }],
+        () => ['zoom', { x: 900, y: 700, width: 400, height: 400 }],
+        () => ['zoom', { x: 5000, y: 10, width: 50, height: 50 }],
+        () => ['done', { summary: 'Typed the answer; checked it.' }]
+      ]
+    });
+    const clips = cmds.filter(c => c[0] === 'Page.captureScreenshot' && c[1].clip).map(c => c[1].clip);
+    check('Zoom: Chrome redraws that area 4× larger (page offset added for the scroll)', JSON.stringify(clips[0]) === JSON.stringify({ x: 100, y: 450, width: 300, height: 150, scale: 4 }), JSON.stringify(clips));
+    const zoomResult = JSON.stringify(reqs[2].messages.at(-1));
+    check('Zoom: the enlarged image goes to the model, marked as for reading only', /Enlarged view \(4\.0×\)/.test(zoomResult) && /click_at uses the full screenshot/.test(zoomResult) && /"type":"image"/.test(zoomResult), zoomResult.slice(0, 400));
+    const back = JSON.stringify(reqs[4].messages.at(-1));
+    check('Done right after typing values read from a screenshot: sent back once to check them', /Not finished yet: you typed values after looking at a screenshot/.test(back) && steps.some(s => s.d === 'Checking the typed values first'), back.slice(0, 300));
+    check('Zoom areas are kept on the screen (clipped to 1024×768)', JSON.stringify(clips[1]) === JSON.stringify({ x: 900, y: 950, width: 124, height: 68, scale: 4 }), JSON.stringify(clips[1]));
+    check('A zoom area outside the screen is refused with the screen size', steps.some(s => /too small or outside the screen \(1024×768\)/.test(s.d || '')), steps.map(s => s.d).join(' | '));
+    check('After looking again, done finishes', r.summary === 'Typed the answer; checked it.');
+  }
+  {
+    const { r } = await runScenario({ plan: [({ id }) => ['type', { id: id('Notes'), text: 'hello' }], () => ['screenshot', {}], () => ['done', { summary: 'ok' }]] });
+    check('No extra check when it looked after typing (or never typed from a screenshot)', r.summary === 'ok');
   }
 
   console.log(results.join('\n'));

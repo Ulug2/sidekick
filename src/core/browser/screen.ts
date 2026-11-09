@@ -47,6 +47,17 @@ export async function shrinkImage(dataUrl: string, maxEdge = MAX_EDGE, targetW?:
   return { dataUrl: await new Promise<string>(res => { const r = new FileReader(); r.onload = () => res(r.result as string); r.readAsDataURL(blob); }), width: w, height: h };
 }
 
+// A rectangle of an image (in its own pixels), drawn at outW × outH.
+export async function cropImage(dataUrl: string, r: { x: number; y: number; width: number; height: number }, outW: number, outH: number): Promise<{ dataUrl: string; width: number; height: number }> {
+  const bmp = await createImageBitmap(await (await fetch(dataUrl)).blob());
+  const canvas = new OffscreenCanvas(outW, outH);
+  const ctx = canvas.getContext("2d")!;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bmp, r.x, r.y, r.width, r.height, 0, 0, outW, outH);
+  const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.9 });
+  return { dataUrl: await new Promise<string>(res => { const fr = new FileReader(); fr.onload = () => res(fr.result as string); fr.readAsDataURL(blob); }), width: outW, height: outH };
+}
+
 // Screenshot of the visible part of the active tab, ready to send to a model.
 // raw: full resolution (for cropping an area), otherwise downscaled for the model.
 export async function captureScreen({ tab, raw = false }: { tab?: chrome.tabs.Tab; raw?: boolean } = {}): Promise<string> {

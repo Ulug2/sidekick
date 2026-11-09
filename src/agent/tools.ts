@@ -144,6 +144,15 @@ export const AGENT_TOOLS: ToolDef[] = [
     parameters: { type: "object", properties: {} }
   },
   {
+    name: "zoom",
+    description: "See part of the screen enlarged, to read small print: numbers on a graph's axes, a chart, a table or text inside an image, fine print. x, y, width, height are in the latest screenshot's pixels (take a screenshot first). Only for looking: click_at still uses the full screenshot's coordinates.",
+    parameters: {
+      type: "object",
+      properties: { x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" }, description: { type: "string", description: "What you want to read there." } },
+      required: ["x", "y", "width", "height"]
+    }
+  },
+  {
     name: "click_at",
     description: "Click at a point in the latest screenshot (x, y in that image's pixels). Use only when the element isn't in the snapshot list; prefer click with an id.",
     parameters: {

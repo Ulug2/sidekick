@@ -56,10 +56,10 @@ docs/                    product plan, architecture, lessons, security, adr/, ar
 npm install
 npx playwright install chromium      # once, for the real-Chrome suite
 npm run build                        # typecheck, build dist/, check it (npm run dev: rebuild on change)
-npm test                             # builds .test-build/, then all jsdom suites (about 640 checks, ~3 min)
+npm test                             # builds .test-build/, then all jsdom suites (about 655 checks, ~3 min)
 node tests/jsdom/run-all.js forms safety   # selected suites
 npm run test:unit                    # Vitest unit tests
-npm run test:chrome                  # real Chromium with dist/ (about 71 checks; builds first); screenshots in .artifacts/shots
+npm run test:chrome                  # real Chromium with dist/ (about 74 checks; builds first); screenshots in .artifacts/shots
 npm run lint                         # ESLint (typescript-eslint)
 npm run check                        # all of the above
 ```

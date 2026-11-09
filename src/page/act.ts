@@ -17,10 +17,20 @@ export async function skPageAct(a: PageAction): Promise<PageActionResult> {
   const clean = (s: any) => String(s || "").replace(/\s+/g, " ").trim();
   const isMathBox = (el: any) => !!(el && el.classList && el.classList.contains("mq-editable-field"));
 
+  // Runs in every frame; each also lists the visible frames embedded in it, so the agent can
+  // say which ones it couldn't read.
   if (a.op === "read_text") {
     const main = document.querySelector<HTMLElement>("main, [role=main], article") || document.body;
-    const text = (main.innerText || "").replace(/\n{3,}/g, "\n\n").trim();
-    return { ok: true, text: text.slice(0, a.max || 15000), truncated: text.length > (a.max || 15000) };
+    const text = ((main && main.innerText) || "").replace(/\n{3,}/g, "\n\n").trim();
+    const frames: string[] = [];
+    for (const f of Array.from(document.querySelectorAll<HTMLIFrameElement>("iframe, frame"))) {
+      const r = f.getBoundingClientRect();
+      if (r.width < 80 || r.height < 60) continue; // ads, trackers, hidden helpers
+      let host = "";
+      try { host = new URL(f.src, location.href).hostname; } catch {}
+      frames.push(host);
+    }
+    return { ok: true, text: text.slice(0, a.max || 15000), truncated: text.length > (a.max || 15000), url: location.href, frames };
   }
 
   // One call instead of many "scroll down" steps: go to the bottom until the page stops growing

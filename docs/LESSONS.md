@@ -104,6 +104,14 @@ General rules that came out of these: design for the long version of a task; eve
 - **Rule:** when code moves between modules, check the *built* output for names that now resolve to globals; never name a helper after a browser global.
 - **Tests:** multitask 7 (fails without the import), check-build in every build.
 
+### 16. The agent typed a graph's radius it never actually read (MyOpenMath benchmark, 2026-11-09)
+- **What happened:** task 2 filled all 16 boxes of a polar-regions question and got 4 wrong. Graph (b) (an upper half disk of radius 8) was only half on screen when the agent first saw it; it wrote "a full radius-4 disk and its upper semicircle", assumed (b) shared (a)'s scale, and typed r ≤ 4. It saw the whole graph two steps later, with axis numbers about 5 px tall, and never looked again before `done`.
+- **Causes:** (1) `read_text` read only the top page, and the question sits in a frame from myopenmath.com, so it returned an empty "Page text:" with no word about the frame (rule 6). (2) No way to see small print: screenshots are viewport-sized and the graph's own magnifier failed inside the frame. (3) Nothing made it check values read off a picture. (4) The snapshot told it that the four "Expand Graph" buttons were interchangeable ("any of these ids works"); they each open a different graph.
+- **Fix:** `read_text` reads every frame, labels each by site, and names frames it couldn't read; a page with no text says so. New `zoom` tool: Chrome redraws an area of the screen up to 4× larger (debugger `clip`, with the scroll offset; crop of Chrome's capture without the debugger). Code rule: when values were typed after looking at a screenshot and it hasn't looked since, the first `done` is sent back once to compare each value with a zoomed view. Grouped ids now read "in page order; each belongs to its own item". Prompt: read each figure's own scale, never assume two share one, never guess from a cut-off part.
+- **Rule:** an answer read from a picture needs its own look at that picture; a tool that returns nothing must say why.
+- **Tests:** reading (7, the Moodle + MyOpenMath frame copied from the run), agent-cdp 7 (zoom clip and scale, check before done), real-chrome 16 (frame text, zoom on a scrolled page checked by pixel color; fails without the scroll offset).
+- **Not fixed yet:** MyOpenMath's math keypad covering graph (c) (pop-up policy, Phase A); which 3 other boxes were marked wrong is unknown.
+
 ## Earlier lessons (v0.7–v0.9)
 - **A double-check must not overrule a right answer without evidence** (v0.7.2 pipeline problem). Replacements need a code check (objective or residuals) under both setups.
 - **Examples in prompts anchor the model.** Use neutral numbers, never the real answer.
