@@ -12,6 +12,8 @@ import type { UsageLog } from "../llm/usage.js";
 import type { RunTrace } from "../../agent/trace/trace.js";
 import type { TraceIndexEntry } from "../../agent/trace/store.js";
 import type { BenchPending, BenchRun } from "../../bench/results.js";
+import type { Company, Job } from "../../jobs/types.js";
+import type { SponsorLists } from "../../jobs/sponsors.js";
 
 // ---------- chats (ui/sidepanel) ----------
 export interface ChatIndexEntry { id: string; title: string; updatedAt: number }
@@ -69,6 +71,10 @@ export interface LocalSchema extends Settings {
   benchRuns: BenchRun[]; // bench/results: one record per benchmark run, graded on the Benchmark page
   benchParams: Record<string, Record<string, string>>; // ui/bench: what you entered per task (URLs, dates…)
   benchMaxCost: number; // ui/bench: dollar limit per benchmark run
+  jobs: Job[]; // jobs/store: every posting found, whether you can take it, and its status
+  jobCompanies: Company[]; // jobs/store: the companies whose job boards are read
+  sponsorLists: SponsorLists; // jobs/sponsors: UK Skilled Worker sponsors and US H-1B approvals by employer
+  jobSettings: { dailyCap: number; monthlyCap: number }; // ui/jobs: applications per day, dollars per month for applying
   [chat: `chat:${string}`]: Chat;
   [doc: `doc:${string}`]: DocChunks;
   [trace: `trace:${string}`]: RunTrace; // a run without its images
@@ -79,6 +85,9 @@ export interface SessionSchema {
   pending: { mode: "rewrite" | "ask"; text: string; ts: number };
   // Run a benchmark task (ui/bench → sidepanel).
   benchPending: BenchPending;
+  // Start today's application batch (ui/jobs → sidepanel): the queued jobs, in order.
+  jobBatch: { ts: number; windowId?: number };
+  jobBatchStop: boolean; // the Jobs page's Stop: the panel ends the batch after the current job
 }
 
 export async function readLocal<K extends keyof LocalSchema>(keys: K | K[]): Promise<Partial<Pick<LocalSchema, K>>> {

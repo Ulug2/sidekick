@@ -48,7 +48,7 @@ export const AGENT_TOOLS: ToolDef[] = [
   },
   {
     name: "fill_fields",
-    description: "Fill several form fields in ONE step: text boxes, dropdowns (native or custom), checkboxes, radio buttons, and the resume upload (value \"resume\"). Much faster than one action per field. For checkboxes and radios use \"true\" or \"false\". Returns one updated snapshot. Never for passwords, payment or ID numbers.",
+    description: "Fill several form fields in ONE step: text boxes, dropdowns (native or custom), checkboxes, radio buttons, and file uploads (value \"resume\", or \"cover_letter\" when the task provides one). Much faster than one action per field. For checkboxes and radios use \"true\" or \"false\". Returns one updated snapshot. Never for passwords, payment or ID numbers.",
     parameters: {
       type: "object",
       properties: {
@@ -86,10 +86,10 @@ export const AGENT_TOOLS: ToolDef[] = [
   },
   {
     name: "upload_file",
-    description: "Attach the user's saved resume to a file-upload field (or the upload area around it). Returns the updated snapshot.",
+    description: "Attach a file to a file-upload field (or the upload area around it): the user's saved resume, or the cover letter PDF when the task provides one. Returns the updated snapshot.",
     parameters: {
       type: "object",
-      properties: { id: { type: "string" }, file: { type: "string", enum: ["resume"] } },
+      properties: { id: { type: "string" }, file: { type: "string", enum: ["resume", "cover_letter"] } },
       required: ["id", "file"]
     }
   },

@@ -149,7 +149,10 @@ export interface AgentState {
   lookedAt?: number;
   typedAfterLook?: number;
   checkAsked?: boolean;
+  files?: Record<string, AgentFile>; // files besides the resume the run may upload ("cover_letter")
+  tier?: "fast" | "smart"; // the model tier for this run (job-application batches use "fast")
 }
+export interface AgentFile { name: string; type: string; base64: string }
 // A step card in the panel.
 export interface StepHandle { done(ok: boolean, detail?: string): void; waiting(): void }
 // How the agent talks to the panel (sidepanel.runAgentCard) or a test.

@@ -3,7 +3,7 @@ import type { AgentState, AgentUI, PageActionResult, ToolOutcome } from "../type
 import { skPageAct } from "../../page/act.js";
 import { logApplication, type Profile } from "../../assistant/profile-core.js";
 import { describeSafe, describeCall, quote } from "./describe.js";
-import { RISKY_WORDS, siteBlocked, gateShare, inPlan, NEVER_AUTO, gateVisit } from "../safety/gates.js";
+import { RISKY_WORDS, siteBlocked, gateShare, inPlan, NEVER_AUTO, gateVisit, CAPTCHA_RE } from "../safety/gates.js";
 import { sleep, waitForTab, hostOf, pageScript } from "../page-calls.js";
 import { snapshotTab, groupRepeats } from "../perception/format.js";
 import { trustedInput, actInPage, viaTrusted, disarmLeavePrompt } from "./input.js";
@@ -118,6 +118,8 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
       case "click": {
         const el = state.elements[String(a.id)];
         if (!el) return fail(`Element [${a.id}] isn't in the latest snapshot.`);
+        // A "prove you're human" check is for the human. Sidekick never tries to pass one (rule in code, not only in the prompt).
+        if (CAPTCHA_RE.test(`${el.label} ${el.section} ${a.description || ""}`)) return fail("That's a CAPTCHA or a 'verify you are human' check. Sidekick never tries to pass those. Use ask_user so the user does it, then continue.");
         if (everyClick || a.final_action || RISKY_WORDS.test(el.label) || RISKY_WORDS.test(a.description || "")) {
           const site = siteOf(el.host ? "https://" + el.host : (await chrome.tabs.get(state.tabId)).url || "");
           const preApproved = !everyClick && state.planApproval?.autoSubmit && inPlan(state, site) && !NEVER_AUTO.test(`${el.label} ${a.description || ""}`);
@@ -229,7 +231,7 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
           const fam = roleFamily(el.role);
           const sub = fam === "choice" ? { name: "select_option", args: { id: fid, option: v } }
             : fam === "check" || fam === "radio" ? { name: "set_checked", args: { id: fid, checked: !/^(false|no|off|0|unchecked)$/i.test(v) } }
-            : fam === "file" ? { name: "upload_file", args: { id: fid, file: "resume" } }
+            : fam === "file" ? { name: "upload_file", args: { id: fid, file: /cover/i.test(v) ? "cover_letter" : "resume" } }
             : fam === "text" ? { name: "type", args: { id: fid, text: v } }
             : null;
           if (!sub) { problems.push(`[${fid}] ${el.role} "${el.label}" isn't a form field; use click`); continue; }
@@ -292,7 +294,11 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
         return withSnapshot(`The site's "${t.name}" tool returned:\n${untrusted(host, out.text || "(nothing)")}\n\n`);
       }
       case "upload_file": {
-        if (!profile.resume?.dataUrl) return fail("No resume is saved. Ask the user to add one in their Sidekick profile, or to attach it themselves.");
+        const which = a.file === "cover_letter" ? "cover_letter" : "resume";
+        const extra = which !== "resume" ? state.files?.[which] : null;
+        if (which !== "resume" && !extra) return fail("This task has no cover letter file. Paste the cover letter text into a text field if there is one, or skip it.");
+        if (which === "resume" && !profile.resume?.dataUrl) return fail("No resume is saved. Ask the user to add one in their Sidekick profile, or to attach it themselves.");
+        const fileName = extra ? extra.name : profile.resume!.name;
         // Your resume is personal data: the first upload on a site in each run needs your OK,
         // unless a shortcut you've used on this site already attaches it.
         {
@@ -306,12 +312,12 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
           // A learned shortcut with an upload step means you already approved it on this site.
           const known = (await adaptersFor(where)).some(x => x.steps.some(st => st.tool === "upload_file"));
           if (!state.uploadOk.has(site) && !known && !inPlan(state, site)) {
-            if (!(await askApproval(`Attach your resume (${profile.resume.name}) on ${site}?`, "Sidekick asks the first time it sends your resume to a site."))) return declined();
+            if (!(await askApproval(`Attach your ${extra ? "cover letter" : "resume"} (${fileName}) on ${site}?`, "Sidekick asks the first time it sends your files to a site."))) return declined();
           }
           state.uploadOk.add(site);
         }
-        const [, type, base64] = profile.resume.dataUrl.match(/^data:([^;]*);base64,(.*)$/s)!;
-        const r = await actInPage(state, { op: "upload_file", id: a.id, file: { name: profile.resume.name, type: type || profile.resume.type, base64 } });
+        const file = extra ? extra : (() => { const [, type, base64] = profile.resume!.dataUrl.match(/^data:([^;]*);base64,(.*)$/s)!; return { name: profile.resume!.name, type: type || profile.resume!.type, base64 }; })();
+        const r = await actInPage(state, { op: "upload_file", id: a.id, file });
         if (!r.ok) return fail(r.error);
         step.done(true);
         return withSnapshot(r.note ? r.note + "\n\n" : "");

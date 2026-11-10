@@ -29,6 +29,15 @@ const PAGES = {
   '/polar': `<!doctype html><html><head><title>Homework 5.3 | Moodle</title></head><body style="margin:0;height:3000px">
     <main><h2>Homework 5.3</h2><iframe src="http://public.test:__PORT__/polarframe" style="width:700px;height:420px;border:0"></iframe></main>
     <div id="red" style="position:absolute;left:400px;top:1300px;width:80px;height:80px;background:#f00"></div></body></html>`,
+  // A job application form with a cover letter upload and text box (the application batch), and
+  // one behind a sign-in (the batch must set it aside, never type a password).
+  '/apply': `<!doctype html><html><head><title>Apply – Acme</title></head><body><main><h1>Software Engineer, New Grad</h1><p>Build payments at Acme.</p>
+    <form id="app"><label for="fn">First name</label><input id="fn" required><label for="em">Email</label><input id="em" type="email">
+    <label for="cl">Cover letter (PDF)</label><input id="cl" type="file"><label for="clt">Cover letter text</label><textarea id="clt"></textarea>
+    <button type="submit" id="submit">Submit application</button></form>
+    <script>window.log=[];document.getElementById('app').addEventListener('submit',e=>{e.preventDefault();const f=cl.files[0];const r=new FileReader();r.onload=()=>{window.sent={fn:fn.value,em:em.value,clt:clt.value,file:f?{name:f.name,type:f.type,head:String(r.result).slice(0,8)}:null};window.log.push('submitted');};if(f)r.readAsText(f);else{window.sent={fn:fn.value,em:em.value,clt:clt.value,file:null};window.log.push('submitted');}});</script></body></html>`,
+  '/apply-login': `<!doctype html><html><head><title>Apply – Bravo</title></head><body><main><h1>Backend Engineer</h1><p>Sign in to continue your application.</p>
+    <form><label for="u">Email</label><input id="u"><label for="pw">Password</label><input id="pw" type="password"><button type="submit">Sign in</button></form></main></body></html>`,
   '/polarframe': `<!doctype html><html><head><title>MyOpenMath</title></head><body><main>
     <p>Set up limits of integration to integrate over each polar region shown.</p>
     <svg width="160" height="90"><path d="M0 80 A80 80 0 0 1 160 80 Z" fill="#88f"/><text x="150" y="88" font-size="6">8</text></svg>
@@ -77,7 +86,7 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   };
 
   // ---------- 1. every page loads clean under the real CSP ----------
-  for (const p of ['sidepanel.html', 'profile.html', 'options.html', 'evals.html', 'mic.html', 'runs.html', 'bench.html']) {
+  for (const p of ['sidepanel.html', 'profile.html', 'options.html', 'evals.html', 'mic.html', 'runs.html', 'bench.html', 'jobs.html']) {
     const page = await ctx.newPage();
     watch(page, p);
     const csp = [];
@@ -675,6 +684,69 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
     check('Real Chrome: zoom shows the area the model pointed at on the scrolled page, 4× larger', red && red.w === 400 && red.r > 200 && red.g < 60 && red.b < 60, JSON.stringify(red));
     check('Real Chrome: the value was typed into the frame, and done right after sent it back to check against the screen', await hwPage.frames().find(f => /polarframe/.test(f.url()))?.evaluate(() => document.querySelector('#r1').value) === '8' && /Not finished yet: you typed values after looking at a screenshot/.test(backResult), backResult.slice(-400));
     await hwPage.close();
+  }
+
+  // ---------- 17. the application batch: Jobs page → side panel → one agent run per job, cover letter PDF, human checks set aside ----------
+  {
+    const jobBase = (id, over) => ({ id, ats: 'greenhouse', board: 'acme', company: 'Acme', title: 'Software Engineer, New Grad', location: 'New York, NY', url: `${BASE}/apply`, applyUrl: `${BASE}/apply`, text: 'Build payments at Acme. We sponsor visas.', ok: true, regions: ['usa'], countries: ['US'], sponsor: 'strong', why: ['Posting offers visa sponsorship'], score: 90, status: 'queued', firstSeen: 1, lastSeen: 1, ...over });
+    await panel.evaluate(jobs => chrome.storage.local.set({ jobs, jobCompanies: [{ name: 'Acme', ats: 'greenhouse', board: 'acme', added: 1, source: 'you' }] }), [jobBase('greenhouse:acme:1', {}), jobBase('greenhouse:bravo:2', { board: 'bravo', company: 'Bravo', title: 'Backend Engineer', url: `${BASE}/apply-login`, applyUrl: `${BASE}/apply-login`, score: 80 })]);
+    await panel.evaluate(() => { globalThis.SK_BATCH_PAUSE_MS = 0; globalThis.SK_ASK_WAIT_MS = 1000; });
+    const LETTER = 'Hi Acme team,\n\n' + 'I built a small payments dashboard for my college club last spring, and your posting is about payments, so this is the kind of work I want to learn properly. '.repeat(4) + 'I have not used Ruby yet, but I pick up languages quickly and I would rather learn it from people who ship it every day than from a tutorial. '.repeat(2) + '\n\nThanks,\nUlugbek';
+    let letterCalls = 0;
+    const letterAsks = [];
+    responder = b => {
+      if (/You keep the pinned notes|reusable operating notes/.test(b.system)) return H.anthropicEvents([{ type: 'text', text: '{"notes":[]}' }]);
+      if (/You write cover letters/.test(b.system)) { if (/Role: Software Engineer, New Grad/.test(JSON.stringify(b.messages.at(-1)))) letterCalls++; letterAsks.push(JSON.stringify(b.messages.at(-1)).slice(0, 120)); return H.anthropicEvents([{ type: 'text', text: LETTER }]); }
+      if (/browser agent/.test(b.system)) {
+        const st = b.messages.filter(m => m.role === 'assistant').length;
+        const all = JSON.stringify(b.messages);
+        const bravo = /Backend Engineer at Bravo/.test(all);
+        const calls = bravo
+          ? [[['ask_user', { question: 'This application needs you to sign in first. Please sign in, then tell me.' }]], [['done', { summary: 'Signed in?' }]]][st]
+          : [[['fill_fields', { fields: [{ id: idIn(all, 'First name'), value: 'Ulugbek' }, { id: idIn(all, 'Email'), value: 'ulugbek@example.edu' }, { id: idIn(all, 'Cover letter \\(PDF\\)'), value: 'cover_letter' }, { id: idIn(all, 'Cover letter text'), value: 'See the attached letter.' }] }]],
+            [['click', { id: idIn(all, 'Submit application'), description: 'Submit the application', final_action: true }]],
+            [['log_application', { company: 'Acme', role: 'Software Engineer, New Grad', status: 'submitted' }]],
+            [['done', { summary: 'Applied to Acme.' }]]][st];
+        return H.anthropicEvents(calls.map(([name, input], k) => ({ type: 'tool_use', id: `j${st}_${k}`, name, input })), { stop: 'tool_use' });
+      }
+      return H.anthropicEvents([{ type: 'text', text: 'ok' }]);
+    };
+    const jobsPage = await ctx.newPage();
+    watch(jobsPage, 'jobs.html');
+    await jobsPage.goto(url('jobs.html'));
+    await jobsPage.waitForSelector('#start:not([hidden])', { timeout: 10000 });
+    await jobsPage.evaluate(() => { chrome.sidePanel.open = async () => {}; }); // the test's panel tab takes the batch (see 15)
+    const hud = await jobsPage.locator('#hud').innerText();
+    check('Real Chrome jobs: the HUD shows the batch waiting for approval', /2\s+today's batch/i.test(hud.replace(/\n/g, ' ')), hud);
+    // What the Acme form receives (its tab is closed once the application is in).
+    let sent = null;
+    const capture = (async () => {
+      const pg = await ctx.waitForEvent('page', { timeout: 60000 }).catch(() => null);
+      if (!pg) return;
+      await pg.waitForURL(/\/apply$/, { timeout: 30000 }).catch(() => {});
+      for (let i = 0; i < 300 && !sent; i++) { try { sent = await pg.evaluate(() => window.sent || null); } catch { break; } if (!sent) await new Promise(r => setTimeout(r, 200)); }
+    })();
+    await jobsPage.click('#start');
+    await panel.bringToFront();
+    const final = await (async () => { for (let i = 0; i < 240; i++) { const j = (await panel.evaluate(() => chrome.storage.local.get('jobs'))).jobs; if (j.every(x => !['queued', 'applying'].includes(x.status))) return j; await panel.waitForTimeout(500); } return (await panel.evaluate(() => chrome.storage.local.get('jobs'))).jobs; })();
+    await capture;
+    const acme = final.find(j => j.company === 'Acme'), bravo = final.find(j => j.company === 'Bravo');
+    check('Real Chrome jobs: the form got the profile fields, the cover letter PDF (a real PDF, named after him and the company) and the text', sent?.fn === 'Ulugbek' && sent.em === 'ulugbek@example.edu' && sent.clt === 'See the attached letter.' && sent.file?.name === 'Ulugbek_Rivera_Cover_Letter_Acme.pdf' && sent.file.type === 'application/pdf' && sent.file.head === '%PDF-1.4', JSON.stringify(sent));
+    const applyTab = (await panel.evaluate(() => chrome.tabs.query({}))).find(t => t.url === `${BASE}/apply`);
+    check('Real Chrome jobs: the approved batch applies to Acme without asking (cover letter written first and saved), then closes the tab', acme?.status === 'applied' && acme.coverLetter === LETTER && letterCalls === 1 && acme.appliedAt > 0 && !applyTab, JSON.stringify({ status: acme?.status, note: acme?.note, letter: acme?.coverLetter?.slice(0, 40), letterCalls, letterAsks, applyTab: !!applyTab }));
+    const acmeTrace = acme?.traceId && (await panel.evaluate(k => chrome.storage.local.get(k), 'trace:' + acme.traceId))['trace:' + acme.traceId];
+    const acmeEvents = (acmeTrace?.steps || []).flatMap(s => s.events);
+    check('Real Chrome jobs: the pre-approved submit and the cover letter upload asked nothing (the run\'s trace has the note, no approvals), on the fast model', acmeTrace && acmeEvents.some(e => e.kind === 'note' && /Submitting without asking/.test(e.text)) && !acmeEvents.some(e => e.kind === 'approve' || e.kind === 'ask') && acmeTrace.config.model === 'claude-haiku-5-5' && acmeTrace.steps[0]?.model?.model === 'claude-haiku-5-5', JSON.stringify({ traceId: acme?.traceId, events: acmeEvents, model: acmeTrace?.config?.model }));
+    check('Real Chrome jobs: the application was logged', ((await panel.evaluate(() => chrome.storage.local.get('applications'))).applications || []).some(a => a.company === 'Acme' && a.role === 'Software Engineer, New Grad'));
+    check('Real Chrome jobs: a sign-in sets the job aside as "needs you" with the question, after waiting; nothing typed into the password field', bravo?.status === 'needs_you' && /Waiting for you: This application needs you to sign in first/.test(bravo.note || ''), JSON.stringify({ status: bravo?.status, note: bravo?.note }));
+    const loginTab = (await panel.evaluate(() => chrome.tabs.query({}))).find(t => t.url === `${BASE}/apply-login`);
+    check('Real Chrome jobs: the sign-in tab stays open for you', !!loginTab);
+    await jobsPage.bringToFront();
+    await jobsPage.click('#tabs [data-tab=needs]');
+    await jobsPage.waitForTimeout(200);
+    check('Real Chrome jobs: the Jobs page shows the set-aside job under Needs you', /Bravo/.test(await jobsPage.locator('#list').innerText()) && /Waiting for you/.test(await jobsPage.locator('#list').innerText()));
+    for (const [w, name] of [[760, 'half'], [1280, 'wide']]) { await jobsPage.setViewportSize({ width: w, height: 900 }); await jobsPage.waitForTimeout(150); const ov = await jobsPage.evaluate(() => document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth); check(`Real Chrome jobs: the page fits at ${w}px`, ov <= 1, `overflow ${ov}px`); await shot(jobsPage, `17-jobs-${name}`); }
+    await jobsPage.close();
   }
 
   check('Nothing tried to reach any outside server during the whole run', !outside.length, outside.join(', '));

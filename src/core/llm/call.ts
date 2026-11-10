@@ -73,8 +73,8 @@ export async function callModel(messages: ModelMessage[], onText: (text: string)
 }
 
 // Used by agent mode.
-export async function callAgentModel({ system, transcript, tools, signal, onThinking }: { system: string; transcript: ModelMessage[]; tools: ToolDef[]; signal?: AbortSignal; onThinking?: (text: string) => void }): Promise<ModelResult> {
+export async function callAgentModel({ system, transcript, tools, signal, onThinking, tier = "smart" }: { system: string; transcript: ModelMessage[]; tools: ToolDef[]; signal?: AbortSignal; onThinking?: (text: string) => void; tier?: "fast" | "smart" }): Promise<ModelResult> {
   const s = await getSettings();
   // The agent may batch several sure actions in one turn (e.g. type, then click Next).
-  return modelCall({ tier: "smart", effort: s.agentEffort, system, messages: transcript, tools, signal, maxTokens: 16000, parallelTools: true, onThinking });
+  return modelCall({ tier, effort: s.agentEffort, system, messages: transcript, tools, signal, maxTokens: 16000, parallelTools: true, onThinking });
 }

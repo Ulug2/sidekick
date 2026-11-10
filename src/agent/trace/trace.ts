@@ -185,7 +185,7 @@ export async function startTrace(goal: string, state: AgentState, system: string
     startedAt: Date.now(),
     outcome: "running",
     start: { url: tab?.url || "", title: tab?.title || "" },
-    config: { provider: effectiveProvider(s), model: modelFor(s, "smart"), effort: s.agentEffort, approvalMode: s.approvalMode, trustedInput: !!s.trustedInput },
+    config: { provider: effectiveProvider(s), model: modelFor(s, state.tier || "smart"), effort: s.agentEffort, approvalMode: s.approvalMode, trustedInput: !!s.trustedInput },
     steps: [],
     totals: emptyTotals(),
     shotKeys: []

@@ -11,3 +11,4 @@
 | [007](007-extension-key.md) | A fixed public key in the manifest pins the extension ID | Accepted, 2026-10-29 |
 | [008](008-typescript-strictness.md) | `strict` everywhere; explicit `any` only at untyped edges (page DOM, site objects, math.js nodes, UI lookups) | Accepted, 2026-10-29 |
 | [009](009-run-traces.md) | Run traces in chrome.storage, screenshots stored separately, cost through a call watcher | Accepted, 2026-10-31 |
+| [010](010-job-pipeline.md) | Job pipeline: company job boards + government sponsor lists, rules in code, approval per batch, human pace | Accepted, 2026-11-09 |

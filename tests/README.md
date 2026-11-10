@@ -26,6 +26,7 @@ npm run test:chrome                      # builds dist/, then real Chromium with
 | Suite | Covers |
 |---|---|
 | bench | the Benchmark page: tasks, settings, Run hands the task to the panel, grading, score per version, results as text only, Run off for unpriced models |
+| jobs | the Jobs page: sponsor lists (GOV.UK API + the two CSVs, faked), scanning two boards, eligible vs filtered with reasons, text-only titles, Keep anyway / Skip, Build today's batch (one per company), Approve & start (hand-off), Stop, statuses, CSV, add a company by link, the monthly limit |
 | reading | pages inside a frame from another site (Moodle + MyOpenMath, copied from the 2026-11-09 run): read_text reads every frame and names the ones it can't, an empty page says so, identical buttons are grouped but not interchangeable |
 | storage | writes don't lose each other: two pages saving memories, applications, skills, site notes, shortcuts, usage, benchmark runs and documents at once through the shared lock; the queue without Web Locks; a timed-out lock still saves; an error inside the lock runs once |
 | traces | run traces: every step saved as it happens (prompt, reply, actions, approvals while waiting, screenshots, cost), stopped/failed/interrupted runs, last 30 kept, export masks secrets, import keeps only images, the Agent runs page shows everything as text (v0.9.6) |
@@ -44,6 +45,6 @@ npm run test:chrome                      # builds dist/, then real Chromium with
 | memory-session, brain, panel-v6, pages, v4, e2e, agent-cdp, engine, openai-profile | memory and pinned notes, chat brain, panel UI, extension pages, chat lifecycle, an end-to-end application, debugger input, page engine, OpenAI provider + profile |
 | calc, numeric | calculator and numeric solving, run with eval disabled |
 | docs | PDF and DOCX text extraction |
-| real-chrome | the real extension in Chromium: CSP, debugger input, agent runs on local pages, tab groups, homework in a cross-site frame (read_text, zoom by pixel color, check before done), nothing leaves the machine |
+| real-chrome | the real extension in Chromium: CSP, debugger input, agent runs on local pages, tab groups, homework in a cross-site frame (read_text, zoom by pixel color, check before done), the application batch (Jobs page → panel, cover letter PDF received by the form, pre-approved submit, a sign-in set aside), nothing leaves the machine |
 
-Unit tests (`unit/`): `security.test.ts` (redaction, the untrusted fence, wrapper stripping, siteOf (Public Suffix List), local addresses, personal data in URLs, skill text), `prices.test.ts` (dollars per call), `bench.test.ts` (benchmark tasks, checks, scoring, spend, CSV).
+Unit tests (`unit/`): `security.test.ts` (redaction, the untrusted fence, wrapper stripping, siteOf (Public Suffix List), local addresses, personal data in URLs, skill text), `prices.test.ts` (dollars per call), `bench.test.ts` (benchmark tasks, checks, scoring, spend, CSV), `jobs.test.ts` (where a job is, who can sponsor it, the eligibility rules, job-board JSON → postings, the job list, today's batch, cover-letter voice checks, the hand-made PDF, judging an application run).

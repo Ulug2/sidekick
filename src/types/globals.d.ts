@@ -48,6 +48,8 @@ declare global {
   // Test hooks: shorter time limits in the suites.
   var SK_STALL_MS: number | undefined;
   var SK_PAGE_MS: number | undefined;
+  var SK_BATCH_PAUSE_MS: number | undefined; // tests: no human pause between applications
+  var SK_ASK_WAIT_MS: number | undefined; // tests: how long a question may wait in a batch
   var SK_WEB_MS: number | undefined;
 }
 

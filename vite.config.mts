@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 const SRC = resolve(import.meta.dirname, "src");
 const OUT = resolve(import.meta.dirname, "dist");
-export const PAGES = ["sidepanel", "profile", "options", "evals", "mic", "runs", "bench"];
+export const PAGES = ["sidepanel", "profile", "options", "evals", "mic", "runs", "bench", "jobs"];
 // Copied byte for byte (dist path ← source): the manifest and the MAIN-world content script,
 // which must add nothing to pages. public/ (icons, vendored
 // libraries loaded by URL at runtime) is copied as is by Vite.

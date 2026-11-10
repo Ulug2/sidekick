@@ -37,8 +37,10 @@ src/
                          describe, replay), safety/gates, skills/ (shortcuts, site notes), trace/ (run traces), tools, prompt,
                          page-calls, types
   bench/                 real-site benchmark: tasks (the ten tasks, goals, automatic checks), results (records, scoring, spend)
+  jobs/                  job pipeline (ADR-010): sources (job-board APIs), sponsors (UK register, USCIS H-1B), eligibility (rules in code),
+                         store (job list, batch, CSV), scan, cover (student-voice letters), pdf, batch (judge a run), seed
   ui/                    sidepanel/ (sidepanel = entry and state, markdown, messages, chats, agent-card, bench-run, notify, icons),
-                         profile/, options/, evals/, runs/ (Agent runs: replay, export), bench/ (Benchmark page), mic/,
+                         profile/, options/, evals/, runs/ (Agent runs: replay, export), bench/ (Benchmark page), jobs/ (Jobs dashboard), mic/,
                          shared/ (page.css, dom.ts)
   types/globals.d.ts     vendored-library globals and test hooks
 public/                  icons/, vendor/ (third-party libraries, pinned copies + licenses), copied as is
@@ -56,10 +58,10 @@ docs/                    product plan, architecture, lessons, security, adr/, ar
 npm install
 npx playwright install chromium      # once, for the real-Chrome suite
 npm run build                        # typecheck, build dist/, check it (npm run dev: rebuild on change)
-npm test                             # builds .test-build/, then all jsdom suites (about 655 checks, ~3 min)
+npm test                             # builds .test-build/, then all jsdom suites (about 680 checks, ~3 min)
 node tests/jsdom/run-all.js forms safety   # selected suites
 npm run test:unit                    # Vitest unit tests
-npm run test:chrome                  # real Chromium with dist/ (about 74 checks; builds first); screenshots in .artifacts/shots
+npm run test:chrome                  # real Chromium with dist/ (about 85 checks; builds first); screenshots in .artifacts/shots
 npm run lint                         # ESLint (typescript-eslint)
 npm run check                        # all of the above
 ```
@@ -100,7 +102,8 @@ How the jsdom suites work: `scripts/build-test.mjs` bundles the same modules int
 - The debugger's mouse input stalls in background tabs (checked in un-instrumented Chromium: clicks time out; typing, keys and CDP screenshots work); the agent falls back to page events (`viaTrusted`). Screenshots of background tabs are refused today rather than switching tabs. The agent's own tabs open in the background.
 - Claude 5.x hides thinking unless asked: requests use `thinking: { type: "adaptive", display: "summarized" }`, with a fallback for models that reject it. Model IDs live in `DEFAULT_SETTINGS` in `src/core/llm/settings.ts`; don't change them without being asked.
 - OpenAI calls use the Responses API with `store: false`; reasoning items are replayed with `encrypted_content`.
-- Storage is `chrome.storage.local` (unencrypted, like every extension). Every key and its shape is in `src/core/storage/schema.ts`: settings fields, `profile`, `applications`, `memories`, `docIndex` + `doc:<id>`, `skills`, `userModel`, `adapters` (shortcuts), `siteNotes`, `chatIndex` + `chat:<id>`, `usage`, `evalRuns`, `traceIndex` + `trace:<id>` + `traceShot:<id>:<n>` (run traces), `benchRuns`, `benchParams`, `benchMaxCost`; session storage: `pending`, `benchPending` (Benchmark page → panel). Any read-modify-write goes through `updateLocal(key, fn)` or `withStorageLock(name, fn)` (`core/storage/update.ts`, a Web Lock shared by all pages); never read a list, await something, then `set` it. A function running under a lock must not take the same lock again (it would wait for itself): inside, write with plain `chrome.storage.local.set`.
+- Storage is `chrome.storage.local` (unencrypted, like every extension). Every key and its shape is in `src/core/storage/schema.ts`: settings fields, `profile`, `applications`, `memories`, `docIndex` + `doc:<id>`, `skills`, `userModel`, `adapters` (shortcuts), `siteNotes`, `chatIndex` + `chat:<id>`, `usage`, `evalRuns`, `traceIndex` + `trace:<id>` + `traceShot:<id>:<n>` (run traces), `benchRuns`, `benchParams`, `benchMaxCost`, `jobs`, `jobCompanies`, `sponsorLists`, `jobSettings`; session storage: `pending`, `benchPending` (Benchmark page → panel), `jobBatch` + `jobBatchStop` (Jobs page → panel). Any read-modify-write goes through `updateLocal(key, fn)` or `withStorageLock(name, fn)` (`core/storage/update.ts`, a Web Lock shared by all pages); never read a list, await something, then `set` it. A function running under a lock must not take the same lock again (it would wait for itself): inside, write with plain `chrome.storage.local.set`.
 - Benchmark runs spend the real API budget and use Ulugbek's accounts: Ulugbek runs them himself from `bench.html`; never start one (or drive his Chrome to) without asking. The page refuses to run with a model that has no price (the per-run dollar limit needs it).
+- Jobs (ADR-010): applications go only through company career sites (never LinkedIn/Handshake/Indeed auto-apply); an approved batch pre-approves submits on each job's own site only; one application per company per 30 days; `CAPTCHA_RE` refuses human checks in code; cover letters must pass `voiceProblems` (student voice, no template phrases, no dashes); the batch runs on the fast tier and stops at `jobSettings.monthlyCap`. Running a batch spends the real API budget and applies for real: Ulugbek starts it himself from `jobs.html`; never start one without asking.
 - Run traces: `agent/trace` records an agent run as it happens; model calls are recorded through `watchModelCalls(signal)`, so any new model call inside a run must pass the run's signal (`state.signal`) to be counted. Prices live in `core/llm/prices.ts` (Claude 5.5 models, GPT-5.6 Luna/Terra; unknown models cost "unknown", never a guess).
 - UI code (`src/ui`) looks elements up with `$` (returns `any`) and narrows DOM types with type-only assertions; the typed parts are the data (chats, settings, agent UI contract). Tighten it when a UI file is next changed for real.

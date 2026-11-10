@@ -61,6 +61,8 @@ export async function gateShare(state: AgentState, site: string, kinds: string[]
 }
 // Final clicks that can still go without asking after you approve a plan "submit without
 // asking": never anything with money, deleting or publishing.
+// Human checks the agent must leave to the human (a code rule; the prompt says so too).
+export const CAPTCHA_RE = /\b(captcha|recaptcha|hcaptcha|i'?m not a robot|not a robot|verify (that )?you('?re| are) (a )?human|human verification|prove you('?re| are) human|press and hold|cloudflare turnstile)\b/i;
 export const NEVER_AUTO = /\b(pay|purchase|buy|order|checkout|check out|donate|transfer|delete|remove|unsubscribe|publish|post|sign and)\b/i;
 
 export function siteBlocked(state: AgentState, url: string): string | undefined {

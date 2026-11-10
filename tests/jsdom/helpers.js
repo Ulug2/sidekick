@@ -103,7 +103,7 @@ const PANEL_SCRIPTS = ['vendor/marked.js', 'vendor/purify.min.js', 'vendor/katex
 // .test-build/ (npm test builds them first). loadScripts evaluates the vendor files listed, then
 // the bundle for the page those files belong to, and exposes the names a test asks for.
 const TEST_BUILD = ROOT + '/.test-build/';
-const PAGE_BUNDLES = ['sidepanel', 'profile', 'evals', 'options', 'mic', 'runs', 'bench'];
+const PAGE_BUNDLES = ['sidepanel', 'profile', 'evals', 'options', 'mic', 'runs', 'bench', 'jobs'];
 const bundleCache = {};
 function bundleFor(files) {
   const names = files.map(f => f.split('/').pop());

@@ -74,6 +74,16 @@ Homework help with answers that are checked, not guessed. Reminders for assignme
 14. (16a) Record a workflow: he does a flow once, Sidekick compiles it into a shortcut (value-free), reviewable and schedulable.
 15. (16b) Plain-English find: when keyword find misses, the fast model searches the element list for what was meant.
 
+### Phase J: Jobs (started 2026-11-09; what Ulugbek asked for first)
+Goal: a list of every job he can legally take (F-1, STEM OPT, no EU passport: USA, Europe, UAE) with visa sponsors first, about 20 applications a day on company career sites, a cover letter per job in his own voice, and a dashboard. ADR-010.
+- ~~Job sources~~ (done 2026-11-09): public job-board APIs of Greenhouse, Lever, Ashby, Workable, SmartRecruiters; 81 seed companies checked to answer; add any company by its careers link; "Find more companies" tries the biggest H-1B sponsors' names on the three big boards.
+- ~~Sponsor lists~~ (done): UK Home Office register + USCIS H-1B data, downloaded on the Jobs page.
+- ~~Eligibility and priority in code~~ (done): `jobs/eligibility.ts`; sponsorship first, entry-level next, freshness last.
+- ~~Jobs page~~ (done): HUD, To apply / Today's batch / Applied / Needs you / Filtered out / Companies, notes, status, CSV export, daily and monthly caps.
+- ~~Daily batch~~ (done, not yet run for real): Build (one job per company per month) → Approve & start → the panel applies one at a time on the fast model, a cover letter (smart model, student voice checked in code) typed or uploaded as a PDF, submits pre-approved on that job's site only, 2–4 minutes apart; sign-ins, CAPTCHAs and unanswered questions set the job aside as "needs you".
+- Next: run it for real on 3–5 queued jobs and fix what breaks (Greenhouse/Lever/Ashby forms with their real questions); Workday (login per company) as a hand-off list; answers to screening questions from a per-question memory; a weekly summary; learning from rejections.
+- Not planned: LinkedIn Easy Apply, Handshake or Indeed auto-apply (their terms forbid it; accounts get flagged).
+
 ### Phase 5: Budget and reliability
 16. (17) Monthly spend meter + hard cap (warn at 80%, stop smart/strongest models at 100%).
 17. (18) Real-key validation: OpenAI Responses replay, Claude web search, debugger input on real sites, voice, area capture.

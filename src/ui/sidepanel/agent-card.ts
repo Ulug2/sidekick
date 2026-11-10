@@ -5,7 +5,7 @@ import { LOGO, STEP_ICON } from "./icons.js";
 import { messagesEl, autoScroll, controller, input, resizeInput, agentMode, refreshSend, stop } from "./sidepanel.js";
 import { renderMarkdown } from "./markdown.js";
 import { untrusted } from "../../core/security/guard.js";
-import type { PlanItem, AgentUI } from "../../agent/types.js";
+import type { PlanItem, AgentUI, AgentFile } from "../../agent/types.js";
 import { notifyUser, clearNotice } from "./notify.js";
 import { runAgent } from "../../agent/loop/run.js";
 
@@ -162,7 +162,7 @@ export function agentHistory(messages: any, notes: string[] = []) {
 // Runs the browser agent with a live card. Used by Agent mode and by the chat's
 // operate_browser tool (then the card sits inside the chat reply). Returns { summary, steps, state, plan }.
 // opts: { history, progress(partial) } — progress gets the steps and checklist as they change.
-export async function runAgentCard(goal: string, parent?: HTMLElement, opts: { history?: string; userMessages?: string[]; progress?: (p: Record<string, unknown>) => void; maxCost?: number; tabId?: number } = {}) {
+export async function runAgentCard(goal: string, parent?: HTMLElement, opts: { history?: string; userMessages?: string[]; progress?: (p: Record<string, unknown>) => void; maxCost?: number; tabId?: number; tier?: "fast" | "smart"; files?: Record<string, AgentFile>; preApproved?: { sites: string[]; autoSubmit: boolean } } = {}) {
   const run = addAgentRun(parent);
   const signal = (controller! as any).signal;
   agentRun = { el: run.el };
@@ -263,7 +263,7 @@ export async function runAgentCard(goal: string, parent?: HTMLElement, opts: { h
   let summary, steps = [], state = "done", plan = null, traceId: string | undefined;
   ui.traceStarted = id => { traceId = id; };
   try {
-    const result = await runAgent(goal, ui, { history: opts.history, userMessages: opts.userMessages, ...(opts.maxCost && { maxCost: opts.maxCost }), ...(opts.tabId && { tabId: opts.tabId }) });
+    const result = await runAgent(goal, ui, { history: opts.history, userMessages: opts.userMessages, ...(opts.maxCost && { maxCost: opts.maxCost }), ...(opts.tabId && { tabId: opts.tabId }), ...(opts.tier && { tier: opts.tier }), ...(opts.files && { files: opts.files }), ...(opts.preApproved && { preApproved: opts.preApproved }) });
     summary = result.summary;
     steps = result.steps;
     plan = result.plan || null;

@@ -2,7 +2,7 @@
 // done, it asks you, or it runs out of steps. Learns a shortcut and site notes at the end.
 import { memoriesFor } from "../../assistant/memory/memory.js";
 import { getProfile, type Profile } from "../../assistant/profile-core.js";
-import type { AgentUI, AgentRunResult, AgentState } from "../types.js";
+import type { AgentUI, AgentRunResult, AgentState, AgentFile } from "../types.js";
 import { agentSystemPrompt } from "../prompt.js";
 import { PROTECTED, setAgentSignal } from "../page-calls.js";
 import { addToAgentGroup, finishAgentGroup } from "./tab-group.js";
@@ -30,7 +30,11 @@ export const KEEP_FULL_SNAPSHOTS = 2; // older page snapshots are shortened to s
 // opts.maxCost: stop once the run has cost this many dollars (benchmark runs); needs a priced model
 // and recording, so it turns recording on. opts.record: record even if "Record agent runs" is off.
 // opts.tabId: the tab to work in (benchmark runs); otherwise the active tab of this window.
-export async function runAgent(goal: string, ui: AgentUI, opts: { history?: string; userMessages?: string[]; maxCost?: number; record?: boolean; tabId?: number } = {}): Promise<AgentRunResult> {
+// opts.tier: "fast" runs the whole task on the fast model (job-application batches); default "smart".
+// opts.files: files the run may upload besides the resume (a cover letter PDF).
+// opts.preApproved: sites where the user approved the work in advance (a batch they reviewed), with
+// autoSubmit as in an approved plan: submits there don't ask again (payments, deleting, posting still do).
+export async function runAgent(goal: string, ui: AgentUI, opts: { history?: string; userMessages?: string[]; maxCost?: number; record?: boolean; tabId?: number; tier?: "fast" | "smart"; files?: Record<string, AgentFile>; preApproved?: { sites: string[]; autoSubmit: boolean } } = {}): Promise<AgentRunResult> {
   const profile = await getProfile();
   const [tab] = opts.tabId ? [await chrome.tabs.get(opts.tabId)] : await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) throw new Error("No active tab.");
@@ -69,6 +73,12 @@ export async function runAgent(goal: string, ui: AgentUI, opts: { history?: stri
 
   setAgentSignal(ui.signal);
   state.signal = ui.signal;
+  state.tier = opts.tier;
+  state.files = opts.files;
+  if (opts.preApproved) {
+    state.planApproval = { sites: new Set(opts.preApproved.sites), autoSubmit: opts.preApproved.autoSubmit };
+    for (const s of opts.preApproved.sites) state.visitOk.add(s);
+  }
   state.userContext = opts.userMessages || [];
   // The site you started on is yours to act on; others are checked the first time.
   const startSite = siteOf(tab.url || "");
@@ -104,7 +114,7 @@ export async function runAgent(goal: string, ui: AgentUI, opts: { history?: stri
         const newest = transcript.at(-1)!;
         await rec?.beginStep(state, newest.role === "user" ? newest.text : undefined);
 
-        const reply = await callAgentModel({ system, transcript, tools: AGENT_TOOLS, signal: ui.signal, onThinking: ui.thinking });
+        const reply = await callAgentModel({ system, transcript, tools: AGENT_TOOLS, signal: ui.signal, onThinking: ui.thinking, tier: state.tier });
         transcript.push({ role: "assistant", text: reply.text, toolCalls: reply.toolCalls, raw: reply.raw });
         if (reply.text) ui.note(reply.text);
 

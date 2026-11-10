@@ -1,0 +1,106 @@
+/* The Jobs page: a dark control-room look (the user asked for "Jarvis-like"), in both colour
+   schemes. Everything from the web (titles, companies, places) is rendered as text only. */
+/* Vite loads the shared page.css after this file, so these selectors outrank its element rules. */
+html:root, html:root[data-theme="light"], html:root[data-theme="dark"] {
+  --bg: #070b12; --surface: #0d141f; --surface-2: #121c2a; --border: #1b2a3d;
+  --text: #dbe7f3; --muted: #7f93ab; --faint: #4e6079;
+  --cyan: #38d9f5; --cyan-dim: rgba(56, 217, 245, .14); --amber: #f5b53a; --amber-dim: rgba(245, 181, 58, .14);
+  --green: #4ade80; --red: #ff6b6b; --ok: #4ade80; --err: #ff6b6b; --focus: rgba(56, 217, 245, .35);
+  --beige: var(--cyan); --beige-hover: #6fe4fa; --beige-text: #04141a;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+html body {
+  background: var(--bg) radial-gradient(1200px 500px at 70% -10%, rgba(56, 217, 245, .10), transparent 60%),
+    radial-gradient(800px 400px at 0% 100%, rgba(245, 181, 58, .06), transparent 60%);
+  background-attachment: fixed;
+}
+body .top { background: color-mix(in srgb, var(--bg) 85%, transparent); }
+.links { display: flex; gap: 14px; }
+.links a { color: var(--muted); text-decoration: none; }
+.links a:hover { color: var(--text); }
+#jobsApp { max-width: 1100px; margin: 0 auto; padding: 22px 24px 90px; }
+#jobsApp h1 { font-size: 24px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 4px; }
+.hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.sys { margin: 0; color: var(--muted); font: 12px/1.6 var(--mono); letter-spacing: .02em; }
+.sys b { color: var(--cyan); font-weight: 500; }
+.hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+#jobsApp button { font: inherit; font-size: 13px; padding: 7px 13px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+#jobsApp button:hover { background: var(--surface-2); border-color: #2a3f5a; }
+#jobsApp button:disabled { opacity: .45; cursor: default; }
+#jobsApp button.primary { background: var(--cyan-dim); border-color: rgba(56, 217, 245, .45); color: var(--cyan); }
+#jobsApp button.primary:hover { background: rgba(56, 217, 245, .22); }
+#jobsApp button.go { background: rgba(74, 222, 128, .14); border-color: rgba(74, 222, 128, .45); color: var(--green); }
+#jobsApp button.danger { background: rgba(255, 107, 107, .12); border-color: rgba(255, 107, 107, .45); color: var(--red); }
+#jobsApp button.mini { padding: 3px 9px; font-size: 12px; border-radius: 7px; }
+.progress { min-height: 18px; margin: 8px 0 0; color: var(--cyan); font-family: var(--mono); font-size: 12px; }
+
+/* HUD tiles */
+.hud { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 16px 0 14px; }
+.tile { position: relative; background: linear-gradient(180deg, var(--surface), var(--bg)); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px 10px; overflow: hidden; }
+.tile::before { content: ""; position: absolute; inset: 0 auto auto 0; width: 100%; height: 2px; background: linear-gradient(90deg, var(--cyan), transparent 70%); opacity: .7; }
+.tile.amber::before { background: linear-gradient(90deg, var(--amber), transparent 70%); }
+.tile.green::before { background: linear-gradient(90deg, var(--green), transparent 70%); }
+.tile.red::before { background: linear-gradient(90deg, var(--red), transparent 70%); }
+.tile .v { font: 600 28px/1.1 var(--mono); letter-spacing: -.02em; }
+.tile .v small { font-size: 14px; color: var(--muted); font-weight: 400; }
+.tile .k { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.tile .s { display: block; color: var(--faint); font-size: 11.5px; margin-top: 2px; font-family: var(--mono); }
+
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.controls label { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
+#jobsApp .controls input[type=number] { width: 64px; padding: 4px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 7px; font: 13px var(--mono); }
+.dollar { display: inline-flex; align-items: center; gap: 2px; color: var(--text); }
+.spacer { flex: 1; }
+.warn { color: var(--amber); margin: 8px 0 0; }
+
+.tabs { display: flex; gap: 2px; margin: 18px 0 0; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+#jobsApp .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); padding: 8px 12px; white-space: nowrap; }
+#jobsApp .tabs button[aria-selected=true] { color: var(--cyan); border-bottom-color: var(--cyan); }
+.tabs .n { font: 11px var(--mono); color: var(--faint); margin-left: 4px; }
+.filters { display: flex; gap: 8px; margin: 10px 0; }
+#filters input, #filters select { padding: 6px 10px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13px; }
+#filters input { flex: 1; min-width: 0; }
+#filters select { width: auto; flex: none; }
+
+/* job rows */
+.jobs, .companies { list-style: none; margin: 0; padding: 0; }
+.job { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); align-items: start; }
+.job .bar { align-self: stretch; border-radius: 3px; background: linear-gradient(180deg, var(--cyan), transparent); opacity: .35; }
+.job.strong .bar { opacity: 1; }
+.job.likely .bar { opacity: .7; }
+.job .main { min-width: 0; }
+.job .title { font-weight: 600; color: var(--text); text-decoration: none; }
+.job .title:hover { color: var(--cyan); }
+.job .co { color: var(--muted); }
+.job .meta { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 3px; font-size: 12px; color: var(--muted); align-items: center; }
+.chip { display: inline-block; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); font: 11px/1.6 var(--mono); color: var(--muted); }
+.chip.sponsor-strong { color: var(--green); border-color: rgba(74, 222, 128, .4); }
+.chip.sponsor-likely { color: var(--cyan); border-color: rgba(56, 217, 245, .4); }
+.chip.sponsor-possible { color: var(--amber); border-color: rgba(245, 181, 58, .4); }
+.chip.status-applied { color: var(--green); } .chip.status-interview, .chip.status-offer { color: var(--amber); } .chip.status-rejected, .chip.status-closed { color: var(--red); } .chip.status-needs_you { color: var(--amber); }
+.job .why { font-size: 12px; color: var(--faint); margin-top: 2px; }
+.job .blocked { color: var(--amber); }
+.job .acts { display: flex; flex-direction: column; gap: 5px; align-items: flex-end; }
+.job .acts .row { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+.job select { width: auto; padding: 3px 6px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 7px; font: 12px var(--mono); }
+.job input.note { width: 220px; padding: 3px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 7px; font-size: 12px; }
+.job .letter { margin-top: 6px; }
+.job .letter summary { font-size: 12px; color: var(--cyan); cursor: pointer; }
+.job pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12.5px/1.55 inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 6px 0 0; max-height: 360px; overflow: auto; }
+.empty { color: var(--muted); padding: 30px 0; text-align: center; font-family: var(--mono); font-size: 12.5px; }
+
+.add { display: flex; gap: 8px; margin: 10px 0 14px; flex-wrap: wrap; }
+#addCompany input { flex: 1; min-width: 180px; padding: 6px 10px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13px; }
+.company { display: flex; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.company .name { font-weight: 600; min-width: 140px; }
+.company .board { color: var(--muted); font: 12px var(--mono); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.company .err { color: var(--red); font-size: 12px; }
+
+@media (max-width: 720px) {
+  main { padding: 16px 16px 80px; }
+  .job { grid-template-columns: 6px minmax(0, 1fr); }
+  .job .acts { grid-column: 2; align-items: flex-start; }
+  .job .acts .row { justify-content: flex-start; }
+  .job input.note { width: 100%; }
+}
