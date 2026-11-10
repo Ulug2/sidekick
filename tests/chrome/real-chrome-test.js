@@ -357,9 +357,12 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   await prof.locator('#sec-skills').scrollIntoViewIfNeeded();
   await prof.screenshot({ path: path.join(OUT, '09-profile-skills-dark.png') });
 
+  check('Real Chrome profile: four groups in the section menu, application fields under Applications', (await prof.locator('.toc .toc-group').allTextContents()).join('|') === 'About you|Applications|Memory|Privacy' && (await prof.locator('#appSections section.card').count()) === 5 && (await prof.locator('#fieldSections section.card').count()) === 4, (await prof.locator('.toc').innerText()).replace(/\n/g, '|'));
+
   // ---------- 9. options: new settings round-trip ----------
   const opt = await ctx.newPage();
   await opt.goto(url('options.html'));
+  check('Real Chrome settings: seven sections in a menu, model names folded away', (await opt.locator('.toc a').count()) === 7 && (await opt.locator('#sec-connect #anthropicKey').count()) === 1 && !(await opt.locator('details.advanced').evaluate(d => d.open)) && (await opt.locator('#sec-pages .pages a').count()) === 5);
   await opt.waitForTimeout(300);
   check('Real Chrome options: tie-break models and learning switch shown with defaults', await opt.inputValue('#anthropicBest') === 'claude-opus-5-5' && await opt.inputValue('#openaiBest') === 'gpt-6-astra' && await opt.isChecked('#learnSites'));
   await opt.uncheck('#learnSites');

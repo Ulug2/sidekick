@@ -41,6 +41,12 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .toc { position: sticky; top: 76px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
 .toc a { color: var(--muted); text-decoration: none; font-size: 13.5px; padding: 5px 10px; border-radius: 8px; }
 .toc a:hover { background: var(--surface); color: var(--text); }
+.toc .toc-group { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); padding: 12px 10px 3px; }
+.toc .toc-group:first-child { padding-top: 2px; }
+/* Group headings between cards on long pages (profile): bigger than a card title, with room above. */
+h2.group { font-size: 20px; font-weight: 600; letter-spacing: -.02em; margin: 44px 0 0; padding-top: 24px; border-top: 2px solid var(--text); scroll-margin-top: 72px; }
+h2.group + .card, h2.group + .group-hint + .card { border-top: 0; padding-top: 14px; }
+.group-hint { margin: 6px 0 0; max-width: 620px; }
 /* Narrow windows (e.g. Chrome sharing the screen with the side panel): the section menu becomes
    one scrollable row under the top bar, on a solid background, so it never covers the page.
    This rule must come after the .toc rules above, or they override it. */
@@ -53,6 +59,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
   }
   .toc::-webkit-scrollbar { display: none; }
   .toc a { flex: none; padding: 5px 10px; }
+  .toc .toc-group { display: none; }
 }
 
 .hero h1 { font-size: 26px; font-weight: 600; letter-spacing: -.025em; margin: 0 0 6px; }

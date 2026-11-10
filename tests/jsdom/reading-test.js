@@ -45,7 +45,7 @@ function panel(frames) {
     },
     runtime: { getURL: p => p }
   };
-  loadScripts(w, ['agent.js'], ['readAllText', 'groupRepeats']);
+  loadScripts(w, ['agent.js'], ['readAllText', 'groupRepeats', 'skPageSnapshot']);
   return { w, calls };
 }
 
@@ -81,6 +81,14 @@ function panel(frames) {
     const lines = ['[260:25] clickable "Expand Graph"', '[260:26] textbox:math "Question 1 Part 1 of 16:" empty', '[260:32] clickable "Expand Graph"', '[260:39] clickable "Expand Graph"', '[260:46] clickable "Expand Graph"'];
     const out = w.groupRepeats(lines).join('\n');
     check('Four "Expand Graph" buttons: one line, ids in page order, each its own (no "any of these works")', /^\[260:25,260:32,260:39,260:46\] clickable "Expand Graph" ×4 \(in page order; each belongs to its own item\)$/m.test(out) && !/any of these/.test(out), out);
+  }
+
+  // ---------- 5. a field's placeholder is in the snapshot (the "Additional information" box that takes a cover letter) ----------
+  {
+    const form = new JSDOM('<!doctype html><html><head><title>Apply</title></head><body><main><form><label for="ai">Additional information</label><textarea id="ai" placeholder="You can paste a cover letter here (optional)"></textarea><label for="em">Email</label><input id="em" placeholder="Email"><label for="n">Notes</label><input id="n" aria-describedby="nh"><span id="nh">Anything else</span></form></main></body></html>', { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://jobs.example.com/apply' }).window; prep(form);
+    const { w } = panel({ 0: form });
+    const lines = form.eval(`(${w.skPageSnapshot.toString()})`)({}).elements;
+    check('A placeholder that says more than the label is shown; one that repeats the label is not', lines.some(l => /textarea "Additional information" empty, placeholder: "You can paste a cover letter here \(optional\)"/.test(l)) && lines.some(l => /textbox "Email" empty(?!.*placeholder)/.test(l)) && lines.some(l => /textbox "Notes" empty, hint: "Anything else"/.test(l)), lines.join('\n'));
   }
 
   console.log(results.join('\n'));

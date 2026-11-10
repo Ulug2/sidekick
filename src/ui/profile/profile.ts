@@ -62,10 +62,13 @@ export const slug = (s: any) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").repl
 
 // ---------- render ----------
 
+// Which field sections belong under "Applications" (what forms ask for) rather than "About you".
+export const APPLICATION_SECTIONS = /^(Work eligibility|Job preferences|Voluntary self-identification|Saved answers|Cover letter)/;
 export function renderFields() {
-  const wrap = $("#fieldSections");
-  wrap.innerHTML = "";
+  $("#fieldSections").innerHTML = "";
+  $("#appSections").innerHTML = "";
   for (const [title, fields] of PROFILE_SECTIONS) {
+    const wrap = APPLICATION_SECTIONS.test(title) ? $("#appSections") : $("#fieldSections");
     const sec = document.createElement("section");
     sec.className = "card";
     sec.id = "sec-" + slug(title);
@@ -108,24 +111,27 @@ export function renderFields() {
   }
 }
 
+// The section menu, in the page's four groups.
 export function renderToc() {
-  const items = [
-    ...(!$("#sec-key").hidden ? [["AI model", "sec-key"]] : []),
-    ["Resume", "sec-resume"],
-    ...PROFILE_SECTIONS.map(([t]) => [t.replace(/ \(.*\)$/, ""), "sec-" + slug(t)]),
-    ["Memories", "sec-memories"],
-    ["Skills", "sec-skills"],
-    ["Documents", "sec-docs"],
-    ["Privacy", "sec-privacy"],
-    ["Site skills", "sec-sites"],
-    ["Applications", "sec-apps"]
+  const field = (re: RegExp) => PROFILE_SECTIONS.filter(([t]) => re.test(t)).map(([t]) => [t.replace(/ \(.*\)$/, ""), "sec-" + slug(t)]);
+  const groups: [string, string[][]][] = [
+    ["About you", [...(!$("#sec-key").hidden ? [["AI model", "sec-key"]] : []), ["Resume", "sec-resume"], ...field(/^(?!Work eligibility|Job preferences|Voluntary|Saved answers|Cover letter)/)]],
+    ["Applications", [...field(APPLICATION_SECTIONS), ["Site skills", "sec-sites"], ["Applications sent", "sec-apps"]]],
+    ["Memory", [["Memories", "sec-memories"], ["Skills", "sec-skills"], ["Documents", "sec-docs"]]],
+    ["Privacy", [["Privacy and use", "sec-privacy"]]]
   ];
   $("#toc").innerHTML = "";
-  for (const [label, id] of items) {
-    const a = document.createElement("a");
-    a.href = "#" + id;
-    a.textContent = label;
-    $("#toc").appendChild(a);
+  for (const [group, items] of groups) {
+    const g = document.createElement("span");
+    g.className = "toc-group";
+    g.textContent = group;
+    $("#toc").appendChild(g);
+    for (const [label, id] of items) {
+      const a = document.createElement("a");
+      a.href = "#" + id;
+      a.textContent = label;
+      $("#toc").appendChild(a);
+    }
   }
 }
 

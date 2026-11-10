@@ -5,7 +5,8 @@ import { withStorageLock } from "../../core/storage/update.js";
 import { chat, MAX_CHATS, startNewChat, openChat } from "./sidepanel.js";
 import { FAST_ONLY } from "../../assistant/routing.js";
 import { getProfile } from "../../assistant/profile-core.js";
-import { updateSessionNotes, reflectOnChat } from "../../assistant/session.js";
+import { updateSessionNotesAndFacts, reflectOnChat } from "../../assistant/session.js";
+import { addMemory } from "../../assistant/memory/memory.js";
 import { showToast } from "./messages.js";
 import { ICON } from "./icons.js";
 import { $ } from "../shared/dom.js";
@@ -68,8 +69,15 @@ export function refreshNotes(c: any, userMsg: any, replyText: any) {
     const profile = await getProfile();
     const userName = (profile.preferredName || profile.fullName || "").split(/\s+/)[0] || "the user";
     try {
-      c.notes = await updateSessionNotes({ notes: c.notes || [], userText: userMsg.text, replyText, userName });
+      const { notes, remember } = await updateSessionNotesAndFacts({ notes: c.notes || [], userText: userMsg.text, replyText, userName });
+      c.notes = notes;
       if (c === chat) renderPin();
+      // Lasting facts in what you just wrote go to long-term memory right away (not only at the end of the chat).
+      if (s.memoryAuto && remember.length) {
+        const kept: string[] = [];
+        for (const m of remember) { try { const r = await addMemory(m.text, "chat", m.kind); if (!r.updated) kept.push(m.text); } catch { /* secrets or empty: not stored */ } }
+        if (kept.length) showToast(`Remembered: ${kept.join(" · ").slice(0, 160)}`, { label: "Edit", onClick: () => chrome.tabs.create({ url: chrome.runtime.getURL("profile.html#sec-memories") }) });
+      }
       if (c.messages.length) {
         if (c === chat) await saveChat(c);
         else await patchStoredChat(c.id, { notes: c.notes });

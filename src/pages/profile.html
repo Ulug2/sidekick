@@ -10,9 +10,9 @@
   <header class="top">
     <div class="brand">
       <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="12" rx="9" ry="4.2"/><ellipse cx="12" cy="12" rx="9" ry="4.2" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="9" ry="4.2" transform="rotate(120 12 12)"/></g></svg>
-      <span>Sidekick</span>
+      <span>Your profile</span>
     </div>
-    <span id="saveState" class="save-state" role="status"></span>
+    <span class="row tight"><span id="saveState" class="save-state" role="status"></span><a class="link small" style="color:inherit;margin-left:14px" href="options.html">Settings →</a></span>
   </header>
 
   <div class="layout">
@@ -21,7 +21,7 @@
     <main>
       <section class="hero">
         <h1 id="heroTitle">Your profile</h1>
-        <p id="heroText">Everything here helps Sidekick write as you, answer questions about you, and fill out applications for you. It's saved only in this browser and sent to your AI provider only when a request needs it.</p>
+        <p id="heroText">Four parts: <strong>About you</strong> (resume and details), <strong>Applications</strong> (what forms ask), <strong>Memory</strong> (what Sidekick learned), <strong>Privacy</strong>. Everything is saved only in this browser and sent to your AI provider only when a request needs it.</p>
         <ol class="steps" id="onboardSteps" hidden>
           <li data-step="key">Connect an AI model</li>
           <li data-step="resume">Upload your resume</li>
@@ -46,9 +46,10 @@
         <div class="row"><button id="keySave" class="primary" type="button">Save key</button><span id="keyStatus" class="muted small"></span></div>
       </section>
 
+      <h2 class="group" id="group-you">About you</h2>
       <section class="card" id="sec-resume">
         <h2>Resume</h2>
-        <p class="muted">Upload a PDF, Word (.docx) or text file. Sidekick reads it, fills in your profile, and can attach it to job applications.</p>
+        <p class="muted">Upload a PDF, Word (.docx) or text file. Sidekick reads it, fills in your profile, and attaches it to job applications.</p>
         <div id="resumeDrop" class="drop" tabindex="0" role="button" aria-label="Upload resume">
           <svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
           <div><strong>Drop your resume here</strong><span class="muted"> or click to choose a file</span></div>
@@ -66,12 +67,32 @@
 
       <div id="fieldSections"></div>
 
+      <h2 class="group" id="group-applications">Applications</h2>
+      <p class="muted group-hint">What application forms ask for. The agent answers from here and never guesses: an empty field becomes a question to you.</p>
+      <div id="appSections"></div>
+
+      <section class="card" id="sec-sites">
+        <h2>Site skills</h2>
+        <p class="muted">What the agent learned on sites it worked on. A shortcut replays the routine steps that worked last time (navigation, fields from this profile, your resume) in a second, and always stops for written answers, choices that aren't in your profile, consent checkboxes, and before anything final. Notes are short tips about tricky parts of a site.</p>
+        <div id="sitesList"></div>
+      </section>
+
+      <section class="card" id="sec-apps">
+        <div class="row between">
+          <h2>Applications sent</h2>
+          <button id="exportApps" type="button">Export CSV</button>
+        </div>
+        <p class="muted">Jobs the agent applied to for you. The full pipeline (eligible jobs, today's batch, statuses) is on the <a href="jobs.html" style="color:inherit">Jobs page</a>.</p>
+        <div id="appsTable"></div>
+      </section>
+
+      <h2 class="group" id="group-memory">Memory</h2>
       <section class="card" id="sec-memories">
         <div class="row between">
           <h2>Memories</h2>
           <span><span id="memCount" class="muted small"></span> <button id="memClear" type="button" class="ghost small">Clear all</button></span>
         </div>
-        <p class="muted">What Sidekick has learned about you. During a chat it keeps short pinned notes; when you start a new chat it saves only what matters here and lets the rest go. Edit or delete anything, or add your own.</p>
+        <p class="muted">What Sidekick has learned about you: from your messages as you write them (only what's lasting), from answers you give the agent, and from a review when a chat ends. Edit or delete anything, or add your own.</p>
         <label class="um-label">How Sidekick sees you <span class="muted small">(written by Sidekick after your chats; you can edit it)</span>
           <textarea id="userModel" placeholder="Nothing yet. After a few chats, Sidekick writes a short summary of how you like to work here."></textarea>
         </label>
@@ -93,7 +114,7 @@
           <h2>Skills</h2>
           <span id="skillCount" class="muted small"></span>
         </div>
-        <p class="muted">How Sidekick does recurring tasks your way, learned from your corrections and from what worked (for example how to format MyOpenMath answers). Only the names are always loaded; a skill's steps are used when a message matches it. Edit, add or delete anything.</p>
+        <p class="muted">How Sidekick does recurring tasks your way, learned from your corrections and from what worked (for example how to format MyOpenMath answers). Only the names are always loaded; a skill's steps are used when a message matches it.</p>
         <ul id="skillList" class="skill-list"></ul>
         <details class="skill-new">
           <summary>Add a skill</summary>
@@ -117,6 +138,7 @@
         <input id="docInput" type="file" multiple accept=".pdf,.docx,.txt,.md,.markdown,.csv,application/pdf,text/plain" hidden />
       </section>
 
+      <h2 class="group" id="group-privacy">Privacy</h2>
       <section class="card" id="sec-privacy">
         <h2>Privacy and use</h2>
         <label class="switch-row">
@@ -124,21 +146,6 @@
           <span><strong>Use my profile in normal chats</strong><br><span class="muted small">So rewrites sound like you and Sidekick can answer questions about you. Agent mode always uses it.</span></span>
         </label>
         <p class="muted small">Never put passwords, card numbers, or Social Security numbers here. The agent is built to refuse to type those; you enter them yourself.</p>
-      </section>
-
-      <section class="card" id="sec-sites">
-        <h2>Site skills</h2>
-        <p class="muted">What the agent learned on sites it worked on. A shortcut replays the routine steps that worked last time (navigation, fields from this profile, your resume) in a second, and always stops for written answers, choices that aren't in your profile, consent checkboxes, and before anything final. Notes are short tips about tricky parts of a site.</p>
-        <div id="sitesList"></div>
-      </section>
-
-      <section class="card" id="sec-apps">
-        <div class="row between">
-          <h2>Applications</h2>
-          <button id="exportApps" type="button">Export CSV</button>
-        </div>
-        <p class="muted">Jobs the agent applied to for you.</p>
-        <div id="appsTable"></div>
       </section>
     </main>
   </div>

@@ -45,7 +45,7 @@ function makeStore(init = {}) { let data = JSON.parse(JSON.stringify(init)); ret
     await sleep(100);
     const $ = s => w.document.querySelector(s);
     check('Onboarding: welcome title + steps + key section', $('#heroTitle').textContent === 'Welcome to Sidekick' && !$('#onboardSteps').hidden && !$('#sec-key').hidden);
-    check('All profile sections rendered', w.document.querySelectorAll('#fieldSections .card').length === 9 && !!$('#f-eeoRace') && $('#f-eeoRace').value === 'Decline to self-identify');
+    check('All profile sections rendered (4 about you, 5 for applications)', w.document.querySelectorAll('#fieldSections .card').length === 4 && w.document.querySelectorAll('#appSections .card').length === 5 && !!$('#f-eeoRace') && $('#f-eeoRace').value === 'Decline to self-identify');
     check('Table of contents built', w.document.querySelectorAll('#toc a').length >= 12);
     // save key
     $('#keyValue').value = 'sk-ant-xyz'; $('#keySave').click(); await sleep(50);

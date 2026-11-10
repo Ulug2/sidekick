@@ -6,17 +6,24 @@
   <title>Sidekick Settings</title>
   <link rel="stylesheet" href="../ui/shared/page.css" />
   <style>
-    main { max-width: 640px; margin: 0 auto; padding: 28px 24px 90px; }
     .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
     @media (max-width: 560px) { .row2 { grid-template-columns: 1fr; } }
     .card label { margin-bottom: 14px; }
     .switch-row { margin-bottom: 12px; }
-    .savebar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 24px; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(8px); border-top: 1px solid var(--border); display: flex; justify-content: center; gap: 12px; align-items: center; }
+    .savebar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 24px; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(8px); border-top: 1px solid var(--border); display: flex; justify-content: center; gap: 12px; align-items: center; z-index: 6; }
     .usage td:not(:first-child), .usage th:not(:first-child) { text-align: right; }
     .pill { display: inline-block; font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--surface); }
     .pill.good { color: var(--ok); }
     .pill.bad { color: var(--err); }
     a.link { color: inherit; }
+    details.advanced { margin: 4px 0 14px; }
+    details.advanced summary { cursor: pointer; color: var(--muted); font-size: 13px; padding: 6px 0; }
+    details.advanced[open] summary { margin-bottom: 10px; }
+    .pages { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 8px; }
+    .pages a { display: block; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; text-decoration: none; color: inherit; background: var(--surface); }
+    .pages a:hover { background: var(--surface-2); }
+    .pages strong { display: block; margin-bottom: 2px; }
+    .pages .small { color: var(--muted); }
   </style>
 </head>
 <body>
@@ -25,128 +32,162 @@
       <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="12" rx="9" ry="4.2"/><ellipse cx="12" cy="12" rx="9" ry="4.2" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="9" ry="4.2" transform="rotate(120 12 12)"/></g></svg>
       <span>Settings</span>
     </div>
-    <a class="link small" href="profile.html">Your profile, memories and documents →</a>
+    <a class="link small" href="profile.html">Your profile →</a>
   </header>
 
-  <main>
-    <section class="card">
-      <h2>Your assistant</h2>
-      <p class="muted">Give it a name and a personality. It always knows it works for you.</p>
-      <div class="row2">
-        <label>Name <input id="assistantName" type="text" placeholder="Sidekick" /></label>
-        <label>Call me <input id="addressAs" type="text" placeholder="Your first name (default)" /></label>
-      </div>
-      <label>Personality
-        <select id="personality">
-          <option value="balanced">Balanced: calm, capable, direct (recommended)</option>
-          <option value="concise">Concise: minimal words</option>
-          <option value="warm">Warm: friendly and encouraging</option>
-          <option value="witty">Witty: dry, understated humor</option>
-          <option value="formal">Formal: polished and precise</option>
-        </select>
-      </label>
-      <label class="switch-row"><input type="checkbox" id="proactive" /><span><strong>Be proactive</strong><br><span class="muted small">Suggest an obvious next step and point out things it notices on your pages.</span></span></label>
-      <label class="switch-row"><input type="checkbox" id="readAloud" /><span><strong>Read replies aloud</strong><br><span class="muted small">Replies to dictated messages are always read aloud.</span></span></label>
-      <label>Custom instructions <span class="muted small">(added to everything; for example "Answer in English unless I write in Russian")</span>
-        <textarea id="customInstructions" spellcheck="false"></textarea>
-      </label>
-    </section>
+  <div class="layout">
+    <nav class="toc" aria-label="Sections">
+      <a href="#sec-connect">Connect</a>
+      <a href="#sec-models">Models</a>
+      <a href="#sec-assistant">Assistant</a>
+      <a href="#sec-memory">Memory</a>
+      <a href="#sec-agent">Agent</a>
+      <a href="#sec-pages">Pages &amp; tools</a>
+      <a href="#sec-usage">Usage</a>
+    </nav>
 
-    <section class="card">
-      <h2>AI models</h2>
-      <p class="muted">Sidekick sends everyday messages to a fast, cheap model and hard ones (math, code, analysis, images, agent work) to a smart model. You can override it per chat with the badge at the top of the panel.</p>
-      <label>Provider
-        <select id="provider">
-          <option value="anthropic">Anthropic (Claude)</option>
-          <option value="openai">OpenAI</option>
-        </select>
-      </label>
-      <div class="row2">
-        <label>Anthropic API key <input id="anthropicKey" type="password" placeholder="sk-ant-..." autocomplete="off" /></label>
-        <label>OpenAI API key <input id="openaiKey" type="password" placeholder="sk-..." autocomplete="off" /></label>
-        <label>Claude fast model <input id="anthropicFast" list="anthropicModels" /></label>
-        <label>Claude smart model <input id="anthropicSmart" list="anthropicModels" /></label>
-        <label>OpenAI fast model <input id="openaiFast" list="openaiModels" /></label>
-        <label>OpenAI smart model <input id="openaiSmart" list="openaiModels" /></label>
-        <label>Claude tie-break model <input id="anthropicBest" list="anthropicModels" /></label>
-        <label>OpenAI tie-break model <input id="openaiBest" list="openaiModels" /></label>
-      </div>
-      <p class="muted">The tie-break model only runs when the double-check and the first answer disagree on a math problem and the calculator can't settle it.</p>
-      <datalist id="anthropicModels">
-        <option value="claude-haiku-5-5">Fast and cheap</option>
-        <option value="claude-sonnet-5-5">Smart, good balance</option>
-        <option value="claude-opus-5-5">Most capable, slower</option>
-      </datalist>
-      <datalist id="openaiModels">
-        <option value="gpt-5.6-luna">Fast and cheap</option>
-        <option value="gpt-5.6-terra">Smarter, lower cost</option>
-        <option value="gpt-6-astra">Most capable</option>
-      </datalist>
-      <div class="row2">
-        <label>Model choice
-          <select id="routing">
-            <option value="auto">Auto (recommended)</option>
-            <option value="fast">Always fast</option>
-            <option value="smart">Always smart</option>
+    <main>
+      <section class="hero">
+        <h1>Settings</h1>
+        <p>How Sidekick connects, which models it uses, how it talks to you, what it remembers, and what the agent may do. Press <strong>Save</strong> at the bottom after changes.</p>
+      </section>
+
+      <section class="card" id="sec-connect">
+        <h2>Connect</h2>
+        <p class="muted">Sidekick uses your own API key. One provider is enough; it picks the provider whose key you filled in.</p>
+        <label>Provider
+          <select id="provider">
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="openai">OpenAI</option>
           </select>
         </label>
-        <label>Thinking effort: smart model
-          <select id="smartEffort">
-            <option value="low">Low</option><option value="medium">Medium</option><option value="high">High (best for math)</option>
+        <div class="row2">
+          <label>Anthropic API key <input id="anthropicKey" type="password" placeholder="sk-ant-..." autocomplete="off" /></label>
+          <label>OpenAI API key <input id="openaiKey" type="password" placeholder="sk-..." autocomplete="off" /></label>
+        </div>
+      </section>
+
+      <section class="card" id="sec-models">
+        <h2>Models</h2>
+        <p class="muted">Everyday messages go to a fast, cheap model; math, code, analysis, images and agent work go to a smart one. Job-application batches run on the fast model. Override per chat with the badge at the top of the panel.</p>
+        <div class="row2">
+          <label>Model choice
+            <select id="routing">
+              <option value="auto">Auto (recommended)</option>
+              <option value="fast">Always fast</option>
+              <option value="smart">Always smart</option>
+            </select>
+          </label>
+          <label>Thinking effort: agent
+            <select id="agentEffort">
+              <option value="low">Low</option><option value="medium">Medium (recommended)</option><option value="high">High</option>
+            </select>
+          </label>
+        </div>
+        <label class="switch-row"><input type="checkbox" id="verifyAnswers" /><span><strong>Double-check math answers</strong><br><span class="muted small">A second pass re-solves math and homework problems with the calculator and fixes the answer if it was wrong. One more smart-model call; far more reliable.</span></span></label>
+        <label class="switch-row"><input type="checkbox" id="webSearch" /><span><strong>Use the provider's built-in web search</strong><br><span class="muted small">Best results, with citations; billed per search by Anthropic or OpenAI on top of tokens. When off, Sidekick searches through DuckDuckGo (free).</span></span></label>
+        <details class="advanced">
+          <summary>Advanced: model names and thinking effort</summary>
+          <div class="row2">
+            <label>Claude fast model <input id="anthropicFast" list="anthropicModels" /></label>
+            <label>Claude smart model <input id="anthropicSmart" list="anthropicModels" /></label>
+            <label>OpenAI fast model <input id="openaiFast" list="openaiModels" /></label>
+            <label>OpenAI smart model <input id="openaiSmart" list="openaiModels" /></label>
+            <label>Claude tie-break model <input id="anthropicBest" list="anthropicModels" /></label>
+            <label>OpenAI tie-break model <input id="openaiBest" list="openaiModels" /></label>
+            <label>Thinking effort: smart model
+              <select id="smartEffort">
+                <option value="low">Low</option><option value="medium">Medium</option><option value="high">High (best for math)</option>
+              </select>
+            </label>
+            <label>Thinking effort: fast model
+              <select id="fastEffort">
+                <option value="low">Low (recommended)</option><option value="medium">Medium</option><option value="high">High</option>
+              </select>
+            </label>
+          </div>
+          <p class="muted small">The tie-break model only runs when the double-check and the first answer disagree on a math problem and the calculator can't settle it. Leave a model empty to use the default.</p>
+          <datalist id="anthropicModels">
+            <option value="claude-haiku-5-5">Fast and cheap</option>
+            <option value="claude-sonnet-5-5">Smart, good balance</option>
+            <option value="claude-opus-5-5">Most capable, slower</option>
+          </datalist>
+          <datalist id="openaiModels">
+            <option value="gpt-5.6-luna">Fast and cheap</option>
+            <option value="gpt-5.6-terra">Smarter, lower cost</option>
+            <option value="gpt-6-astra">Most capable</option>
+          </datalist>
+        </details>
+      </section>
+
+      <section class="card" id="sec-assistant">
+        <h2>Assistant</h2>
+        <p class="muted">Its name, how it talks to you, and standing instructions.</p>
+        <div class="row2">
+          <label>Name <input id="assistantName" type="text" placeholder="Sidekick" /></label>
+          <label>Call me <input id="addressAs" type="text" placeholder="Your first name (default)" /></label>
+        </div>
+        <label>Personality
+          <select id="personality">
+            <option value="balanced">Balanced: calm, capable, direct (recommended)</option>
+            <option value="concise">Concise: minimal words</option>
+            <option value="warm">Warm: friendly and encouraging</option>
+            <option value="witty">Witty: dry, understated humor</option>
+            <option value="formal">Formal: polished and precise</option>
           </select>
         </label>
-        <label>Thinking effort: fast model
-          <select id="fastEffort">
-            <option value="low">Low (recommended)</option><option value="medium">Medium</option><option value="high">High</option>
+        <label class="switch-row"><input type="checkbox" id="proactive" /><span><strong>Be proactive</strong><br><span class="muted small">Suggest an obvious next step and point out things it notices on your pages.</span></span></label>
+        <label class="switch-row"><input type="checkbox" id="readAloud" /><span><strong>Read replies aloud</strong><br><span class="muted small">Replies to dictated messages are always read aloud.</span></span></label>
+        <label>Custom instructions <span class="muted small">(added to everything; for example "Answer in English unless I write in Russian")</span>
+          <textarea id="customInstructions" spellcheck="false"></textarea>
+        </label>
+      </section>
+
+      <section class="card" id="sec-memory">
+        <h2>Memory</h2>
+        <label class="switch-row"><input type="checkbox" id="memoryAuto" /><span><strong>Learn about me automatically</strong><br><span class="muted small">After each of your messages, Sidekick checks whether it contains something lasting about you (your background, status, what you want, how you like things done, a deadline) and keeps it; the rest is left alone. Answers you give the agent during applications are kept the same way. When you start a new chat it also reviews the one you finished. When off, it only saves what you explicitly ask it to remember.</span></span></label>
+        <p class="small"><a class="link" href="profile.html#sec-memories">Review and edit memories →</a></p>
+      </section>
+
+      <section class="card" id="sec-agent">
+        <h2>Agent</h2>
+        <p class="muted">What the browser agent may do on pages, and how it works.</p>
+        <label>Ask before
+          <select id="approvalMode">
+            <option value="final">Final actions only: submit, send, buy, delete, post (recommended)</option>
+            <option value="every">Every click and keystroke</option>
           </select>
         </label>
-        <label>Thinking effort: agent
-          <select id="agentEffort">
-            <option value="low">Low</option><option value="medium">Medium (recommended)</option><option value="high">High</option>
-          </select>
+        <label class="switch-row"><input type="checkbox" id="trustedInput" /><span><strong>Use real clicks and typing</strong><br><span class="muted small">Works on far more sites. Chrome shows "Sidekick started debugging this browser" while the agent runs; that's expected. Click Cancel on that bar to stop it.</span></span></label>
+        <label class="switch-row"><input type="checkbox" id="actionCheck" /><span><strong>Safety check before new sites</strong><br><span class="muted small">Before the agent goes to a site it hasn't used in this task, or types your personal details on one, a fast AI checks the step against what you asked (it never sees the page itself). If it looks off, you're asked. A fraction of a cent per check.</span></span></label>
+        <label class="switch-row"><input type="checkbox" id="learnSites" /><span><strong>Learn from finished tasks</strong><br><span class="muted small">After a task, the agent saves the steps that worked as a shortcut for that site (and a few notes if something was tricky). Nothing you typed is saved. See them on your profile page under Site skills.</span></span></label>
+        <label class="switch-row"><input type="checkbox" id="recordRuns" /><span><strong>Record agent runs</strong><br><span class="muted small">Saves every step of each task (a screenshot, what the AI was told and did, your approvals, the cost) so you can replay it. Only on this computer; the last 30 runs are kept.</span></span></label>
+        <label class="switch-row"><input type="checkbox" id="notifyAgent" /><span><strong>Notify me</strong><br><span class="muted small">A Chrome notification when the agent needs your OK or an answer, or finishes, while you're elsewhere.</span></span></label>
+        <label class="switch-row"><input type="checkbox" id="agentTabGroup" /><span><strong>Keep the agent's tabs together</strong><br><span class="muted small">Tabs the agent opens go into a "Sidekick" tab group.</span></span></label>
+        <label>Never act on these sites <span class="muted small">(one per line; the agent can still read them)</span>
+          <textarea id="blockedSites" spellcheck="false"></textarea>
         </label>
-      </div>
-      <label class="switch-row"><input type="checkbox" id="verifyAnswers" /><span><strong>Double-check math answers</strong><br><span class="muted small">For math and homework questions, a second pass re-solves the problem with the calculator and fixes the answer if it was wrong. Slower and costs one more smart-model call, but far more reliable.</span></span></label>
-      <label class="switch-row"><input type="checkbox" id="webSearch" /><span><strong>Use the provider's built-in web search</strong><br><span class="muted small">Best results, with citations. Billed per search by Anthropic or OpenAI on top of tokens. When off, Sidekick searches through DuckDuckGo instead (free).</span></span></label>
-    </section>
+      </section>
 
-    <section class="card">
-      <h2>Memory</h2>
-      <label class="switch-row"><input type="checkbox" id="memoryAuto" /><span><strong>Learn about me automatically</strong><br><span class="muted small">When you start a new chat, Sidekick reviews the one you finished and keeps only what matters about you: how you like answers, your habits, goals and key facts. It tells you what it learned. When off, it only saves what you explicitly ask it to remember.</span></span></label>
-      <p class="small"><a class="link" href="profile.html#sec-memories">Review and edit memories →</a></p>
-    </section>
+      <section class="card" id="sec-pages">
+        <h2>Pages &amp; tools</h2>
+        <div class="pages">
+          <a href="jobs.html"><strong>Jobs</strong><span class="small">Eligible jobs, today's batch, applications</span></a>
+          <a href="profile.html"><strong>Profile</strong><span class="small">Resume, details, memories, documents</span></a>
+          <a href="runs.html"><strong>Agent runs</strong><span class="small">Replay any run step by step</span></a>
+          <a href="bench.html"><strong>Benchmark</strong><span class="small">Ten real-site tasks, scored per version</span></a>
+          <a href="evals.html"><strong>Quality checks</strong><span class="small"><span id="evalStatus" class="pill">Not run yet</span> · math, identity, safety, memory</span></a>
+        </div>
+        <p class="muted small">Run the quality checks after changing models or custom instructions.</p>
+      </section>
 
-    <section class="card">
-      <h2>Agent permissions</h2>
-      <label>Ask before
-        <select id="approvalMode">
-          <option value="final">Final actions only: submit, send, buy, delete, post (recommended)</option>
-          <option value="every">Every click and keystroke</option>
-        </select>
-      </label>
-      <label class="switch-row"><input type="checkbox" id="trustedInput" /><span><strong>Use real clicks and typing</strong><br><span class="muted small">Works on far more sites. Chrome shows "Sidekick started debugging this browser" while the agent runs; that's expected. Click Cancel on that bar to stop it.</span></span></label>
-      <label class="switch-row"><input type="checkbox" id="learnSites" /><span><strong>Learn from finished tasks</strong><br><span class="muted small">After a task, the agent saves the steps that worked as a shortcut for that site (and a few notes if something was tricky), so next time is much faster. Nothing you typed is saved: fields from your profile are stored as which field to use, and written answers are always redone. See and delete them on your profile page under Site skills.</span></span></label>
-      <label class="switch-row"><input type="checkbox" id="actionCheck" /><span><strong>Safety check before new sites</strong><br><span class="muted small">Before the agent goes to a site it hasn't used in this task, or types your personal details on one, a fast AI checks the step against what you asked (it never sees the page itself, so a page can't talk it into anything). If it looks off, you're asked. Costs a fraction of a cent per check.</span></span></label>
-      <label class="switch-row"><input type="checkbox" id="notifyAgent" /><span><strong>Notify me</strong><br><span class="muted small">A Chrome notification when the agent needs your OK or an answer, or finishes, while you're working somewhere else.</span></span></label>
-      <label class="switch-row"><input type="checkbox" id="recordRuns" /><span><strong>Record agent runs</strong><br><span class="muted small">Saves every step of each task (a screenshot of the page, what the AI was told and did, your approvals, the cost) so you can replay it and see where it went wrong. Only on this computer; the last 30 runs are kept. <a class="link" href="runs.html">Open agent runs →</a> · <a class="link" href="bench.html">Real-site benchmark →</a> · <a class="link" href="jobs.html">Jobs →</a></span></span></label>
-      <label class="switch-row"><input type="checkbox" id="agentTabGroup" /><span><strong>Keep the agent's tabs together</strong><br><span class="muted small">Tabs the agent opens go into a "Sidekick" tab group, so you can see which tabs it's working in.</span></span></label>
-      <label>Never act on these sites <span class="muted small">(one per line; the agent can still read them)</span>
-        <textarea id="blockedSites" spellcheck="false"></textarea>
-      </label>
-    </section>
-
-    <section class="card">
-      <h2>Usage</h2>
-      <p class="muted">Tokens sent to and received from your AI provider, per model. "Cached" input is billed at a small fraction of the normal price.</p>
-      <div id="usage"></div>
-    </section>
-
-    <section class="card">
-      <h2>Quality checks</h2>
-      <p class="muted">Run Sidekick's test suite against your current models and instructions: math, identity, editing, safety and memory. Run it after changing models or custom instructions.</p>
-      <p><span id="evalStatus" class="pill">Not run yet</span> <a class="link small" href="evals.html">Open quality checks →</a></p>
-    </section>
-  </main>
+      <section class="card" id="sec-usage">
+        <h2>Usage</h2>
+        <p class="muted">Tokens sent to and received from your AI provider, per model. "Cached" input is billed at a small fraction of the normal price. Dollar totals are on the Jobs and Benchmark pages.</p>
+        <div id="usage"></div>
+      </section>
+    </main>
+  </div>
 
   <div class="savebar"><button id="save" class="primary" type="button">Save</button><span id="status" class="muted small" role="status"></span></div>
 

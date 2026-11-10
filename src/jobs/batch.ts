@@ -12,7 +12,10 @@ export function judgeRun(t: RunTrace | null): { status: Job["status"]; note: str
   const waited = t.steps.flatMap(s => s.events).find(e => (e.kind === "ask" || e.kind === "approve") && (!e.answer || ["waiting…", "stopped", "no answer"].includes(e.answer)));
   if (t.outcome === "done" && submitted) return { status: "applied", note: String(t.summary || "").slice(0, 300) };
   if (waited) return { status: "needs_you", note: `Waiting for you: ${waited.text.slice(0, 200)}` };
-  if (t.outcome === "done") return { status: "needs_you", note: `Stopped before submitting: ${String(t.summary || "").slice(0, 240)}` };
+  const summary = String(t.summary || "");
+  // The agent read the posting and found he can't take it (citizens only, clearance, US person).
+  if (t.outcome === "done" && /\b(citizen|citizenship|clearance|u\.?s\.? person|not eligible|cannot legally|didn't apply|did not apply)\b/i.test(summary)) return { status: "skipped", note: `Not eligible, not sent: ${summary.slice(0, 240)}` };
+  if (t.outcome === "done") return { status: "needs_you", note: `Stopped before submitting: ${summary.slice(0, 240)}` };
   return { status: "needs_you", note: `${t.outcome.replace("_", " ")}${t.error ? `: ${t.error.slice(0, 200)}` : t.summary ? `: ${String(t.summary).slice(0, 200)}` : ""}` };
 }
 

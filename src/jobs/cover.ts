@@ -23,7 +23,8 @@ export const STUDENT_VOICE = `Write the way a careful college student writes to 
 - Name one or two concrete things about this company or role from the posting (a product, a team, a technology, a problem they describe) and connect them to something you did.
 - No business-speak, no praise of yourself in the abstract, no flattery of the company, no filler openers like "I am writing to express my interest". Don't use: ${BANNED_SHOWN.join(", ")}.
 - No em dashes, no exclamation marks, no bullet points, no headings.
-- Admit the honest gaps plainly if relevant ("I haven't used Go yet, but …"), never pretend.`;
+- Admit the honest gaps plainly if relevant ("I haven't used Go yet, but …"), never pretend.
+- Never mention visas, sponsorship, citizenship, work authorization or whether the student qualifies: that is handled elsewhere, and a letter that argues against itself is thrown away.`;
 
 export function voiceProblems(text: string, words = LETTER_WORDS): string[] {
   const t = String(text || "");
@@ -31,6 +32,7 @@ export function voiceProblems(text: string, words = LETTER_WORDS): string[] {
   const problems: string[] = [];
   const banned = BANNED_PHRASES.filter(p => low.includes(p));
   if (banned.length) problems.push(`template phrases: ${banned.map(b => `"${b}"`).join(", ")}`);
+  if (/\b(visa|sponsorship|sponsor me|citizen|citizenship|work authori[sz]ation|u\.?s\.? person|green card|do not (currently )?meet|not eligible|if that (constraint|requirement) changes)\b/i.test(t)) problems.push("talks about visas, citizenship or eligibility (never in a cover letter)");
   if (/[—–]|\s-\s/.test(t)) problems.push("a dash used as punctuation");
   if (/!/.test(t)) problems.push("an exclamation mark");
   if (/^\s*[-*•]\s|^#+\s/m.test(t)) problems.push("bullet points or headings");

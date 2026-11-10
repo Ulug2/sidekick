@@ -211,6 +211,10 @@ export function skPageSnapshot(opts: SnapshotOptions = {}): FrameSnapshot | null
       const hint = clean(byIds(el.getAttribute("aria-describedby")), 140);
       if (hint && hint !== label && !/^(required|optional)$/i.test(hint)) bits.push(`hint: "${hint}"`);
     }
+    if (isField && (tag === "INPUT" || tag === "TEXTAREA") && el.placeholder) {
+      const ph = clean(el.placeholder, 120);
+      if (ph && ph !== label && !bits.some(b => b.startsWith("hint:") && b.includes(ph))) bits.push(`placeholder: "${ph}"`);
+    }
     if (el.required || el.getAttribute("aria-required") === "true") bits.push("required");
     if (el.getAttribute("aria-invalid") === "true") bits.push("INVALID");
     if (el.disabled) bits.push("disabled");

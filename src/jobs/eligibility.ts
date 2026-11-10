@@ -101,6 +101,8 @@ const CITIZENS_ONLY = [
   /\b(only )?(u\.?s\.? citizens|green card holders)( (and|or) (green card holders|permanent residents|u\.?s\.? citizens))?( only| are eligible)\b/i,
   /\b(active|current|ability to obtain|eligible for|obtain and maintain) (a |an )?(u\.?s\.? )?(government |dod |secret |top secret |ts\/sci |security )+clearance\b/i,
   /\b(itar|export control)[^.]{0,80}\b(u\.?s\.? person|citizen|permanent resident)/i,
+  /\b(require[sd]?|must be|only|eligib\w+|restricted to|limited to|open to)\b[^.]{0,60}\bu\.?s\.? persons?\b/i,
+  /\bu\.?s\.? persons?\b[^.]{0,40}\b(only|required|status|as defined)\b/i,
   /\bmust (already )?have (the )?(full |existing )?right to work in the (uk|united kingdom|eu|european union)\b/i
 ];
 const SPONSORS = [

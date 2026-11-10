@@ -112,6 +112,13 @@ General rules that came out of these: design for the long version of a task; eve
 - **Tests:** reading (7, the Moodle + MyOpenMath frame copied from the run), agent-cdp 7 (zoom clip and scale, check before done), real-chrome 16 (frame text, zoom on a scrolled page checked by pixel color; fails without the scroll offset).
 - **Not fixed yet:** MyOpenMath's math keypad covering graph (c) (pop-up policy, Phase A); which 3 other boxes were marked wrong is unknown.
 
+### 17. The first real application batch: a letter that argued against itself, pasted nowhere (Palantir, 2026-11-09)
+- **What happened:** the first batch picked a Palantir "Forward Deployed Software Engineer, New Grad – Warp Speed" posting. The cover letter ended with "I understand this role requires U.S. Person status … I do not currently meet that requirement", and the agent never pasted it: the form had no field called "cover letter", only an "Additional information" box whose placeholder said a cover letter could go there.
+- **Causes:** (1) The eligibility rules caught "U.S. citizen" and "ITAR … U.S. person" but not "requires U.S. Person status" on its own, so an ineligible job reached the batch. (2) Nothing stopped the letter writer from discussing eligibility. (3) The page snapshot showed a field's `hint` (aria-describedby) but not its placeholder, so the agent couldn't see where the letter belonged.
+- **Fix:** `CITIZENS_ONLY` covers "requires/only/must be … U.S. person(s)"; the letter prompt forbids visa, sponsorship, citizenship and eligibility talk and `voiceProblems` rejects it in code; the batch goal tells the agent to read the posting first and finish without applying when it rules him out (`judgeRun` marks such runs "skipped: not eligible"); snapshots show `placeholder: "…"` when it says more than the label; the goal and the prompt name the fallback boxes ("Additional information", "Anything else", "Message").
+- **Rule:** when a run's output can contradict a filter (a letter about eligibility, an answer about authorization), the filter is wrong or missing: fix the code rule, and forbid the output in code too.
+- **Tests:** unit jobs (US person sentences, the letter check, judgeRun skipped), reading 5 (placeholder in the snapshot).
+
 ## Earlier lessons (v0.7–v0.9)
 - **A double-check must not overrule a right answer without evidence** (v0.7.2 pipeline problem). Replacements need a code check (objective or residuals) under both setups.
 - **Examples in prompts anchor the model.** Use neutral numbers, never the real answer.

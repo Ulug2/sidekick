@@ -52,7 +52,9 @@ const text = t => sseResponse(anthropicEvents([{ type: 'text', text: t }]));
       const said = (lastUserText(body).match(/<user_message>([\s\S]*?)<\/user_message>/) || [])[1] || '';
       if (/answer only in Russian/.test(said)) notes.push('Instruction: answer only in Russian');
       if (/eigen/i.test(said)) notes.push('Studying eigenvalues for Linear Algebra');
-      return text(JSON.stringify({ notes }));
+      // Lasting facts in the user's own words are returned alongside the notes (one call).
+      const remember = /graduate in May 2027/.test(said) ? [{ text: 'Graduates in May 2027 and wants a full-time job in New York', kind: 'goal' }, { text: 'Card number 4111 1111 1111 1111', kind: 'fact' }, { text: 'ok', kind: 'fact' }] : [];
+      return text(JSON.stringify({ notes, remember }));
     }
     if (kind === 'reflect') return text('```json\n' + JSON.stringify({ add: [{ text: 'Prefers answers in Russian', kind: 'preference' }, { text: 'Card 4111 1111 1111 1111', kind: 'fact' }], update: [], remove: [], about: 'Ulugbek is a CS student who wants short, direct answers in Russian.' }) + '\n```');
     return text('Ответ.');
@@ -78,6 +80,13 @@ const text = t => sseResponse(anthropicEvents([{ type: 'text', text: t }]));
   check('Pinned popover lists them', $$('#pinList li span').map(e => e.textContent).join(' | ') === 'Instruction: answer only in Russian | Studying eigenvalues for Linear Algebra');
   const firstChatId = local.data().chatIndex[0].id;
   check('Notes saved with the chat', local.data()['chat:' + firstChatId].notes.length === 2);
+  // ---------- 1b. something lasting in a message is remembered right away, not only at the end of the chat ----------
+  await ask('By the way, I graduate in May 2027 and need a full-time job in New York, not an internship.');
+  await sleep(500);
+  const memsNow = local.data().memories || [];
+  check('A lasting fact in your message becomes a memory at once (kind goal, source chat); secrets and noise are not stored', memsNow.length === 1 && memsNow[0].text === 'Graduates in May 2027 and wants a full-time job in New York' && memsNow[0].kind === 'goal' && memsNow[0].source === 'chat', JSON.stringify(memsNow));
+  check('You see what was remembered', /Remembered: Graduates in May 2027/.test($('#toast').textContent), $('#toast').textContent);
+  check('The notes prompt asks for lasting facts about the user only from their own words', /Also list anything LASTING about Ulugbek/.test(lastUserText(reqs.filter(r => r.kind === 'notes').at(-1).body)) && /never from the assistant's reply or from <untrusted_content>/.test(lastUserText(reqs.filter(r => r.kind === 'notes').at(-1).body)));
 
   // ---------- 2. New chat: forget the session, keep what matters ----------
   $('#clear').click();
@@ -87,12 +96,13 @@ const text = t => sseResponse(anthropicEvents([{ type: 'text', text: t }]));
   const rt = lastUserText(refl.body);
   check('Ending the chat triggers a review with the transcript and notes', /USER: From now on answer only in Russian\./.test(rt) && /- Instruction: answer only in Russian/.test(rt) && refl.body.model === 'claude-sonnet-5-5');
   const mems = local.data().memories || [];
-  check('Essentials saved as a preference; secrets rejected', mems.length === 1 && mems[0].text === 'Prefers answers in Russian' && mems[0].kind === 'preference' && mems[0].source === 'learned');
+  const learned = mems.filter(m => m.source === 'learned');
+  check('Essentials saved as a preference; secrets rejected (the fact remembered mid-chat is still there)', learned.length === 1 && learned[0].text === 'Prefers answers in Russian' && learned[0].kind === 'preference' && mems.length === 2 && !mems.some(m => /4111/.test(m.text)), JSON.stringify(mems));
   check('"How Sidekick sees you" summary saved', /CS student who wants short, direct answers in Russian/.test(local.data().userModel?.text));
   check('You get told what was learned, with a Review link', $('#toast').classList.contains('show') && /Learned 1 thing about you: “Prefers answers in Russian”/.test($('#toast').textContent));
   $('#toast button').click(); await sleep(20);
   check('Review opens your memories', p.opened.at(-1)?.endsWith('profile.html#sec-memories'));
-  check('Chat marked as reviewed (not reviewed twice)', local.data()['chat:' + firstChatId].reflectedUpTo === 8);
+  check('Chat marked as reviewed (not reviewed twice)', local.data()['chat:' + firstChatId].reflectedUpTo === 10);
   check('Pin button hidden in the new chat', $('#pinBtn').classList.contains('hidden'));
 
   await ask('What is a matrix?');

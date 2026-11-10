@@ -2,6 +2,8 @@
 import type { AgentState, AgentUI, PageActionResult, ToolOutcome } from "../types.js";
 import { skPageAct } from "../../page/act.js";
 import { logApplication, type Profile } from "../../assistant/profile-core.js";
+import { factsFromAnswer } from "../../assistant/session.js";
+import { addMemory } from "../../assistant/memory/memory.js";
 import { describeSafe, describeCall, quote } from "./describe.js";
 import { RISKY_WORDS, siteBlocked, gateShare, inPlan, NEVER_AUTO, gateVisit, CAPTCHA_RE } from "../safety/gates.js";
 import { sleep, waitForTab, hostOf, pageScript } from "../page-calls.js";
@@ -475,6 +477,12 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
         const answer = await ui.ask(a.question || "");
         state.answers.push(String(a.question || "").slice(0, 160));
         step.done(true);
+        // A lasting fact in the answer ("I can start June 2027") is remembered for the next form; in the background, never blocking the run.
+        if (state.settings.memoryAuto) {
+          factsFromAnswer({ question: String(a.question || ""), answer: String(answer || ""), userName: profile.preferredName || profile.fullName?.split(/\s+/)[0] || "the user", signal: state.signal })
+            .then(async facts => { for (const f of facts) { const r = await addMemory(f.text, "application", f.kind).catch(() => null); if (r && !r.updated) ui.note(`Remembered for next time: ${f.text}`); } })
+            .catch(() => {});
+        }
         return withSnapshot(`The user answered: ${answer}\n\nCurrent page:\n`);
       }
       case "log_application": {
