@@ -50,6 +50,7 @@ body .top { background: color-mix(in srgb, var(--bg) 85%, transparent); }
 .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
 .controls label { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
 #jobsApp .controls input[type=number] { width: 64px; padding: 4px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 7px; font: 13px var(--mono); }
+.controls label.check input { width: 14px; height: 14px; accent-color: var(--cyan); }
 .dollar { display: inline-flex; align-items: center; gap: 2px; color: var(--text); }
 .spacer { flex: 1; }
 .warn { color: var(--amber); margin: 8px 0 0; }

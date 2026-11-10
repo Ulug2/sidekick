@@ -46,10 +46,10 @@ describe("judgeJob", () => {
     expect(v.sponsor).toBe("strong");
     expect(v.why).toEqual(["Sponsored 64 H-1B visas (USCIS data)"]);
     expect(v.regions).toEqual(["usa"]);
-    const intern = judgeJob(job({ title: "Software Engineering Intern" }), sponsors, DEFAULT_ROLES, NOW);
     const plain = judgeJob(job({ title: "Software Engineer" }), sponsors, DEFAULT_ROLES, NOW);
-    expect(v.score).toBeGreaterThan(intern.score);
-    expect(intern.score).toBeGreaterThan(plain.score);
+    const old = judgeJob(job({ postedAt: NOW - 90 * DAY }), sponsors, DEFAULT_ROLES, NOW);
+    expect(v.score).toBeGreaterThan(plain.score);
+    expect(v.score).toBeGreaterThan(old.score);
   });
   it("drops jobs it can't legally take, with the sentence that says so", () => {
     expect(judgeJob(job({ text: "We are unable to sponsor visas for this role." }), sponsors, DEFAULT_ROLES, NOW)).toMatchObject({ ok: false, blocked: "Says: “unable to sponsor visas for this role”" });
@@ -66,6 +66,13 @@ describe("judgeJob", () => {
     expect(judgeJob(job({ company: "Monzo", location: "Berlin, Germany" }), sponsors, DEFAULT_ROLES, NOW)).toMatchObject({ ok: true, sponsor: "possible" });
     expect(judgeJob(job({ company: "Some GmbH", location: "Berlin, Germany", text: "Relocation package included." }), none, DEFAULT_ROLES, NOW)).toMatchObject({ ok: true, sponsor: "likely" });
     expect(judgeJob(job({ company: "Ramp", location: "New York, NY" }), sponsors, DEFAULT_ROLES, NOW)).toMatchObject({ ok: true, sponsor: "likely", why: ["Sponsored 2 H-1B visas (USCIS data)"] });
+  });
+  it("skips internships unless asked for them (he needs a job, graduating May 2027)", () => {
+    for (const t of ["Software Engineering Intern", "Software Engineer Intern (Summer 2027)", "Backend Engineer Co-op", "Working Student Software Engineer", "Software Engineer Apprentice"]) {
+      expect(judgeJob(job({ title: t }), sponsors, ["software engineer", "backend engineer"], NOW).blocked, t).toBe("Internship, not a job");
+      expect(judgeJob(job({ title: t }), sponsors, ["software engineer", "backend engineer"], NOW, { internships: true }).ok, t).toBe(true);
+    }
+    expect(judgeJob(job({ title: "Software Engineer, International Markets" }), sponsors, DEFAULT_ROLES, NOW).ok).toBe(true); // "intern" inside a word doesn't count
   });
   it("skips the wrong level and the wrong roles", () => {
     expect(judgeJob(job({ title: "Senior Software Engineer" }), sponsors, DEFAULT_ROLES, NOW).blocked).toBe("Senior role");

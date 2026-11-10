@@ -8,7 +8,7 @@ import { updateLocal } from "../core/storage/update.js";
 import { readLocal } from "../core/storage/schema.js";
 
 export const UNSEEN_DROP_DAYS = 30;
-export const DEFAULT_JOB_SETTINGS = { dailyCap: 20, monthlyCap: 25 }; // applications per day; dollars of API per month // postings filtered out and gone this long are forgotten
+export const DEFAULT_JOB_SETTINGS = { dailyCap: 20, monthlyCap: 25, internships: false }; // applications per day; dollars of API per month; internships too? // postings filtered out and gone this long are forgotten
 
 export async function getJobs(): Promise<Job[]> { return (await readLocal("jobs")).jobs || []; }
 export async function getCompanies(): Promise<Company[]> {

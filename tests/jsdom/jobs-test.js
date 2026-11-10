@@ -11,7 +11,8 @@ const GH = (board) => ({ jobs: [
   { id: 1, absolute_url: `https://job-boards.greenhouse.io/${board}/jobs/1`, title: 'Software Engineer, New Grad', location: { name: 'New York, NY' }, first_published: new Date(Date.now() - 2 * 864e5).toISOString(), content: 'Build payments. We sponsor visas.' },
   { id: 2, absolute_url: `https://job-boards.greenhouse.io/${board}/jobs/2`, title: 'Senior Staff Engineer', location: { name: 'New York, NY' }, first_published: '2026-10-01T00:00:00Z', content: 'x' },
   { id: 3, absolute_url: `https://job-boards.greenhouse.io/${board}/jobs/3`, title: '<img src=x onerror="window.pwned=1"> Backend Engineer <b>bold</b>', location: { name: 'London, UK' }, first_published: '2026-11-01T00:00:00Z', content: 'Must have the right to work in the UK.' },
-  { id: 4, absolute_url: `https://job-boards.greenhouse.io/${board}/jobs/4`, title: 'Software Engineer', location: { name: 'Singapore' }, content: 'x' }
+  { id: 4, absolute_url: `https://job-boards.greenhouse.io/${board}/jobs/4`, title: 'Software Engineer', location: { name: 'Singapore' }, content: 'x' },
+  { id: 5, absolute_url: `https://job-boards.greenhouse.io/${board}/jobs/5`, title: 'Software Engineering Intern (Summer 2027)', location: { name: 'New York, NY' }, first_published: '2026-11-01T00:00:00Z', content: 'We sponsor visas.' }
 ] });
 
 async function page(store = {}) {
@@ -74,17 +75,32 @@ const until = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now(
   click(doc, '#scan');
   await until(() => /^Scanned/.test(p.text('#progress')));
   const jobs = (await local.get('jobs')).jobs;
-  check('Scan: 3 boards read, eligible jobs counted, the missing board reported', /Scanned 3 boards: 2 eligible jobs; 1 board failed/.test(p.text('#progress')) && jobs.length === 8, p.text('#progress'));
+  check('Scan: 3 boards read, eligible jobs counted, the missing board reported', /Scanned 3 boards: 2 eligible jobs; 1 board failed/.test(p.text('#progress')) && jobs.length === 10, p.text('#progress'));
   const rows = [...doc.querySelectorAll('#list .job')];
   check('To apply: one eligible job per board (the new-grad role; senior, no-right-to-work and Singapore filtered out), with the reason it qualifies', rows.length === 2 && rows.every(r => /Software Engineer, New Grad/.test(r.textContent)) && /Posting offers visa sponsorship/.test(rows[0].textContent) && /Sponsored 64 H-1B visas/.test(rows.find(r => /Stripe/.test(r.textContent)).textContent), rows.map(r => r.textContent.slice(0, 200)).join('\n'));
-  check('Tabs count what\'s where', p.text('#tabs [data-tab=apply] .n') === '2' && p.text('#tabs [data-tab=filtered] .n') === '6' && p.text('#tabs [data-tab=companies] .n') === '3', p.text('#tabs'));
+  check('Tabs count what\'s where', p.text('#tabs [data-tab=apply] .n') === '2' && p.text('#tabs [data-tab=filtered] .n') === '8' && p.text('#tabs [data-tab=companies] .n') === '3', p.text('#tabs'));
   click(doc, '#tabs [data-tab=filtered]');
   await sleep(50);
   const filtered = [...doc.querySelectorAll('#list .job')];
-  check('Filtered out: each job shows why, as text (a script tag in a title does nothing)', filtered.length === 6 && filtered.some(r => /Senior Staff Engineer/.test(r.textContent) && /Not one of your target roles/.test(r.textContent)) && filtered.some(r => /Says: “Must have the right to work in the UK”/.test(r.textContent)) && filtered.some(r => /Not in the US, Europe or the UAE \(Singapore\)/.test(r.textContent)) && !doc.querySelector('#list img') && !doc.querySelector('#list b') && !p.w.pwned, filtered.map(r => r.textContent.slice(0, 160)).join('\n'));
+  check('Internships are filtered out by default (he needs a job)', filtered.filter(r => /Intern \(Summer 2027\)/.test(r.textContent) && /Internship, not a job/.test(r.textContent)).length === 2 && !doc.querySelector('#internships').checked, filtered.map(r => r.textContent.slice(0, 100)).join('\n'));
+  check('Filtered out: each job shows why, as text (a script tag in a title does nothing)', filtered.length === 8 && filtered.some(r => /Senior Staff Engineer/.test(r.textContent) && /Not one of your target roles/.test(r.textContent)) && filtered.some(r => /Says: “Must have the right to work in the UK”/.test(r.textContent)) && filtered.some(r => /Not in the US, Europe or the UAE \(Singapore\)/.test(r.textContent)) && !doc.querySelector('#list img') && !doc.querySelector('#list b') && !p.w.pwned, filtered.map(r => r.textContent.slice(0, 160)).join('\n'));
   click(doc, '#tabs [data-tab=companies]');
   await sleep(50);
   check('Companies: each board\'s last scan and the failed one\'s error', /Stripe/.test(p.text('#companies')) && /1 matching/.test(p.text('#companies')) && /Gone Co has no greenhouse board called “gone”/.test(p.text('#companies')), p.text('#companies'));
+
+  doc.querySelector('#internships').checked = true;
+  doc.querySelector('#internships').dispatchEvent(new p.w.Event('change'));
+  await until(() => /Internships will be kept from the next scan/.test(p.text('#progress')));
+  click(doc, '#scan');
+  await until(() => /^Scanned/.test(p.text('#progress')));
+  check('Include internships + scan: the internships join the list', /Scanned 3 boards: 4 eligible jobs/.test(p.text('#progress')) && (await local.get('jobSettings')).jobSettings.internships === true, p.text('#progress'));
+  doc.querySelector('#internships').checked = false;
+  doc.querySelector('#internships').dispatchEvent(new p.w.Event('change'));
+  await until(() => /Internships off: 2 moved to Filtered out/.test(p.text('#progress')));
+  await until(() => p.text('#tabs [data-tab=apply] .n') === '2');
+  check('Internships off again: they leave "To apply" at once, no scan needed', p.text('#tabs [data-tab=apply] .n') === '2' && (await local.get('jobs')).jobs.filter(j => /Intern/.test(j.title)).every(j => !j.ok && j.blocked === 'Internship, not a job'), p.text('#progress'));
+  click(doc, '#tabs [data-tab=filtered]');
+  await sleep(50);
 
   // ---------- 4. keep a filtered job, skip one, build the batch, start it ----------
   click(doc, '#tabs [data-tab=filtered]');

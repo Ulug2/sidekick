@@ -113,13 +113,16 @@ const SPONSORS = [
 const SENIOR = /\b(senior|sr\.?|staff|principal|lead|manager|director|head of|vp|vice president|architect|distinguished|fellow|iii|iv|level [3-9]|l[5-9])\b/i;
 const NOT_FOR_YOU = /\b(ph\.?d\.?|doctoral|master'?s|mba|high school)\b/i;
 const EXPERIENCE = /\b([4-9]|1\d)\+? (or more )?years?\b[^.]{0,40}\b(experience|of professional|in industry|of industry)/i;
+// Internships, co-ops and working-student roles: not jobs. Off by default (he graduates May 2027).
+export const INTERN_RE = /\b(intern|interns|internship|internships|co-?op|summer analyst|working student|werkstudent|stagiaire|praktikum|praktikant|apprentice|apprenticeship)\b/i;
 const ENTRY = /\b(intern|internship|new grad|new graduate|graduate|entry[- ]level|junior|jr\.?|early career|university|campus|associate|apprentice|i\b|level 1|l1|2026|2027)\b/i;
 export const DEFAULT_ROLES = ["software engineer", "software developer", "software engineering", "backend", "back-end", "frontend", "front-end", "full stack", "full-stack", "fullstack", "mobile engineer", "ios engineer", "android engineer", "react native", "web developer", "data engineer", "machine learning engineer", "ml engineer", "ai engineer", "platform engineer", "infrastructure engineer", "forward deployed engineer", "solutions engineer", "product engineer", "swe"];
 
 export const sentences = (text: string, re: RegExp[]) => re.map(r => String(text || "").match(r)?.[0]).filter(Boolean) as string[];
 
 // roles: what to look for in titles (the profile's target roles, or DEFAULT_ROLES).
-export function judgeJob(job: Pick<Job, "title" | "company" | "location" | "text" | "postedAt">, sponsors: SponsorData, roles: string[] = DEFAULT_ROLES, now = Date.now()): Verdict {
+export interface JudgeOptions { internships?: boolean }
+export function judgeJob(job: Pick<Job, "title" | "company" | "location" | "text" | "postedAt">, sponsors: SponsorData, roles: string[] = DEFAULT_ROLES, now = Date.now(), opts: JudgeOptions = {}): Verdict {
   const { regions, countries } = whereIs(job.location);
   const why: string[] = [];
   const no = (blocked: string): Verdict => ({ ok: false, regions, countries, sponsor: "no", why, blocked, score: 0 });
@@ -129,6 +132,7 @@ export function judgeJob(job: Pick<Job, "title" | "company" | "location" | "text
   const roleHit = roles.some(r => title.toLowerCase().includes(r.toLowerCase()));
   if (!roleHit) return no("Not one of your target roles");
   if (NOT_FOR_YOU.test(title)) return no(`For ${title.match(NOT_FOR_YOU)![0]} students`);
+  if (!opts.internships && INTERN_RE.test(title)) return no("Internship, not a job");
   if (SENIOR.test(title) && !/\b(intern|new grad|graduate|junior|entry)\b/i.test(title)) return no("Senior role");
   if (EXPERIENCE.test(job.text || "") && !ENTRY.test(title)) return no(`Asks for ${(job.text || "").match(EXPERIENCE)![1]}+ years of experience`);
   const citizen = sentences(text, CITIZENS_ONLY)[0];

@@ -7,7 +7,7 @@ import { updateLocal } from "../../core/storage/update.js";
 import { formatCost } from "../../core/llm/prices.js";
 import { monthSpend } from "../../bench/results.js";
 import { boardFromUrl, changeCompanies, companyKey, DEFAULT_JOB_SETTINGS, getCompanies, getJobs, jobStats, jobsCsv, pickBatch, queueJobs, setJobStatus } from "../../jobs/store.js";
-import { discoverCompanies, loadSponsors, scanCompanies, topSponsors } from "../../jobs/scan.js";
+import { discoverCompanies, loadSponsors, rejudgeJobs, scanCompanies, topSponsors } from "../../jobs/scan.js";
 import { downloadSponsorLists } from "../../jobs/sponsors.js";
 import type { Company, Job, JobStatus, Region } from "../../jobs/types.js";
 
@@ -166,14 +166,21 @@ if ($("#jobsApp")) {
     settings = { ...DEFAULT_JOB_SETTINGS, ...((await readLocal("jobSettings")).jobSettings || {}) };
     $("#dailyCap").value = String(settings.dailyCap);
     $("#monthlyCap").value = String(settings.monthlyCap);
+    $("#internships").checked = !!settings.internships;
     const saveSettings = async () => {
-      settings = { dailyCap: Math.max(1, Math.min(50, Number($("#dailyCap").value) || DEFAULT_JOB_SETTINGS.dailyCap)), monthlyCap: Math.max(1, Math.min(200, Number($("#monthlyCap").value) || DEFAULT_JOB_SETTINGS.monthlyCap)) };
+      const internshipsWas = !!settings.internships;
+      settings = { dailyCap: Math.max(1, Math.min(50, Number($("#dailyCap").value) || DEFAULT_JOB_SETTINGS.dailyCap)), monthlyCap: Math.max(1, Math.min(200, Number($("#monthlyCap").value) || DEFAULT_JOB_SETTINGS.monthlyCap)), internships: !!$("#internships").checked };
       $("#dailyCap").value = String(settings.dailyCap); $("#monthlyCap").value = String(settings.monthlyCap);
       await chrome.storage.local.set({ jobSettings: settings });
+      if (internshipsWas !== settings.internships) {
+        const n = await rejudgeJobs();
+        $("#progress").textContent = settings.internships ? `Internships will be kept from the next scan on. Press Scan job boards.` : `Internships off: ${n} moved to Filtered out.`;
+      }
       render();
     };
     $("#dailyCap").onchange = saveSettings;
     $("#monthlyCap").onchange = saveSettings;
+    $("#internships").onchange = saveSettings;
     for (const b of document.querySelectorAll<HTMLButtonElement>("#tabs [role=tab]")) b.onclick = () => { tab = b.dataset.tab as Tab; render(); };
     $("#search").oninput = render;
     $("#region").onchange = render;

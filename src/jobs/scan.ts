@@ -2,7 +2,7 @@
 // No model calls; each company's board is one request.
 import type { Company } from "./types.js";
 import { fetchBoard, pool, slugGuesses, boardApi } from "./sources.js";
-import { judgeJob, DEFAULT_ROLES, type SponsorData } from "./eligibility.js";
+import { judgeJob, DEFAULT_ROLES, type JudgeOptions, type SponsorData } from "./eligibility.js";
 import { sponsorLookup, normCompany, type SponsorLists } from "./sponsors.js";
 import { changeCompanies, companyKey, getCompanies, mergeScan } from "./store.js";
 import { updateLocal } from "../core/storage/update.js";
@@ -23,10 +23,29 @@ export async function loadSponsors(): Promise<{ data: SponsorData; lists: Sponso
   return { data: sponsorLookup(sponsorLists), lists: sponsorLists || null };
 }
 
+export async function judgeOptions(): Promise<JudgeOptions> {
+  const { jobSettings } = await readLocal("jobSettings");
+  return { internships: !!jobSettings?.internships };
+}
+// Re-checks the jobs already in the list against the current rules without reading the boards
+// (an internship switched off disappears from "To apply" at once). Jobs filtered out earlier kept
+// no text, so switching internships on needs a scan.
+export async function rejudgeJobs(): Promise<number> {
+  const [{ data }, roles, opts] = await Promise.all([loadSponsors(), targetRoles(), judgeOptions()]);
+  let changed = 0;
+  await updateLocal("jobs", (list = []) => list.map(j => {
+    if (!["found", "queued"].includes(j.status) || (!j.ok && !j.text)) return j;
+    const v = judgeJob(j, data, roles, Date.now(), opts);
+    if (v.ok === j.ok && v.blocked === j.blocked) return j;
+    changed++;
+    return { ...j, ok: v.ok, regions: v.regions, countries: v.countries, sponsor: v.sponsor, why: v.why, blocked: v.blocked, score: v.score, text: v.ok ? j.text : undefined, status: "found" as const };
+  }));
+  return changed;
+}
 export interface ScanProgress { done: number; total: number; company: string; found: number; errors: string[] }
 export async function scanCompanies(only?: Company[], onProgress: (p: ScanProgress) => void = () => {}, signal?: AbortSignal): Promise<ScanProgress> {
   const companies = only || await getCompanies();
-  const [{ data }, roles] = await Promise.all([loadSponsors(), targetRoles()]);
+  const [{ data }, roles, opts] = await Promise.all([loadSponsors(), targetRoles(), judgeOptions()]);
   const prog: ScanProgress = { done: 0, total: companies.length, company: "", found: 0, errors: [] };
   await pool(companies, SCAN_PARALLEL, async c => {
     if (signal?.aborted) return;
@@ -34,7 +53,7 @@ export async function scanCompanies(only?: Company[], onProgress: (p: ScanProgre
     let error = "", count = 0;
     try {
       const postings = await fetchBoard(c, signal);
-      const judged = postings.map(p => ({ ...p, verdict: judgeJob(p, data, roles) }));
+      const judged = postings.map(p => ({ ...p, verdict: judgeJob(p, data, roles, Date.now(), opts) }));
       count = judged.filter(p => p.verdict.ok).length;
       await updateLocal("jobs", (list = []) => mergeScan(list, c, judged));
       prog.found += count;

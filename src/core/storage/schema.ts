@@ -74,7 +74,7 @@ export interface LocalSchema extends Settings {
   jobs: Job[]; // jobs/store: every posting found, whether you can take it, and its status
   jobCompanies: Company[]; // jobs/store: the companies whose job boards are read
   sponsorLists: SponsorLists; // jobs/sponsors: UK Skilled Worker sponsors and US H-1B approvals by employer
-  jobSettings: { dailyCap: number; monthlyCap: number }; // ui/jobs: applications per day, dollars per month for applying
+  jobSettings: { dailyCap: number; monthlyCap: number; internships?: boolean }; // ui/jobs: applications per day, dollars per month for applying, internships too?
   [chat: `chat:${string}`]: Chat;
   [doc: `doc:${string}`]: DocChunks;
   [trace: `trace:${string}`]: RunTrace; // a run without its images
