@@ -64,6 +64,15 @@ const show = st => st.map(s => `${s.ok === false ? '✗' : '✓'} ${s.t}${s.d ? 
     check('Calendar: moves from October to December and clicks December 10 (react-calendar day labels)', b.date === '2026-12-10' && /Picked December 10, 2026/.test(res.steps[2].d || ''), show(res.steps));
     check('The step list shows what was actually chosen', /^Choose “Washington DC \(IAD\)” in “From”$/.test(res.steps[0].t) && /^Pick Dec 10, 2026 in “Dates”$/.test(res.steps[2].t), show(res.steps));
   }
+  // ---------- one step for everything: fill_fields takes the airports and the date together ----------
+  {
+    const res = await run((step, all) => [
+      () => [['fill_fields', { fields: [{ id: idOf(all, 'combobox', 'From'), value: 'Washington DC (IAD)' }, { id: idOf(all, 'combobox', 'To'), value: 'Istanbul (IST)' }, { id: idOf(all, 'button', 'Dates'), value: '2026-12-10' }] }]],
+      () => [['done', { summary: 'ok' }]]][step]());
+    const b = res.page.booking[0];
+    check('fill_fields fills two autocompletes and a calendar date (YYYY-MM-DD) in one step, no extra model turns', b.from === 'IAD' && b.to === 'IST' && b.date === '2026-12-10' && res.steps.filter(s => /^Fill 3 fields/.test(s.t)).length === 1, show(res.steps));
+  }
+
   // ---------- the whole multi-city search ----------
   {
     const R = (all, role, label, row) => idOf(all, role, label, row);

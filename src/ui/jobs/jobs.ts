@@ -211,7 +211,7 @@ if ($("#jobsApp")) {
       if (windowId !== undefined) chrome.sidePanel.open({ windowId }).catch(() => {});
       await chrome.storage.session.remove("jobBatchStop");
       await chrome.storage.session.set({ jobBatch: { ts: Date.now(), windowId } });
-      $("#progress").textContent = "Batch handed to the side panel: watch it there. Each application is one agent run; you'll be asked only when something needs you.";
+      $("#progress").textContent = "Batch started: Sidekick opens its own Chrome window behind this one and applies there, one job at a time. Keep using this window; you'll be asked only when something needs you (Needs you tab).";
     };
     $("#stop").onclick = () => { running?.abort(); chrome.storage.session.remove("jobBatch"); chrome.storage.session.set({ jobBatchStop: true }); };
     $("#exportCsv").onclick = async () => download(`sidekick-jobs-${new Date().toISOString().slice(0, 10)}.csv`, jobsCsv(await getJobs()), "text/csv");

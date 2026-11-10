@@ -24,6 +24,20 @@ export const PAUSE_BETWEEN_MS: [number, number] = [120000, 240000]; // a human p
 export const ASK_WAIT_MS = 8 * 60000; // how long a question or approval may wait before the job is set aside
 export const TAB_LOAD_MS = 20000;
 let batchRunning = false;
+// The batch works in its own Chrome window, opened behind yours and never focused, so you keep
+// using Chrome while it applies (its tabs are the active ones of that window, so real clicks,
+// typing and screenshots work there).
+let batchWindowId: number | undefined;
+export async function batchTab(url: string): Promise<chrome.tabs.Tab> {
+  if (batchWindowId !== undefined && !(await chrome.windows.get(batchWindowId).catch(() => null))) batchWindowId = undefined;
+  if (batchWindowId === undefined) {
+    const w = await chrome.windows.create({ url, focused: false, type: "normal", width: 1100, height: 900 });
+    if (!w?.id) throw new Error("Chrome didn't open a window for the batch.");
+    batchWindowId = w.id;
+    return w.tabs?.[0] || (await chrome.tabs.query({ windowId: w.id }))[0];
+  }
+  return chrome.tabs.create({ url, windowId: batchWindowId, active: true });
+}
 
 async function takeBatch(): Promise<boolean> {
   const take = async () => {
@@ -80,7 +94,7 @@ export async function checkJobBatch(): Promise<void> {
         catch (err: any) { showToast(`No cover letter for ${job.company}: ${err.message}`); }
       }
       if (letter) files = { cover_letter: { name: letterFileName(profile, job.company), type: "application/pdf", base64: textPdf(letter, { title: `Cover letter – ${job.company}` }).base64 } };
-      const tab = await chrome.tabs.create({ url: job.applyUrl, active: true });
+      const tab = await batchTab(job.applyUrl);
       const t0 = Date.now();
       while (Date.now() - t0 < TAB_LOAD_MS) { const t = await chrome.tabs.get(tab.id!).catch(() => null); if (!t || t.status === "complete") break; await sleepMs(300); }
       startNewChat();

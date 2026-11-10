@@ -63,7 +63,8 @@ export async function runAgent(goal: string, ui: AgentUI, opts: { history?: stri
   const onActivated = (info: chrome.tabs.OnActivatedInfo) => {
     // Tabs the page opens after an agent click can become active; check once it has moved there.
     setTimeout(() => {
-      if (info.tabId !== state.tabId && !toldBackground && !state.finished) {
+      // Only switches in the agent's own window count (a batch works in its own window).
+      if ((info.windowId == null || info.windowId === tab.windowId) && info.tabId !== state.tabId && !toldBackground && !state.finished) {
         toldBackground = true;
         ui.note("You switched tabs, so I'll keep working on the page in the background. Switching back isn't needed.");
       }

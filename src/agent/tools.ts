@@ -48,7 +48,7 @@ export const AGENT_TOOLS: ToolDef[] = [
   },
   {
     name: "fill_fields",
-    description: "Fill several form fields in ONE step: text boxes, dropdowns (native or custom), checkboxes, radio buttons, and file uploads (value \"resume\", or \"cover_letter\" when the task provides one). Much faster than one action per field. For checkboxes and radios use \"true\" or \"false\". Returns one updated snapshot. Never for passwords, payment or ID numbers.",
+    description: "Fill several form fields in ONE step: text boxes, dropdowns (native or custom), dates (value YYYY-MM-DD, also for calendar pickers), checkboxes, radio buttons, and file uploads (value \"resume\", or \"cover_letter\" when the task provides one). Much faster than one action per field. For checkboxes and radios use \"true\" or \"false\". Returns one updated snapshot. Never for passwords, payment or ID numbers.",
     parameters: {
       type: "object",
       properties: {

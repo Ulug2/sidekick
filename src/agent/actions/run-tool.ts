@@ -231,7 +231,7 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
           if (!el) { problems.push(`[${fid}] isn't in the latest snapshot`); continue; }
           const v = f.value == null ? "" : String(f.value);
           const fam = roleFamily(el.role);
-          const sub = fam === "choice" ? { name: "select_option", args: { id: fid, option: v } }
+          const sub = fam === "choice" || (/^\d{4}-\d{2}-\d{2}$/.test(v) && fam !== "check" && fam !== "radio" && fam !== "file") ? { name: "select_option", args: { id: fid, option: v } }
             : fam === "check" || fam === "radio" ? { name: "set_checked", args: { id: fid, checked: !/^(false|no|off|0|unchecked)$/i.test(v) } }
             : fam === "file" ? { name: "upload_file", args: { id: fid, file: /cover/i.test(v) ? "cover_letter" : "resume" } }
             : fam === "text" ? { name: "type", args: { id: fid, text: v } }
