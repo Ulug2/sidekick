@@ -32,10 +32,10 @@ export function nextAt(now: number, hour: number, tz = BATCH_TZ): number {
   return today > now ? today : atHourOn(today + 30 * 3600e3, hour, tz); // tomorrow (midday +/- DST)
 }
 
-export interface DailySettings { dailyBatch: boolean; batchHour: number; batchSize: number; spreadHours: number; dailyCap: number }
+export interface DailySettings { dailyBatch: boolean; batchHour: number; batchSize: number; spreadHours: number; dailyCap: number; companyDays: number }
 export async function dailySettings(): Promise<DailySettings> {
   const s = { ...DEFAULT_JOB_SETTINGS, ...((await readLocal("jobSettings")).jobSettings || {}) };
-  return { dailyBatch: s.dailyBatch !== false, batchHour: s.batchHour, batchSize: s.batchSize, spreadHours: s.spreadHours, dailyCap: s.dailyCap };
+  return { dailyBatch: s.dailyBatch !== false, batchHour: s.batchHour, batchSize: s.batchSize, spreadHours: s.spreadHours, dailyCap: s.dailyCap, companyDays: s.companyDays };
 }
 
 // Builds the day's batch: up to batchSize (and what's left of the daily cap), one job per company.
@@ -45,12 +45,12 @@ export async function buildDailyBatch(host: Host): Promise<string[]> {
   let ids: string[] = [];
   await updateLocal("jobs", (list = []) => {
     const st = jobStats(list, now);
-    ids = pickBatch(list, Math.max(0, Math.min(s.batchSize, s.dailyCap - st.appliedToday - st.queued)), now);
+    ids = pickBatch(list, Math.max(0, Math.min(s.batchSize, s.dailyCap - st.appliedToday - st.queued)), now, s.companyDays);
     return list.map(j => ids.includes(j.id) ? { ...j, status: "queued" as const, statusAt: now } : j);
   });
   await updateLocal("orchestrator", (o = {}) => ({ ...o, lastBatchAt: now }));
   const queued = (await getJobs()).filter(j => j.status === "queued" && !j.scheduledAt).length;
-  if (queued) await host.notify("Today's job batch is ready", `${queued} job${queued > 1 ? "s" : ""}, one per company. Look them over and approve on the Jobs page; nothing is sent before that.`);
+  if (queued) await host.notify("Today's job batch is ready", `${queued} job${queued > 1 ? "s" : ""}, one per company. Look them over and approve on the Jobs page; nothing is sent before that.`, "batch");
   return ids;
 }
 

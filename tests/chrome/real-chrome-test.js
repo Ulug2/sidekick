@@ -376,7 +376,51 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   // ---------- 9. options: new settings round-trip ----------
   const opt = await ctx.newPage();
   await opt.goto(url('options.html'));
-  check('Real Chrome settings: seven sections in a menu, model names folded away', (await opt.locator('.toc a').count()) === 7 && (await opt.locator('#sec-connect #anthropicKey').count()) === 1 && !(await opt.locator('details.advanced').evaluate(d => d.open)) && (await opt.locator('#sec-pages .pages a').count()) === 6);
+  check('Real Chrome settings: eleven sections in a sidebar of buttons, model names folded away', (await opt.locator('#sidenav button').count()) === 11 && (await opt.locator('#sec-connect #anthropicKey').count()) === 1 && !(await opt.locator('details.advanced').evaluate(d => d.open)) && (await opt.locator('#sec-pages .pages a').count()) === 6);
+  // v1 Phase 5 acceptance: Tab reaches every nav item; arrow keys move; 760 and 1280 px, light and
+  // dark, no sideways scroll; under 860 px the nav is one sticky row that scrolls inside itself.
+  {
+    await opt.setViewportSize({ width: 1280, height: 860 });
+    await opt.evaluate(() => document.activeElement?.blur());
+    const reached = new Set();
+    for (let i = 0; i < 30 && reached.size < 11; i++) {
+      await opt.keyboard.press('Tab');
+      const t = await opt.evaluate(() => document.activeElement?.closest('#sidenav') ? document.activeElement.dataset.target : '');
+      if (t) reached.add(t);
+    }
+    check('Real Chrome settings: Tab reaches every nav item', reached.size === 11, [...reached].join());
+    await opt.focus('#sidenav [data-target=sec-agent]');
+    await opt.keyboard.press('ArrowDown');
+    const afterArrow = await opt.evaluate(() => document.activeElement.dataset.target);
+    await opt.keyboard.press('Enter');
+    await opt.waitForTimeout(900);
+    const jobsTop = await opt.evaluate(() => document.getElementById('sec-jobs').getBoundingClientRect().top);
+    const marked = await opt.evaluate(() => document.querySelector('#sidenav [aria-current=true]')?.dataset.target);
+    const ring = await opt.evaluate(() => getComputedStyle(document.querySelector('#sidenav [data-target=sec-jobs]')).boxShadow);
+    check('Real Chrome settings: ArrowDown moves to Jobs, Enter scrolls there and marks it', afterArrow === 'sec-jobs' && jobsTop >= 0 && jobsTop < 140 && marked === 'sec-jobs', JSON.stringify({ afterArrow, jobsTop, marked, ring }));
+    await opt.mouse.wheel(0, 2400);
+    await opt.waitForTimeout(500);
+    const spied = await opt.evaluate(() => document.querySelector('#sidenav [aria-current=true]')?.dataset.target);
+    check('Real Chrome settings: scrolling marks the section in view', spied && spied !== 'sec-jobs', spied);
+    for (const [w, name] of [[760, 'half'], [1280, 'wide']]) {
+      await opt.setViewportSize({ width: w, height: 860 });
+      await opt.evaluate(() => window.scrollTo(0, 0));
+      await opt.waitForTimeout(200);
+      const ov = await opt.evaluate(() => document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth);
+      const dir = await opt.evaluate(() => getComputedStyle(document.getElementById('sidenav')).flexDirection);
+      await opt.waitForTimeout(400);
+      const topMark = await opt.evaluate(() => document.querySelector('#sidenav [aria-current=true]')?.dataset.target);
+      check(`Real Chrome settings: fits at ${w}px, nav is a ${w < 860 ? 'row' : 'column'}, back at the top it marks Connect`, ov <= 1 && dir === (w < 860 ? 'row' : 'column') && topMark === 'sec-connect', `overflow ${ov}px, ${dir}, marked ${topMark}`);
+      await shot(opt, `09-settings-${name}`);
+      await opt.click('#sidenav [data-target=sec-notify]');
+      await opt.waitForTimeout(900);
+      const navBottom = await opt.evaluate(() => document.getElementById('sidenav').getBoundingClientRect().bottom);
+      const headTop = await opt.evaluate(() => document.querySelector('#sec-notify h2').getBoundingClientRect().top);
+      check(`Real Chrome settings (${w}px): a section lands below the top bar${w < 860 ? ' and the nav row' : ''}`, headTop >= (w < 860 ? navBottom : 49) - 1, JSON.stringify({ navBottom, headTop }));
+      await shot(opt, `09-settings-${name}-notify`);
+    }
+    await opt.emulateMedia({ colorScheme: 'light' });
+  }
   await opt.waitForTimeout(300);
   check('Real Chrome options: tie-break models and learning switch shown with defaults', await opt.inputValue('#anthropicBest') === 'claude-opus-5-5' && await opt.inputValue('#openaiBest') === 'gpt-6-astra' && await opt.isChecked('#learnSites'));
   await opt.uncheck('#learnSites');
@@ -830,7 +874,7 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
     const shotUrl = shotKey && (await panel.evaluate(k => chrome.storage.local.get(k), shotKey))[shotKey];
     check('Real Chrome jobs: an application keeps exactly what was entered and a screenshot of the confirmation page', (delta2?.answers || []).some(a => /Remote/.test(a)) && (delta2?.answers || []).some(a => /“No”/.test(a)) && /^data:image\/jpeg/.test(shotUrl || ''), JSON.stringify({ answers: delta2?.answers, shot: shotKey, len: (shotUrl || '').length }));
     await jobsPage.bringToFront();
-    for (const [w, name] of [[760, 'half'], [1280, 'wide']]) { await jobsPage.setViewportSize({ width: w, height: 900 }); await jobsPage.waitForTimeout(150); const ov = await jobsPage.evaluate(() => document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth); check(`Real Chrome jobs: the page fits at ${w}px`, ov <= 1, `overflow ${ov}px`); await shot(jobsPage, `17-jobs-${name}`); }
+    for (const [w, name] of [[760, 'half'], [1280, 'wide']]) { await jobsPage.setViewportSize({ width: w, height: 900 }); await jobsPage.waitForTimeout(150); const ov = await jobsPage.evaluate(() => document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth); check(`Real Chrome jobs: the page fits at ${w}px`, ov <= 1, `overflow ${ov}px`); await shot(jobsPage, `17-jobs-${name}`); await jobsPage.evaluate(() => window.scrollTo(0, 0)); await jobsPage.waitForTimeout(100); await shot(jobsPage, `17-jobs-${name}-top`); }
     await jobsPage.close();
   }
 

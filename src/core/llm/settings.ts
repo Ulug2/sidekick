@@ -41,6 +41,19 @@ export const DEFAULT_SETTINGS = {
   trustedInput: true, // use Chrome's debugger for real clicks and typing
   learnSites: true, // save shortcuts and notes for sites after a finished agent task
   notifyAgent: true, // a Chrome notification when the agent needs you or finishes and you're elsewhere
+  // background notifications (orchestrator/host.ts allowNotify): Settings → Notifications
+  notifyNeedsYou: true, // an application in a batch has a question or a step only you can do
+  notifyBatch: true, // the 8 AM batch is ready to approve
+  notifyDue: true, // an approved application is due and the side panel is closed
+  quietFrom: "", // quiet hours, local clock hour "0".."23"; "" = none
+  quietTo: "",
+  // email (Phase 8 reads these; nothing reads email yet): Settings → Email
+  emailTriage: true, // sort new mail into important / needs reply / FYI / promo / junk
+  emailCleanup: false, // move mail from senders you marked to Trash (never deleted; one-click undo)
+  emailReplyMode: "approve", // "approve" = every reply waits for your OK; "some" = the categories below send on their own
+  emailAutoCourse: false, // course logistics (office hours, confirming a deadline)
+  emailAutoScheduling: false, // accepting a time someone offered
+  emailAutoReceipts: false, // acknowledging a receipt or confirmation
   agentTabGroup: true, // tabs the agent opens go into a "Sidekick" tab group
   actionCheck: true, // the fast model double-checks visits to new sites and sharing your details there
   recordRuns: true, // save each agent run step by step (screenshots, model calls, cost) for the Agent runs page

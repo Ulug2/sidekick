@@ -35,7 +35,7 @@ export async function waitMs(): Promise<number> {
 // The answer if he gives it in time (in the panel), or null once the job was set aside.
 export async function needsYouWait(answer: Promise<string>, o: { task: WorkerTask; questions: string[]; options?: string[]; human: boolean; url?: string; signal?: AbortSignal }): Promise<string | null> {
   const ms = await waitMs();
-  chromeHost.notify("Sidekick needs you", `${o.task.title.replace(/^Apply: /, "")}: ${o.questions.join(" ").slice(0, 160)} (waiting ${Math.round(ms / 60000)} min, then it's on the Jobs page)`).catch(() => {});
+  chromeHost.notify("Sidekick needs you", `${o.task.title.replace(/^Apply: /, "")}: ${o.questions.join(" ").slice(0, 160)} (waiting ${Math.round(ms / 60000)} min, then it's on the Jobs page)`, "needs_you").catch(() => {});
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<null>(res => { timer = setTimeout(() => res(null), ms); });
   const aborted = new Promise<never>((_, rej) => o.signal?.addEventListener("abort", () => rej(Object.assign(new Error("Stopped"), { name: "AbortError" })), { once: true }));

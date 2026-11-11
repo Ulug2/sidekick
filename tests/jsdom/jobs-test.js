@@ -59,7 +59,7 @@ const until = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now(
   // ---------- 1. first open: no lists, the seed companies, empty list with the next step ----------
   const p = await page();
   const { doc, local, session, calls } = p;
-  check('Shows the seed companies and that the sponsor lists aren\'t downloaded yet', /SPONSOR LISTS not downloaded/.test(p.text('#sysline')) && /COMPANIES \d{2,}/.test(p.text('#sysline')) && (await local.get('jobCompanies')).jobCompanies.length > 60, p.text('#sysline'));
+  check('Shows the seed companies and that the sponsor lists aren\'t downloaded yet', /Sponsor lists not downloaded/.test(p.text("#sysline")) && /\d{2,} companies/.test(p.text('#sysline')) && (await local.get('jobCompanies')).jobCompanies.length > 60, p.text('#sysline'));
   check('Empty list says what to do first', /Download the sponsor lists first/.test(p.text('#empty')));
   check('Settings default to 20 a day, spend caps $1 a day and $25 a month', doc.querySelector('#dailyCap').value === '20' && doc.querySelector('#capDaily').value === '1' && doc.querySelector('#capMonthly').value === '25');
 
@@ -99,6 +99,16 @@ const until = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now(
   await until(() => /Internships off: 2 moved to Filtered out/.test(p.text('#progress')));
   await until(() => p.text('#tabs [data-tab=apply] .n') === '2');
   check('Internships off again: they leave "To apply" at once, no scan needed', p.text('#tabs [data-tab=apply] .n') === '2' && (await local.get('jobs')).jobs.filter(j => /Intern/.test(j.title)).every(j => !j.ok && j.blocked === 'Internship, not a job'), p.text('#progress'));
+  // v1 Phase 5: Settings → Jobs saved places and company days while this page was open; changing a
+  // control here must keep them (it used to write its whole in-memory copy back).
+  await local.set({ jobSettings: { ...(await local.get('jobSettings')).jobSettings, regions: ['usa', 'europe', 'uae'], companyDays: 14 } });
+  doc.querySelector('#dailyCap').value = '15';
+  doc.querySelector('#dailyCap').dispatchEvent(new p.w.Event('change'));
+  await until(async () => (await local.get('jobSettings')).jobSettings.dailyCap === 15);
+  { const js = (await local.get('jobSettings')).jobSettings; check('Changing a control here keeps what Settings saved (places, company days)', js.dailyCap === 15 && js.regions.join() === 'usa,europe,uae' && js.companyDays === 14 && js.internships === false, JSON.stringify(js)); }
+  doc.querySelector('#dailyCap').value = '20';
+  doc.querySelector('#dailyCap').dispatchEvent(new p.w.Event('change'));
+  await until(async () => (await local.get('jobSettings')).jobSettings.dailyCap === 20);
   click(doc, '#tabs [data-tab=filtered]');
   await sleep(50);
 

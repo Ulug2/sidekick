@@ -4,7 +4,6 @@
 import { $ } from "../shared/dom.js";
 import { readLocal } from "../../core/storage/schema.js";
 import { updateLocal } from "../../core/storage/update.js";
-import { formatCost } from "../../core/llm/prices.js";
 import { DEFAULT_CAPS, overCap, spendFor } from "../../core/llm/budget.js";
 import { readLog } from "../../orchestrator/log.js";
 import type { ActionLogEntry } from "../../orchestrator/types.js";
@@ -15,6 +14,7 @@ import { normalizeLevel } from "../../jobs/sponsorship.js";
 import { approveSpread, BATCH_TZ, cancelApplication, syncDailyAlarm } from "../../jobs/daily.js";
 import { resolveNeedsYou } from "../../jobs/needs-you.js";
 import { chromeHost } from "../../orchestrator/host.js";
+import { meterEl } from "../shared/meter.js";
 import type { Company, Job, JobStatus, Region } from "../../jobs/types.js";
 
 type Tab = "apply" | "batch" | "applied" | "needs" | "filtered" | "companies" | "activity";
@@ -39,6 +39,7 @@ let settings = { ...DEFAULT_JOB_SETTINGS };
 let caps = { ...DEFAULT_CAPS };
 let actions: ActionLogEntry[] = [];
 let running: AbortController | null = null;
+const unapprovedOf = (list: Job[]) => list.filter(j => j.status === "queued" && !j.scheduledAt).length;
 
 // ---------- one job ----------
 export function renderJob(j: Job): HTMLElement {
@@ -47,14 +48,13 @@ export function renderJob(j: Job): HTMLElement {
   const main = h("div", { class: "main" },
     h("a", { class: "title", href: j.url, target: "_blank", rel: "noopener noreferrer" }, j.title), " ", h("span", { class: "co" }, `· ${j.company}`),
     h("div", { class: "meta" },
-      ...j.regions.map(r => h("span", { class: "chip" }, REGION[r])),
-      h("span", { class: `chip sponsor-${level}` }, SPONSOR[level] || level),
+      j.regions.length ? h("span", { class: "chip" }, j.regions.map(r => REGION[r]).join(" · ")) : "",
+      h("span", { class: `chip sponsor-${level}`, title: [`Priority ${j.score}`, ...(j.evidence || []).map(e => `${e.confidence}: ${e.text} (${e.source}${e.date ? `, ${e.date}` : ""})`)].join("\n") }, SPONSOR[level] || level),
       j.status === "queued" ? h("span", { class: "chip" }, j.scheduledAt ? `at ${new Date(j.scheduledAt).toLocaleString("en-US", { timeZone: BATCH_TZ, weekday: "short", hour: "numeric", minute: "2-digit" })} ET` : "not approved") : "",
       j.status !== "found" ? h("span", { class: `chip status-${j.status}` }, j.status.replace("_", " ")) : "",
       h("span", {}, j.location || "no location"),
       j.postedAt ? h("span", {}, `posted ${day(j.postedAt)}`) : "",
-      j.appliedAt ? h("span", {}, `applied ${day(j.appliedAt)}`) : "",
-      h("span", { class: "chip", title: "priority" }, `P${j.score}`)
+      j.appliedAt ? h("span", {}, `applied ${day(j.appliedAt)}`) : ""
     ),
     h("div", { class: `why${j.ok ? "" : " blocked"}` }, j.ok ? (j.evidence?.length ? j.evidence.map(e => `${e.confidence}: ${e.text}${e.date && !e.text.includes(e.date) ? ` (${e.date})` : ""}`) : j.why).join(" · ") : j.blocked || ""),
     j.note && j.status !== "found" ? h("div", { class: `why${j.status === "needs_you" ? " blocked" : ""}` }, j.note) : ""
@@ -73,7 +73,7 @@ export function renderJob(j: Job): HTMLElement {
   }
   const acts = h("div", { class: "acts" });
   const row = h("div", { class: "row" });
-  const btn = (label: string, fn: () => Promise<void>, cls = "mini") => { const b = h("button", { type: "button", class: cls }, label); b.onclick = () => fn().then(render); return b; };
+  const btn = (label: string, fn: () => Promise<void>, cls = "small") => { const b = h("button", { type: "button", class: cls }, label); b.onclick = () => fn().then(render); return b; };
   if (j.status === "found" && j.ok) row.append(btn("Add to batch", () => queueJobs([j.id])), btn("Skip", () => setJobStatus(j.id, "skipped")));
   if (j.status === "queued") row.append(btn("Remove from batch", async () => { await cancelApplication(chromeHost, j.id); await setJobStatus(j.id, "found"); }), btn("Skip", async () => { await cancelApplication(chromeHost, j.id); await setJobStatus(j.id, "skipped"); }));
   if (["found", "queued", "needs_you"].includes(j.status)) row.append(btn("Applied by hand", async () => { await cancelApplication(chromeHost, j.id); await setJobStatus(j.id, "applied", { needsYou: undefined }); }));
@@ -84,14 +84,14 @@ export function renderJob(j: Job): HTMLElement {
     sel.onchange = () => setJobStatus(j.id, sel.value as JobStatus).then(render);
     row.append(sel);
   }
-  row.append(h("a", { class: "mini", href: j.applyUrl, target: "_blank", rel: "noopener noreferrer", style: "font-size:12px" }, "Open form ↗"));
-  if (j.traceId) row.append(h("a", { class: "mini", href: `runs.html#${encodeURIComponent(j.traceId)}`, target: "_blank", style: "font-size:12px" }, "Replay"));
+  row.append(h("a", { class: "act-link", href: j.applyUrl, target: "_blank", rel: "noopener noreferrer" }, "Open form ↗"));
+  if (j.traceId) row.append(h("a", { class: "act-link", href: `runs.html#${encodeURIComponent(j.traceId)}`, target: "_blank" }, "Replay"));
   acts.append(row);
   const note = h("input", { type: "text", class: "note", placeholder: "Note" }) as HTMLInputElement;
   note.value = j.note || "";
   note.onchange = () => updateLocal("jobs", (list = []) => list.map(x => x.id !== j.id ? x : { ...x, note: note.value.trim() }));
   acts.append(note);
-  li.append(h("div", { class: "bar" }), main, acts);
+  li.append(main, acts);
   return li;
 }
 
@@ -117,7 +117,7 @@ export function needsYouCard(j: Job): HTMLElement {
     box.append(h("label", { class: "q", for: id }, h("span", {}, q.question), input));
   });
   const status = h("span", { class: "hint", role: "status" });
-  const go = h("button", { type: "button", class: "mini go" }, "Save & resume") as HTMLButtonElement;
+  const go = h("button", { type: "button", class: "small primary" }, "Save & resume") as HTMLButtonElement;
   go.onclick = async () => {
     go.disabled = true;
     const answers: Record<number, string> = {};
@@ -135,7 +135,7 @@ export function needsYouCard(j: Job): HTMLElement {
 function renderCompany(c: Company): HTMLElement {
   const li = h("li", { class: "company" }, h("span", { class: "name" }, c.name), h("span", { class: "board" }, `${c.ats} · ${c.board}${c.eu ? " (EU)" : ""} · ${c.jobs ?? "?"} matching · scanned ${ago(c.lastScan)}`));
   if (c.lastError) li.append(h("span", { class: "err" }, c.lastError));
-  const del = h("button", { type: "button", class: "mini" }, "Remove");
+  const del = h("button", { type: "button", class: "small" }, "Remove");
   del.onclick = () => changeCompanies(list => list.filter(x => companyKey(x) !== companyKey(c))).then(render);
   li.append(del);
   return li;
@@ -163,18 +163,18 @@ export async function render(): Promise<void> {
   const spend = spendFor(usage);
   const lastScan = Math.max(0, ...companies.map(c => c.lastScan || 0));
   $("#sysline").replaceChildren(
-    "SPONSOR LISTS ", h("b", {}, lists ? `UK ${lists.ukDate || "?"} · US H-1B FY${lists.usYears || "?"}` : "not downloaded"),
-    "  ·  COMPANIES ", h("b", {}, String(companies.length)), "  ·  LAST SCAN ", h("b", {}, ago(lastScan)),
-    "  ·  API TODAY ", h("b", {}, `${formatCost(spend.today)} of $${caps.daily}`), "  ·  THIS MONTH ", h("b", {}, `${formatCost(spend.month)} of $${caps.monthly}`));
-  const tile = (v: string | number, k: string, s = "", cls = "") => h("div", { class: `tile ${cls}` }, h("div", { class: "v" }, String(v)), h("span", { class: "k" }, k), s ? h("span", { class: "s" }, s) : "");
-  const today = h("div", { class: "tile green" }, h("div", { class: "v" }, String(stats.appliedToday), h("small", {}, ` / ${settings.dailyCap}`)), h("span", { class: "k" }, "applied today"), h("span", { class: "s" }, `${stats.queued} in the batch`));
+    "Sponsor lists ", h("b", {}, lists ? `UK ${lists.ukDate || "?"} · US H-1B FY${lists.usYears || "?"}` : "not downloaded"),
+    " · ", h("b", {}, String(companies.length)), ` compan${companies.length === 1 ? "y" : "ies"} · last scan `, h("b", {}, ago(lastScan)));
+  $("#meters").replaceChildren(meterEl("API today", spend.today, caps.daily), meterEl("This month", spend.month, caps.monthly));
+  const tile = (v: string | number, k: string, s = "", cls = "", of = "") => h("div", { class: `tile ${cls}` }, h("div", { class: "v" }, String(v), of ? h("small", {}, of) : ""), h("span", { class: "k" }, k), s ? h("span", { class: "s" }, s) : "");
   $("#hud").replaceChildren(
-    tile(stats.eligible, "to apply", `${stats.companies} companies`), tile(stats.queued, "today's batch", stats.queued ? "ready to approve" : "press Build", "amber"), today,
-    tile(stats.applied, "applied", `${stats.rejected} rejected`), tile(stats.interviews, "interviews", `${stats.offers} offers`, "amber"), tile(stats.needsYou, "need you", stats.needsYou ? "login, CAPTCHA or a question" : "", stats.needsYou ? "red" : "")
+    tile(stats.eligible, "to apply", `${stats.companies} companies`), tile(stats.queued, "today's batch", stats.queued ? (unapprovedOf(jobs) ? "ready to approve" : "approved") : "press Build", "accent"),
+    tile(stats.appliedToday, "applied today", `${stats.queued} in the batch`, "", ` / ${settings.dailyCap}`),
+    tile(stats.applied, "applied", `${stats.rejected} rejected`), tile(stats.interviews, "interviews", `${stats.offers} offers`), tile(stats.needsYou, "need you", stats.needsYou ? "a question, sign-in or check" : "", stats.needsYou ? "alert" : "")
   );
   const { jobBatch } = await chrome.storage.session.get("jobBatch").catch(() => ({ jobBatch: undefined }));
   const batchActive = !!jobBatch || jobs.some(j => j.status === "applying");
-  const unapproved = jobs.filter(j => j.status === "queued" && !j.scheduledAt).length;
+  const unapproved = unapprovedOf(jobs);
   $("#approve").hidden = !unapproved || !!running || batchActive;
   $("#start").hidden = !stats.queued || !!running || batchActive;
   $("#stop").hidden = !running && !batchActive;
@@ -232,21 +232,30 @@ function download(name: string, text: string, type: string) {
 
 if ($("#jobsApp")) {
   (async () => {
-    settings = { ...DEFAULT_JOB_SETTINGS, ...((await readLocal("jobSettings")).jobSettings || {}) };
-    $("#dailyCap").value = String(settings.dailyCap);
-    { const { capDaily, capMonthly } = await readLocal(["capDaily", "capMonthly"]); $("#capDaily").value = String(capDaily ?? DEFAULT_CAPS.daily); $("#capMonthly").value = String(capMonthly ?? DEFAULT_CAPS.monthly); }
-    $("#internships").checked = !!settings.internships;
-    $("#dailyBatch").checked = settings.dailyBatch !== false;
-    $("#batchSize").value = String(settings.batchSize);
+    const loadSettings = async () => {
+      settings = { ...DEFAULT_JOB_SETTINGS, ...((await readLocal("jobSettings")).jobSettings || {}) };
+      $("#dailyCap").value = String(settings.dailyCap);
+      const { capDaily, capMonthly } = await readLocal(["capDaily", "capMonthly"]);
+      $("#capDaily").value = String(capDaily ?? DEFAULT_CAPS.daily); $("#capMonthly").value = String(capMonthly ?? DEFAULT_CAPS.monthly);
+      $("#internships").checked = !!settings.internships;
+      $("#dailyBatch").checked = settings.dailyBatch !== false;
+      $("#batchSize").value = String(settings.batchSize);
+    };
+    await loadSettings();
     const saveSettings = async () => {
       const internshipsWas = !!settings.internships;
-      settings = { ...settings, dailyCap: Math.max(1, Math.min(50, Number($("#dailyCap").value) || DEFAULT_JOB_SETTINGS.dailyCap)), internships: !!$("#internships").checked, dailyBatch: !!$("#dailyBatch").checked, batchSize: Math.max(1, Math.min(50, Number($("#batchSize").value) || DEFAULT_JOB_SETTINGS.batchSize)) };
-      $("#batchSize").value = String(settings.batchSize);
-      $("#dailyCap").value = String(settings.dailyCap);
+      const mine = { dailyCap: Math.max(1, Math.min(50, Number($("#dailyCap").value) || DEFAULT_JOB_SETTINGS.dailyCap)), internships: !!$("#internships").checked, dailyBatch: !!$("#dailyBatch").checked, batchSize: Math.max(1, Math.min(30, Number($("#batchSize").value) || DEFAULT_JOB_SETTINGS.batchSize)) };
+      $("#batchSize").value = String(mine.batchSize);
+      $("#dailyCap").value = String(mine.dailyCap);
       // The spend caps are Settings fields (core/llm/budget.ts reads them before every model call).
-      const capDaily = Math.max(0, Math.min(50, Number($("#capDaily").value))), capMonthly = Math.max(0, Math.min(500, Number($("#capMonthly").value)));
+      // An emptied field means "the default", never 0 (0 = no cap).
+      const capOf = (v: string, dflt: number, max: number) => { const n = Number(v); return Math.max(0, Math.min(max, String(v).trim() !== "" && Number.isFinite(n) ? n : dflt)); };
+      const capDaily = capOf($("#capDaily").value, DEFAULT_CAPS.daily, 50), capMonthly = capOf($("#capMonthly").value, DEFAULT_CAPS.monthly, 500);
       $("#capDaily").value = String(capDaily); $("#capMonthly").value = String(capMonthly);
-      await chrome.storage.local.set({ jobSettings: settings, capDaily, capMonthly });
+      // Only this page's fields, merged under the lock: Settings → Jobs writes the same key.
+      await updateLocal("jobSettings", cur => ({ ...DEFAULT_JOB_SETTINGS, ...(cur || {}), ...mine }));
+      settings = { ...DEFAULT_JOB_SETTINGS, ...((await readLocal("jobSettings")).jobSettings || {}) };
+      await chrome.storage.local.set({ capDaily, capMonthly });
       syncDailyAlarm(chromeHost).catch(() => {}); // sets or clears the 8 AM alarm
       if (internshipsWas !== settings.internships) {
         const n = await rejudgeJobs();
@@ -281,9 +290,9 @@ if ($("#jobsApp")) {
     $("#build").onclick = () => withProgress("Building today's batch…", async () => {
       const list = await getJobs();
       const room = Math.max(0, settings.dailyCap - jobStats(list).appliedToday - jobStats(list).queued);
-      const ids = pickBatch(list, room);
+      const ids = pickBatch(list, room, Date.now(), settings.companyDays);
       await queueJobs(ids);
-      return ids.length ? `${ids.length} jobs in today's batch. Look them over, then press Approve & spread over the day (or Start now).` : room ? "No eligible jobs left to add (one per company per month)." : `Today's limit of ${settings.dailyCap} is used up.`;
+      return ids.length ? `${ids.length} jobs in today's batch. Look them over, then press Approve & spread over the day (or Start now).` : room ? `No eligible jobs left to add (one per company every ${settings.companyDays} days).` : `Today's limit of ${settings.dailyCap} is used up.`;
     });
     $("#start").onclick = async () => {
       const windowId = (await chrome.windows?.getCurrent?.().catch(() => null))?.id;
@@ -310,7 +319,10 @@ if ($("#jobsApp")) {
       $("#careersUrl").value = ""; $("#companyName").value = "";
       await withProgress(`Scanning ${name}…`, async (signal) => { const p = await scanCompanies([c], () => {}, signal); return p.errors[0] ? `Couldn't read ${name}'s board: ${p.errors[0]}` : `${name} added: ${p.found} eligible jobs.`; });
     };
-    chrome.storage.onChanged.addListener((changes, area) => { if ((area === "local" && (changes.jobs || changes.jobCompanies || changes.sponsorLists || changes.usage || changes.actionLog || changes.capDaily || changes.capMonthly)) || (area === "session" && changes.jobBatch)) render(); });
+    chrome.storage.onChanged.addListener((changes, area) => { if ((area === "local" && (changes.jobs || changes.jobCompanies || changes.sponsorLists || changes.usage || changes.actionLog || changes.capDaily || changes.capMonthly)) || (area === "session" && changes.jobBatch)) render();
+      // Settings → Jobs changed something: show it (unless he's typing in these controls).
+      if (area === "local" && changes.jobSettings && !document.activeElement?.closest?.(".controls")) loadSettings().then(render);
+    });
     await render();
   })();
 }

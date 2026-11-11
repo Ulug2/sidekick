@@ -5,6 +5,7 @@
   --text: #0d0d0d; --muted: #6b6b6b; --faint: #9a9a9a;
   --beige: #e8dcc4; --beige-hover: #ddcdae; --beige-text: #2a2117;
   --ok: #2f7d4f; --err: #b42318; --focus: rgba(0,0,0,.12);
+  --accent-strong: #a8915f; --warn: #8a5a00;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -13,6 +14,7 @@
     --text: #ececec; --muted: #a8a8a8; --faint: #767676;
     --beige: #ddceb0; --beige-hover: #e9dcc2; --beige-text: #1d1912;
     --ok: #7fd1a0; --err: #ff8f85; --focus: rgba(255,255,255,.14);
+    --accent-strong: #ddceb0; --warn: #e8b85c;
     color-scheme: dark;
   }
 }
@@ -44,7 +46,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .toc .toc-group { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); padding: 12px 10px 3px; }
 .toc .toc-group:first-child { padding-top: 2px; }
 /* Group headings between cards on long pages (profile): bigger than a card title, with room above. */
-h2.group { font-size: 20px; font-weight: 600; letter-spacing: -.02em; margin: 44px 0 0; padding-top: 24px; border-top: 2px solid var(--text); scroll-margin-top: 72px; }
+h2.group { font-size: 20px; font-weight: 600; letter-spacing: -.02em; margin: 44px 0 0; padding-top: 24px; border-top: 2px solid var(--text); scroll-margin-top: 2px; }
 h2.group + .card, h2.group + .group-hint + .card { border-top: 0; padding-top: 14px; }
 .group-hint { margin: 6px 0 0; max-width: 620px; }
 /* Narrow windows (e.g. Chrome sharing the screen with the side panel): the section menu becomes
@@ -86,7 +88,7 @@ h2.group + .card, h2.group + .group-hint + .card { border-top: 0; padding-top: 1
 @media (max-width: 560px) { .grid.two { grid-template-columns: 1fr; } }
 .grid .wide { grid-column: 1 / -1; }
 label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 500; }
-input[type=text], input[type=search], input[type=email], input[type=tel], input[type=url], input[type=password], select, textarea {
+input[type=text], input[type=search], input[type=email], input[type=tel], input[type=url], input[type=password], input[type=number], select, textarea {
   font: inherit; font-weight: 400; color: var(--text); background: var(--surface);
   border: 1px solid transparent; border-radius: 10px; padding: 9px 12px; outline: none; width: 100%;
   transition: border-color .15s, box-shadow .15s;
@@ -203,6 +205,45 @@ button.small { font-size: 12.5px; padding: 3px 10px; }
 .skill-new[open] { display: grid; gap: 8px; }
 .skill-new[open] summary { margin-bottom: 2px; }
 .skill-new button { justify-self: start; }
-/* Jumping to a section lands below the sticky top bar (and the section row on narrow windows). */
-section.card, section.hero { scroll-margin-top: 72px; }
-@media (max-width: 860px) { section.card, section.hero { scroll-margin-top: 112px; } }
+/* Jumping to a section lands just below the sticky top bar (and the section row on narrow windows).
+   html's scroll-padding-top (70px) already clears the top bar; these margins add to it. */
+section.card, section.hero { scroll-margin-top: 2px; }
+@media (max-width: 860px) { section.card, section.hero { scroll-margin-top: 44px; } }
+
+/* Section nav made of buttons (Settings): icon + label, the accent on the section in view, a focus
+   ring for the keyboard (arrow keys move between items, Tab reaches each). Under 860 px it becomes
+   one sticky row of pills under the top bar, scrolled sideways inside itself. */
+.sidenav { position: sticky; top: 76px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
+.sidenav button {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; border-radius: 10px;
+  padding: 7px 10px; color: var(--muted); font-size: 13.5px; font-weight: 500; background: transparent;
+}
+.sidenav button svg { width: 17px; height: 17px; }
+.sidenav button:hover { background: var(--surface); color: var(--text); }
+.sidenav button[aria-current="true"] { background: var(--beige); color: var(--beige-text); }
+.sidenav button:focus { outline: none; }
+.sidenav button:focus-visible { box-shadow: 0 0 0 3px var(--focus), inset 0 0 0 1px var(--muted); color: var(--text); }
+.sidenav button[aria-current="true"]:focus-visible { color: var(--beige-text); }
+@media (max-width: 860px) {
+  .sidenav {
+    position: sticky; top: var(--topbar-h, 49px); z-index: 4; flex-direction: row; gap: 6px;
+    overflow-x: auto; scrollbar-width: none; margin: 0 -24px; padding: 8px 20px;
+    background: var(--bg); border-bottom: 1px solid var(--border);
+  }
+  .sidenav::-webkit-scrollbar { display: none; }
+  .sidenav button { flex: none; width: auto; gap: 6px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; }
+  .sidenav button svg { width: 15px; height: 15px; }
+  .sidenav button[aria-current="true"] { border-color: transparent; }
+}
+section.card > h2[tabindex]:focus { outline: none; }
+
+/* Spend meters (Settings → Spend, the Jobs page): dollars of a cap, as a thin bar. */
+.meters { display: grid; gap: 12px; margin: 4px 0 18px; }
+.meter { display: grid; gap: 5px; font-size: 13px; }
+.meter .meter-top { display: flex; justify-content: space-between; gap: 10px; }
+.meter .meter-top span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
+.meter .meter-bar { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.meter .meter-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent-strong); }
+.meter.near .meter-bar i { background: var(--warn); }
+.meter.over .meter-bar i { background: var(--err); }
+.meter.over .meter-top span:last-child { color: var(--err); }

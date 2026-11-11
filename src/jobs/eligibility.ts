@@ -98,13 +98,16 @@ export const DEFAULT_ROLES = ["software engineer", "software developer", "softwa
 
 
 // roles: what to look for in titles (the profile's target roles, or DEFAULT_ROLES).
-export interface JudgeOptions { internships?: boolean }
+// regions: the places he chose in Settings → Jobs (all four when unset).
+export interface JudgeOptions { internships?: boolean; regions?: Region[] }
+const PLACE: Record<Region, string> = { usa: "the US", canada: "Canada", europe: "Europe", uae: "the UAE" };
 export function judgeJob(job: Pick<Job, "title" | "company" | "location" | "text" | "postedAt">, sponsors: SponsorData, roles: string[] = DEFAULT_ROLES, now = Date.now(), opts: JudgeOptions = {}): Verdict {
   const { regions, countries } = whereIs(job.location);
   const no = (blocked: string, sponsor: SponsorLevel = "no"): Verdict => ({ ok: false, regions, countries, sponsor, why: [], evidence: [], blocked, score: 0 });
   const title = String(job.title || "");
   const text = `${title}\n${job.text || ""}`;
   if (!regions.length) return no(job.location ? `Not in the US, Canada, Europe or the UAE (${job.location})` : "No location given");
+  if (opts.regions?.length && !regions.some(r => opts.regions!.includes(r))) return no(`In ${regions.map(r => PLACE[r]).join(" and ")}, which you turned off (Settings → Jobs)`);
   const roleHit = roles.some(r => title.toLowerCase().includes(r.toLowerCase()));
   if (!roleHit) return no("Not one of your target roles");
   if (NOT_FOR_YOU.test(title)) return no(`For ${title.match(NOT_FOR_YOU)![0]} students`);

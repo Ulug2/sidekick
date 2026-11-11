@@ -8,6 +8,8 @@ import { changeCompanies, companyKey, getCompanies, mergeScan } from "./store.js
 import { updateLocal } from "../core/storage/update.js";
 import { readLocal } from "../core/storage/schema.js";
 import { getProfile } from "../assistant/profile-core.js";
+import { cancelApplication } from "./daily.js";
+import { chromeHost, type Host } from "../orchestrator/host.js";
 import { webFetchOpts } from "../core/web/web.js";
 
 export const SCAN_PARALLEL = 4;
@@ -40,21 +42,26 @@ export async function shippedLca(): Promise<Pick<SponsorLists, "lca" | "lcaYears
 
 export async function judgeOptions(): Promise<JudgeOptions> {
   const { jobSettings } = await readLocal("jobSettings");
-  return { internships: !!jobSettings?.internships };
+  return { internships: !!jobSettings?.internships, ...(jobSettings?.regions?.length && { regions: jobSettings.regions }) };
 }
 // Re-checks the jobs already in the list against the current rules without reading the boards
 // (an internship switched off disappears from "To apply" at once). Jobs filtered out earlier kept
 // no text, so switching internships on needs a scan.
-export async function rejudgeJobs(): Promise<number> {
+// A queued job that leaves the batch this way loses its approved time and its alarm (an approval
+// is never carried over to a later re-queue: LESSONS 20).
+export async function rejudgeJobs(host: Host = chromeHost): Promise<number> {
   const [{ data }, roles, opts] = await Promise.all([loadSponsors(), targetRoles(), judgeOptions()]);
   let changed = 0;
+  const unqueued: string[] = [];
   await updateLocal("jobs", (list = []) => list.map(j => {
     if (!["found", "queued"].includes(j.status) || (!j.ok && !j.text)) return j;
     const v = judgeJob(j, data, roles, Date.now(), opts);
     if (v.ok === j.ok && v.blocked === j.blocked) return j;
     changed++;
-    return { ...j, ok: v.ok, regions: v.regions, countries: v.countries, sponsor: v.sponsor, why: v.why, evidence: v.evidence, blocked: v.blocked, score: v.score, text: v.ok ? j.text : undefined, status: "found" as const };
+    if (j.status === "queued") unqueued.push(j.id);
+    return { ...j, ok: v.ok, regions: v.regions, countries: v.countries, sponsor: v.sponsor, why: v.why, evidence: v.evidence, blocked: v.blocked, score: v.score, text: v.ok ? j.text : undefined, status: "found" as const, scheduledAt: undefined };
   }));
+  for (const id of unqueued) await cancelApplication(host, id).catch(() => {});
   return changed;
 }
 export interface ScanProgress { done: number; total: number; company: string; found: number; errors: string[] }

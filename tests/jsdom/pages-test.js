@@ -44,8 +44,8 @@ function boot(page, local, fetchImpl, expose = []) {
 
   // ---------- settings ----------
   {
-    const local = makeStore({ anthropicKey: 'sk-ant', usage: { [new Date().toLocaleDateString('en-CA')]: { 'claude-haiku-5-5': { calls: 3, input: 1200, output: 300, cacheRead: 900, cacheWrite: 0 } } } });
-    const { w, $ } = boot('options.html', local);
+    const local = makeStore({ anthropicKey: 'sk-ant', jobSettings: { dailyCap: 12, monthlyCap: 25 }, usage: { [new Date().toLocaleDateString('en-CA')]: { 'claude-haiku-5-5': { calls: 3, input: 1200, output: 300, cacheRead: 900, cacheWrite: 0 } } } });
+    const { w, $, $$ } = boot('options.html', local);
     await sleep(120);
     check('Settings load defaults', $('#assistantName').value === 'Sidekick' && $('#routing').value === 'auto' && $('#smartEffort').value === 'high' && $('#trustedInput').checked && /paypal\.com/.test($('#blockedSites').value));
     check('Usage table shows today', /claude-haiku-5-5/.test($('#usage').textContent) && /Today/.test($('#usage').textContent));
@@ -54,6 +54,44 @@ function boot(page, local, fetchImpl, expose = []) {
     const d = local.data();
     check('Save: persona + empty model falls back to default', d.assistantName === 'Jarvis' && d.personality === 'witty' && d.customInstructions === 'Be brief.' && d.anthropicSmart === 'claude-sonnet-5-5');
     check('Save prompts to re-run quality checks after brain changes', /Run the quality checks/.test($('#status').textContent));
+
+    // ---- v1 Phase 5: the section nav ----
+    const nav = $$('#sidenav button');
+    const doc = w.document;
+    check('Settings nav: eleven buttons with icons in the planned order, the first marked', nav.length === 11 && nav.every(b => b.type === 'button' && b.querySelector('svg') && doc.getElementById(b.dataset.target)) && nav.map(b => b.textContent.trim()).join('|') === 'Connect|Models|Assistant|Memory|Agent|Jobs|Email|School|Notifications|Spend|Pages' && nav[0].getAttribute('aria-current') === 'true', nav.map(b => b.textContent.trim()).join('|'));
+    check('Settings sections follow the nav order', $$('main section.card').map(s => s.id).join() === nav.map(b => b.dataset.target).join(), $$('main section.card').map(s => s.id).join());
+    nav[5].click();
+    check('Clicking Jobs marks it, moves focus to the Jobs heading and puts it in the address', nav[5].getAttribute('aria-current') === 'true' && nav.filter(b => b.hasAttribute('aria-current')).length === 1 && doc.activeElement === $('#sec-jobs h2') && w.location.hash === '#sec-jobs');
+    const key = (k) => doc.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true }));
+    nav[5].focus(); key('ArrowDown'); const down = doc.activeElement === nav[6];
+    key('ArrowLeft'); key('ArrowUp'); const up = doc.activeElement === nav[4];
+    key('End'); const end = doc.activeElement === nav[10]; key('ArrowDown'); const wrap = doc.activeElement === nav[0]; key('ArrowUp'); const back = doc.activeElement === nav[10]; key('Home');
+    check('Arrow keys, Home and End move between nav items (wrapping)', down && up && end && wrap && back && doc.activeElement === nav[0], JSON.stringify({ down, up, end, wrap, back }));
+
+    // ---- Settings → Jobs, Email, Notifications, Spend ----
+    const regions = () => $$('#jRegions input').filter(b => b.checked).map(b => b.value).join();
+    check('Jobs settings load: saved daily cap, defaults for the rest, all four places', $('#jDailyCap').value === '12' && $('#jBatchHour').value === '8' && $('#jBatchSize').value === '18' && $('#jSpread').value === '20' && $('#jWait').value === '10' && $('#jCompanyDays').value === '30' && $('#jDailyBatch').checked && !$('#jInternships').checked && regions() === 'usa,canada,europe,uae');
+    check('Notifications on by default, no quiet hours; email replies wait for approval and the auto-send list is locked', $('#notifyNeedsYou').checked && $('#notifyBatch').checked && $('#notifyDue').checked && $('#notifyAgent').checked && $('#quietFrom').value === '' && $('#emailReplyMode').value === 'approve' && $('#emailAuto').disabled && !$('#emailAutoCourse').checked);
+    $('#emailReplyMode').value = 'some'; $('#emailReplyMode').dispatchEvent(new w.Event('change'));
+    check('Choosing "send some kinds on their own" unlocks the categories', !$('#emailAuto').disabled);
+    check('Spend meters: today and this month against the caps', $$('#meters .meter').length === 2 && /Today/.test($('#meters').textContent) && /of \$1\.00/.test($('#meters').textContent) && /of \$25\.00/.test($('#meters').textContent), $('#meters').textContent);
+    for (const b of $$('#jRegions input')) b.checked = false;
+    const before = JSON.stringify(local.data().jobSettings);
+    $('#save').click(); await sleep(80);
+    check('No place to look ticked: nothing is saved and it says why', /at least one place/.test($('#status').textContent) && JSON.stringify(local.data().jobSettings) === before && w.location.hash === '#sec-jobs', $('#status').textContent);
+    for (const b of $$('#jRegions input')) b.checked = b.value !== 'canada';
+    $('#jBatchSize').value = '45'; $('#jWait').value = ''; $('#jCompanyDays').value = '3'; $('#jBatchHour').value = '7';
+    $('#quietFrom').value = '22'; $('#quietTo').value = '7'; $('#notifyBatch').checked = false; $('#emailAutoScheduling').checked = true;
+    $('#capDaily').value = '2.5'; $('#capMonthly').value = '900';
+    $('#save').click(); await sleep(150);
+    const js = local.data().jobSettings, d2 = local.data();
+    check('Save: job settings clamped and merged (the Jobs page\'s fields kept), Canada off', js.batchSize === 30 && js.needsYouWaitMinutes === 10 && js.companyDays === 7 && js.batchHour === 7 && js.dailyCap === 12 && js.monthlyCap === 25 && js.regions.join() === 'usa,europe,uae' && $('#jBatchSize').value === '30', JSON.stringify(js));
+    check('Save: notifications, quiet hours and email choices stored', d2.quietFrom === '22' && d2.quietTo === '7' && d2.notifyBatch === false && d2.notifyNeedsYou === true && d2.emailReplyMode === 'some' && d2.emailAutoScheduling === true && d2.emailAutoCourse === false);
+    check('Save: spend caps stored as numbers, clamped ($500 a month at most)', d2.capDaily === 2.5 && d2.capMonthly === 500 && $('#capMonthly').value === '500', JSON.stringify({ capDaily: d2.capDaily, capMonthly: d2.capMonthly }));
+    check('Turning a place off says what moved', /moved to Filtered out/.test($('#status').textContent), $('#status').textContent);
+    $('#capDaily').value = ''; $('#capMonthly').value = ' ';
+    $('#save').click(); await sleep(150);
+    check('An emptied cap field goes back to the default, never 0 (= no cap)', local.data().capDaily === 1 && local.data().capMonthly === 25 && $('#capDaily').value === '1', JSON.stringify({ capDaily: local.data().capDaily, capMonthly: local.data().capMonthly }));
   }
 
   // ---------- quality checks runner ----------

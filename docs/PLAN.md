@@ -11,6 +11,7 @@ Delivered: `BUGS.md` (four root causes with file:line), this plan, `ARCHITECTURE
 ## Status
 - Phase 1: done (2026-11-10). Phase 2: done (2026-11-11, `41708aa`). Phase 3: done (2026-11-11, `283beac`).
 - Phase 4: done (2026-11-11) except: Workday / Teamtailor / BambooHR boards (not started); the DOL LCA data is not shipped yet (the script `scripts/sponsors/build-lca.mjs` builds `public/data/lca.json` from DOL's quarterly files, which he downloads); the IND and LMIA lists are supported in code but have no downloader yet (no evidence from them until then). Applications due while the side panel is closed wait for it (a notification says so); Phase 9 moves this to the Powerhouse page.
+- Phase 5: done (2026-11-11). Jobs page in the Sidekick look (light and dark, spend meters, fewer chips); Settings with an 11-item sidebar nav (buttons, arrow keys, scroll marking, a pill row under 860 px) and new sections: Jobs (batch time and size, daily cap, spread, Needs-You wait, one per company every N days, where to look, internships), Email (choices stored; nothing reads email until Phase 8), School (text only until Phase 7), Notifications (per kind, quiet hours that hold notifications until they end), Spend (caps and meters). Where-to-look and company days reach the pipeline (`judgeJob` regions, `pickBatch` days). Not done: "learn automatically" stays where it was (Memory section); remote-only postings count for the country they name (no separate "remote" choice).
 
 ## Phase 2: orchestrator core
 

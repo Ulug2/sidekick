@@ -145,6 +145,21 @@ General rules that came out of these: design for the long version of a task; eve
   - Yes/no meaning is read from the whole phrase.
   - Tests: unit phase4, daily-batch, memory-answers.
 
+### 21. Phase 5's first draft: settings that silently turned things off (caught in review, 2026-11-11)
+- **What.** A reviewer agent and the real-Chromium screenshots found:
+  - emptying a spend-cap field saved 0, which means "no cap" (the Jobs page had the same bug before);
+  - turning a region or internships off moved approved jobs out of the batch but kept their `scheduledAt` and alarms, so a later re-queue looked approved;
+  - quiet hours dropped the only notice of a due application or a ready batch;
+  - the Jobs page wrote its whole in-memory `jobSettings` back, which would have erased what Settings saved;
+  - every jump to a section landed 142 px down: `scroll-padding-top` on `html` and `scroll-margin-top` on sections add up.
+- **Rule.**
+  - An empty or invalid number means the default, never 0, when 0 has a meaning.
+  - Leaving the batch clears every trace of approval, wherever it happens; re-queueing always needs a new approval.
+  - A notification setting may delay a notice but must not lose the only one.
+  - Two pages that edit one storage key merge their own fields under the lock.
+  - Check jump targets in real Chromium; scroll offsets stack.
+  - Tests: pages, jobs, daily-batch, unit phase5, real-chrome 9.
+
 ## Earlier lessons (v0.7–v0.9)
 - **A double-check must not overrule a right answer without evidence** (v0.7.2 pipeline problem). Replacements need a code check (objective or residuals) under both setups.
 - **Examples in prompts anchor the model.** Use neutral numbers, never the real answer.

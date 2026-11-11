@@ -7,7 +7,7 @@ const { JSDOM, makeStore, loadScripts } = H;
 const results = []; const check = (n, ok, x = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  ${n}${x && !ok ? '\n        ' + String(x).slice(0, 1200).replace(/\n/g, '\n        ') : ''}`);
 
 const DAY = 864e5;
-const job = (i, company, score) => ({ id: `greenhouse:b${i}:${i}`, ats: 'greenhouse', board: `b${i}`, company, title: 'Software Engineer, New Grad', location: 'New York, NY', url: `https://x/${i}`, applyUrl: `https://x/${i}`, ok: true, regions: ['usa'], countries: ['US'], sponsor: 'likely', why: [], score, status: 'found', firstSeen: 1, lastSeen: 1 });
+const job = (i, company, score) => ({ id: `greenhouse:b${i}:${i}`, ats: 'greenhouse', board: `b${i}`, company, title: 'Software Engineer, New Grad', location: 'New York, NY', url: `https://x/${i}`, applyUrl: `https://x/${i}`, ok: true, regions: ['usa'], countries: ['US'], sponsor: 'likely', why: [], score, status: 'found', firstSeen: 1, lastSeen: 1, text: 'We sponsor H-1B visas for this role.' });
 
 (async () => {
   // 25 eligible jobs at 22 companies (three companies have two), one company applied to last week.
@@ -17,7 +17,7 @@ const job = (i, company, score) => ({ id: `greenhouse:b${i}:${i}`, ats: 'greenho
   const local = makeStore({ jobs });
   const w = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only', url: 'chrome-extension://abc/jobs.html' }).window;
   w.chrome = { storage: { local, session: makeStore(), onChanged: { addListener() {} } }, runtime: { getURL: p => p } };
-  loadScripts(w, ['jobs.js'], ['ensureDailyBatch', 'approveSpread', 'nextAt', 'cancelApplication']);
+  loadScripts(w, ['jobs.js'], ['ensureDailyBatch', 'approveSpread', 'nextAt', 'cancelApplication', 'rejudgeJobs', 'chromeHost', 'flushQuietNotices', 'QUIET_ALARM']);
   let now = Date.parse('2026-11-11T12:30:00Z'); // 7:30 AM in New York
   const alarms = new Map(), notes = [];
   const host = { now: () => now, alarms: { create: async (n, at) => { alarms.set(n, at); }, clear: async n => { alarms.delete(n); }, list: async () => [...alarms].map(([name, at]) => ({ name, at })) }, notify: async (t, m) => { notes.push(`${t}: ${m}`); } };
@@ -56,6 +56,30 @@ const job = (i, company, score) => ({ id: `greenhouse:b${i}:${i}`, ats: 'greenho
   for (const j of local.data().jobs) if (j.status === 'queued') j.status = 'applied', j.appliedAt = now - 3600e3;
   await local.set({ jobs: local.data().jobs });
   check('Chrome closed at 8 AM: the first wake after builds the missed batch', await w.ensureDailyBatch(host) === 'built' && notes.length === 2, notes.at(-1));
+
+  // ---- v1 Phase 5 review: turning a place off (Settings → Jobs) after approving ----
+  const plan2 = await w.approveSpread(host, rnd);
+  check('(setup) the new batch is approved', plan2.length > 0 && plan2.every(p => alarms.has(`apply:${p.id}`)));
+  await local.set({ jobSettings: { regions: ['europe'] }, firedAlarms: [{ name: `apply:${plan2[0].id}`, at: plan2[0].at }] });
+  const moved = await w.rejudgeJobs(host);
+  const after = local.data().jobs.filter(j => plan2.some(p => p.id === j.id));
+  check('US turned off: the approved US jobs leave the batch with their times, alarms and fired alarms (never run later on an old approval)', moved >= plan2.length && after.every(j => j.status === 'found' && !j.ok && /which you turned off/.test(j.blocked) && !j.scheduledAt) && plan2.every(p => !alarms.has(`apply:${p.id}`)) && !local.data().firedAlarms.length, JSON.stringify({ moved, after: after.slice(0, 2).map(j => [j.status, j.blocked, j.scheduledAt]), alarms: [...alarms.keys()] }));
+
+  // ---- quiet hours hold notifications back and show them when they end ----
+  const created = [], shown = [];
+  w.chrome.alarms = { create: async (n, o) => { created.push([n, o.when]); } };
+  w.chrome.notifications = { create: async o => { shown.push(o); } };
+  const h0 = new Date().getHours();
+  await local.set({ quietFrom: String(h0), quietTo: String((h0 + 1) % 24), notifyDue: false });
+  await w.chromeHost.notify('Today\'s job batch is ready', '18 jobs', 'batch');
+  await w.chromeHost.notify('An application is due', 'Acme', 'due');
+  const end = new Date(); end.setHours((h0 + 1) % 24, 0, 0, 0); if (end <= new Date()) end.setDate(end.getDate() + 1);
+  check('Quiet hours: nothing shows now; it is kept with an alarm at the end of quiet hours (a kind turned off is not kept)', !shown.length && (local.data().heldNotices || []).length === 1 && created.length === 1 && created[0][0] === w.QUIET_ALARM && created[0][1] === end.getTime(), JSON.stringify({ created, held: local.data().heldNotices }));
+  await w.flushQuietNotices();
+  check('Quiet hours end: the held notification shows, once', shown.length === 1 && shown[0].title === 'Today\'s job batch is ready' && !local.data().heldNotices.length && (await w.flushQuietNotices(), shown.length === 1), JSON.stringify(shown));
+  await local.set({ quietFrom: '', quietTo: '' });
+  await w.chromeHost.notify('Sidekick needs you', 'Which office?', 'needs_you');
+  check('Outside quiet hours it shows at once', shown.length === 2 && shown[1].title === 'Sidekick needs you');
 
   console.log(results.join('\n'));
   const passed = results.filter(x => x.startsWith('PASS')).length;

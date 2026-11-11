@@ -1,6 +1,6 @@
 // The job list ("jobs") and the companies whose boards are read ("jobCompanies"), in
 // chrome.storage.local. Every change is read-modify-write under a storage lock.
-import type { Company, Job, JobStatus } from "./types.js";
+import type { Company, Job, JobStatus, Region } from "./types.js";
 import type { Posting } from "./sources.js";
 import type { Verdict } from "./eligibility.js";
 import { SEED_COMPANIES } from "./seed.js";
@@ -10,7 +10,9 @@ import { readLocal } from "../core/storage/schema.js";
 export const UNSEEN_DROP_DAYS = 30;
 // dailyBatch: build a batch at batchHour (Eastern) every day; batchSize jobs; approved ones spread over
 // spreadHours; a question waits needsYouWaitMinutes (after a notification) before the job is set aside.
-export const DEFAULT_JOB_SETTINGS = { dailyCap: 20, monthlyCap: 25, internships: false, dailyBatch: true, batchHour: 8, batchSize: 18, spreadHours: 20, needsYouWaitMinutes: 10 }; // applications per day; dollars of API per month; internships too? // postings filtered out and gone this long are forgotten
+export const ALL_REGIONS: Region[] = ["usa", "canada", "europe", "uae"];
+export const DEFAULT_JOB_SETTINGS = { dailyCap: 20, monthlyCap: 25, internships: false, dailyBatch: true, batchHour: 8, batchSize: 18, spreadHours: 20, needsYouWaitMinutes: 10, regions: ALL_REGIONS, companyDays: 30 };
+// dailyCap: applications per day; monthlyCap: old (capMonthly is the real cap); regions: where to look (Settings → Jobs); companyDays: one application per company in this many days.
 
 export async function getJobs(): Promise<Job[]> { return (await readLocal("jobs")).jobs || []; }
 export async function getCompanies(): Promise<Company[]> {
@@ -55,12 +57,13 @@ export function mergeScan(list: Job[], company: Pick<Company, "ats" | "board">, 
     const old = byId.get(p.id);
     const fields = { ...p, text: v.ok ? p.text : undefined, ok: v.ok, regions: v.regions, countries: v.countries, sponsor: v.sponsor, why: v.why, evidence: v.evidence, blocked: v.blocked, score: v.score, lastSeen: now };
     delete (fields as { verdict?: Verdict }).verdict;
-    if (old) byId.set(p.id, { ...old, ...fields, status: old.status === "closed" ? "found" : old.status });
+    // A queued job that no longer passes the rules leaves the batch, and its approved time with it.
+    if (old) byId.set(p.id, old.status === "queued" && !v.ok ? { ...old, ...fields, status: "found", statusAt: now, scheduledAt: undefined } : { ...old, ...fields, status: old.status === "closed" ? "found" : old.status });
     else byId.set(p.id, { ...fields, status: "found", firstSeen: now });
   }
   for (const j of byId.values()) {
     if (!j.id.startsWith(prefix) || seen.has(j.id)) continue;
-    if (j.status === "found" || j.status === "queued") byId.set(j.id, { ...j, status: "closed", statusAt: now });
+    if (j.status === "found" || j.status === "queued") byId.set(j.id, { ...j, status: "closed", statusAt: now, scheduledAt: undefined });
   }
   return [...byId.values()].filter(j => j.ok || !["found", "closed"].includes(j.status) || now - j.lastSeen < UNSEEN_DROP_DAYS * 864e5);
 }
@@ -69,9 +72,9 @@ export function mergeScan(list: Job[], company: Pick<Company, "ats" | "board">, 
 // last ONE_PER_COMPANY_DAYS (a second application to the same company in a month looks like spam
 // and rarely helps). Pure: returns the ids to queue.
 export const ONE_PER_COMPANY_DAYS = 30;
-export function pickBatch(list: Job[], n: number, now = Date.now()): string[] {
+export function pickBatch(list: Job[], n: number, now = Date.now(), days = ONE_PER_COMPANY_DAYS): string[] {
   const key = (c: string) => c.toLowerCase().replace(/[^a-z0-9]+/g, "");
-  const busy = new Set(list.filter(j => ["queued", "applying", "needs_you"].includes(j.status) || (j.appliedAt && now - j.appliedAt < ONE_PER_COMPANY_DAYS * 864e5)).map(j => key(j.company)));
+  const busy = new Set(list.filter(j => ["queued", "applying", "needs_you"].includes(j.status) || (j.appliedAt && now - j.appliedAt < days * 864e5)).map(j => key(j.company)));
   const picked: string[] = [];
   for (const j of list.filter(j => j.ok && j.status === "found").sort((a, b) => b.score - a.score || (b.postedAt || 0) - (a.postedAt || 0))) {
     if (picked.length >= n) break;
@@ -84,7 +87,7 @@ export function pickBatch(list: Job[], n: number, now = Date.now()): string[] {
 }
 export function queueJobs(ids: string[]): Promise<void> {
   const now = Date.now();
-  return updateLocal("jobs", (list = []) => list.map(j => ids.includes(j.id) && j.status === "found" ? { ...j, status: "queued", statusAt: now } : j));
+  return updateLocal("jobs", (list = []) => list.map(j => ids.includes(j.id) && j.status === "found" ? { ...j, status: "queued", statusAt: now, scheduledAt: undefined } : j)); // a new approval is needed every time
 }
 
 export function setJobStatus(id: string, status: JobStatus, extra: Partial<Job> = {}): Promise<void> {

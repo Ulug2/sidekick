@@ -12,7 +12,7 @@ import type { UsageLog } from "../llm/usage.js";
 import type { RunTrace } from "../../agent/trace/trace.js";
 import type { TraceIndexEntry } from "../../agent/trace/store.js";
 import type { BenchPending, BenchRun } from "../../bench/results.js";
-import type { Company, Job } from "../../jobs/types.js";
+import type { Company, Job, Region } from "../../jobs/types.js";
 import type { ActionLogEntry, NeedsYouItem, WorkerRecord } from "../../orchestrator/types.js";
 import type { Scheduled } from "../../orchestrator/scheduler.js";
 import type { StoredFact } from "../../memory/facts.js";
@@ -78,11 +78,12 @@ export interface LocalSchema extends Settings {
   jobs: Job[]; // jobs/store: every posting found, whether you can take it, and its status
   jobCompanies: Company[]; // jobs/store: the companies whose job boards are read
   sponsorLists: SponsorLists; // jobs/sponsors: UK Skilled Worker sponsors and US H-1B approvals by employer
-  jobSettings: { dailyCap: number; monthlyCap: number; internships?: boolean; dailyBatch?: boolean; batchHour?: number; batchSize?: number; spreadHours?: number; needsYouWaitMinutes?: number }; // ui/jobs: applications per day, (monthlyCap: old; capMonthly is the real cap), internships too?
+  jobSettings: { dailyCap: number; monthlyCap: number; internships?: boolean; dailyBatch?: boolean; batchHour?: number; batchSize?: number; spreadHours?: number; needsYouWaitMinutes?: number; regions?: Region[]; companyDays?: number }; // ui/jobs, Settings → Jobs: applications per day, (monthlyCap: old; capMonthly is the real cap), internships too?
   // ---------- orchestrator (docs/ARCHITECTURE.md §3) ----------
   orchestrator: { workers?: WorkerRecord[]; needsYou?: NeedsYouItem[]; paused?: string | null; lastBatchAt?: number; counter?: number; counterDay?: string }; // orchestrator/workers, world
   actionLog: ActionLogEntry[]; // orchestrator/log: every irreversible action, newest first
   scheduled: Scheduled[]; // orchestrator/scheduler: alarms to recreate after a restart
+  heldNotices: { title: string; message: string; at: number }[]; // orchestrator/host: notifications held back in quiet hours, shown when they end
   firedAlarms: { name: string; at: number }[]; // orchestrator/scheduler: fired by the service worker, drained by the orchestrator page
   facts: Record<string, StoredFact>; // memory/facts: facts the profile has no field for (high school, graduation…)
   answers: SavedAnswer[]; // memory/answers: every form question answered once, matched by meaning

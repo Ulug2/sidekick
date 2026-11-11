@@ -13,33 +13,35 @@
       <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="12" rx="9" ry="4.2"/><ellipse cx="12" cy="12" rx="9" ry="4.2" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="9" ry="4.2" transform="rotate(120 12 12)"/></g></svg>
       <span>Jobs</span>
     </div>
-    <nav class="links small"><a href="profile.html">Profile</a><a href="options.html">Settings</a><a href="runs.html">Agent runs</a></nav>
+    <nav class="links small" aria-label="Pages"><a href="profile.html">Profile</a><a href="memory.html">Memory</a><a href="runs.html">Agent runs</a><a href="options.html#sec-jobs">Settings</a></nav>
   </header>
   <main id="jobsApp">
     <section class="hero">
-      <div>
-        <h1>Job pipeline</h1>
+      <div class="hero-text">
+        <h1>Jobs</h1>
         <p id="sysline" class="sys">Loading…</p>
       </div>
       <div class="hero-actions">
-        <button type="button" id="scan" class="primary">Scan job boards</button>
+        <button type="button" id="scan">Scan job boards</button>
         <button type="button" id="build">Build today's batch</button>
-        <button type="button" id="approve" class="go" hidden>Approve &amp; spread over the day</button>
+        <button type="button" id="approve" class="primary" hidden>Approve &amp; spread over the day</button>
         <button type="button" id="start" hidden>Start now</button>
         <button type="button" id="stop" class="danger" hidden>Stop</button>
       </div>
     </section>
+    <div class="meters" id="meters" aria-label="API spend"></div>
     <p id="progress" class="progress small" role="status"></p>
 
-    <section class="hud" id="hud"></section>
+    <section class="hud" id="hud" aria-label="Summary"></section>
 
-    <section class="controls">
+    <section class="controls" aria-label="Batch settings">
       <label>Applications per day <input type="number" id="dailyCap" min="1" max="50" step="1"></label>
       <label>API limit per day <span class="dollar">$<input type="number" id="capDaily" min="0" max="50" step="0.5"></span></label>
       <label>per month <span class="dollar">$<input type="number" id="capMonthly" min="0" max="500" step="1"></span></label>
       <label class="check"><input type="checkbox" id="internships"> Include internships</label>
       <label class="check"><input type="checkbox" id="dailyBatch"> Build a batch at 8 AM ET</label>
-      <label>Batch size <input type="number" id="batchSize" min="1" max="50" step="1"></label>
+      <label>Batch size <input type="number" id="batchSize" min="1" max="30" step="1"></label>
+      <a class="more small" href="options.html#sec-jobs">More in Settings →</a>
       <span class="spacer"></span>
       <button type="button" id="sponsors">Update sponsor lists</button>
       <button type="button" id="discover">Find more companies</button>
@@ -57,8 +59,8 @@
       <button type="button" role="tab" data-tab="activity">Activity <span class="n"></span></button>
     </nav>
     <div class="filters" id="filters">
-      <input type="search" id="search" placeholder="Search company, title, place…" spellcheck="false">
-      <select id="region"><option value="">All regions</option><option value="usa">USA</option><option value="europe">Europe</option><option value="uae">UAE</option></select>
+      <input type="search" id="search" aria-label="Search jobs" placeholder="Search company, title, place…" spellcheck="false">
+      <select id="region" aria-label="Region"><option value="">All regions</option><option value="usa">USA</option><option value="canada">Canada</option><option value="europe">Europe</option><option value="uae">UAE</option></select>
     </div>
     <ol id="list" class="jobs"></ol>
     <p id="empty" class="empty" hidden></p>

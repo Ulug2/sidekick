@@ -114,7 +114,7 @@ export async function runDueApplications(): Promise<void> {
   if (!fired.length) return;
   const jobs = await getJobs();
   // Only jobs still approved for that time: queued, with a time set, and the alarm is theirs.
-  enqueue(fired.filter(f => jobs.some(j => j.id === f.name.slice(APPLY_PREFIX.length) && j.status === "queued" && j.scheduledAt && j.scheduledAt <= f.at + 60000)).map(f => f.name.slice(APPLY_PREFIX.length)));
+  enqueue(fired.filter(f => jobs.some(j => j.id === f.name.slice(APPLY_PREFIX.length) && j.status === "queued" && j.ok && j.scheduledAt && j.scheduledAt <= f.at + 60000)).map(f => f.name.slice(APPLY_PREFIX.length)));
   await drain();
 }
 
@@ -139,7 +139,7 @@ async function drain(): Promise<void> {
       // A chat or agent run of yours goes first; the application waits for it.
       if (busy) { await sleepMs(globalThis.SK_BUSY_POLL_MS ?? 15000); continue; }
       const id = queue.shift()!;
-      const job = (await getJobs()).find(j => j.id === id && j.status === "queued");
+      const job = (await getJobs()).find(j => j.id === id && j.status === "queued" && j.ok);
       if (!job) continue;
       await applyOne(job);
       if (queue.length && !(await stopRequested())) {

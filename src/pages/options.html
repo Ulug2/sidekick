@@ -24,6 +24,14 @@
     .pages a:hover { background: var(--surface-2); }
     .pages strong { display: block; margin-bottom: 2px; }
     .pages .small { color: var(--muted); }
+    fieldset.checks { border: 0; margin: 0 0 14px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+    fieldset.checks legend { font-size: 13px; font-weight: 500; padding: 0; margin-bottom: 8px; }
+    fieldset.checks label.check { flex-direction: row; align-items: center; gap: 8px; font-weight: 400; margin: 0; cursor: pointer; }
+    fieldset.checks label.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent-strong); }
+    fieldset.checks p { flex-basis: 100%; margin: 0; }
+    fieldset.checks:disabled { opacity: .5; }
+    .hint-after { margin: -6px 0 14px; }
+    #regionsErr { color: var(--err); }
   </style>
 </head>
 <body>
@@ -36,24 +44,28 @@
   </header>
 
   <div class="layout">
-    <nav class="toc" aria-label="Sections">
-      <a href="#sec-connect">Connect</a>
-      <a href="#sec-models">Models</a>
-      <a href="#sec-assistant">Assistant</a>
-      <a href="#sec-memory">Memory</a>
-      <a href="#sec-agent">Agent</a>
-      <a href="#sec-pages">Pages &amp; tools</a>
-      <a href="#sec-usage">Usage</a>
+    <nav class="sidenav" id="sidenav" aria-label="Settings sections">
+      <button type="button" data-target="sec-connect"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 20 3M16.5 6.5l3 3M14 9l2 2"/></svg><span>Connect</span></button>
+      <button type="button" data-target="sec-models"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg><span>Models</span></button>
+      <button type="button" data-target="sec-assistant"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.8 7L4 20l1.1-4.6A8 8 0 1 1 21 12z"/></svg><span>Assistant</span></button>
+      <button type="button" data-target="sec-memory"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5V5a2 2 0 0 1 2-2h14v16H6a2 2 0 0 0-2 2z"/><path d="M20 19v3H6a2 2 0 0 1-2-2"/></svg><span>Memory</span></button>
+      <button type="button" data-target="sec-agent"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4l7 17 2.5-7.5L21 11z"/></svg><span>Agent</span></button>
+      <button type="button" data-target="sec-jobs"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/></svg><span>Jobs</span></button>
+      <button type="button" data-target="sec-email"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span>Email</span></button>
+      <button type="button" data-target="sec-school"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5"/></svg><span>School</span></button>
+      <button type="button" data-target="sec-notify"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg><span>Notifications</span></button>
+      <button type="button" data-target="sec-usage"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6v2M12 16v2"/></svg><span>Spend</span></button>
+      <button type="button" data-target="sec-pages"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Pages</span></button>
     </nav>
 
     <main>
       <section class="hero">
         <h1>Settings</h1>
-        <p>How Sidekick connects, which models it uses, how it talks to you, what it remembers, and what the agent may do. Press <strong>Save</strong> at the bottom after changes.</p>
+        <p>How Sidekick connects, which models it uses, how it talks to you, what it remembers, what the agent and the job batch may do, and what it spends. Press <strong>Save</strong> at the bottom after changes.</p>
       </section>
 
       <section class="card" id="sec-connect">
-        <h2>Connect</h2>
+        <h2 tabindex="-1">Connect</h2>
         <p class="muted">Sidekick uses your own API key. One provider is enough; it picks the provider whose key you filled in.</p>
         <label>Provider
           <select id="provider">
@@ -68,7 +80,7 @@
       </section>
 
       <section class="card" id="sec-models">
-        <h2>Models</h2>
+        <h2 tabindex="-1">Models</h2>
         <p class="muted">Everyday messages go to a fast, cheap model; math, code, analysis, images and agent work go to a smart one. Job-application batches run on the fast model. Override per chat with the badge at the top of the panel.</p>
         <div class="row2">
           <label>Model choice
@@ -121,7 +133,7 @@
       </section>
 
       <section class="card" id="sec-assistant">
-        <h2>Assistant</h2>
+        <h2 tabindex="-1">Assistant</h2>
         <p class="muted">Its name, how it talks to you, and standing instructions.</p>
         <div class="row2">
           <label>Name <input id="assistantName" type="text" placeholder="Sidekick" /></label>
@@ -144,13 +156,13 @@
       </section>
 
       <section class="card" id="sec-memory">
-        <h2>Memory</h2>
+        <h2 tabindex="-1">Memory</h2>
         <label class="switch-row"><input type="checkbox" id="memoryAuto" /><span><strong>Learn about me automatically</strong><br><span class="muted small">After each of your messages, Sidekick checks whether it contains something lasting about you (your background, status, what you want, how you like things done, a deadline) and keeps it; the rest is left alone. Answers you give the agent during applications are kept the same way. When you start a new chat it also reviews the one you finished. When off, it only saves what you explicitly ask it to remember.</span></span></label>
         <p class="small"><a class="link" href="memory.html">Facts and saved answers →</a> · <a class="link" href="profile.html#sec-memories">Memories from chats →</a></p>
       </section>
 
       <section class="card" id="sec-agent">
-        <h2>Agent</h2>
+        <h2 tabindex="-1">Agent</h2>
         <p class="muted">What the browser agent may do on pages, and how it works.</p>
         <label>Ask before
           <select id="approvalMode">
@@ -162,15 +174,88 @@
         <label class="switch-row"><input type="checkbox" id="actionCheck" /><span><strong>Safety check before new sites</strong><br><span class="muted small">Before the agent goes to a site it hasn't used in this task, or types your personal details on one, a fast AI checks the step against what you asked (it never sees the page itself). If it looks off, you're asked. A fraction of a cent per check.</span></span></label>
         <label class="switch-row"><input type="checkbox" id="learnSites" /><span><strong>Learn from finished tasks</strong><br><span class="muted small">After a task, the agent saves the steps that worked as a shortcut for that site (and a few notes if something was tricky). Nothing you typed is saved. See them on your profile page under Site skills.</span></span></label>
         <label class="switch-row"><input type="checkbox" id="recordRuns" /><span><strong>Record agent runs</strong><br><span class="muted small">Saves every step of each task (a screenshot, what the AI was told and did, your approvals, the cost) so you can replay it. Only on this computer; the last 30 runs are kept.</span></span></label>
-        <label class="switch-row"><input type="checkbox" id="notifyAgent" /><span><strong>Notify me</strong><br><span class="muted small">A Chrome notification when the agent needs your OK or an answer, or finishes, while you're elsewhere.</span></span></label>
         <label class="switch-row"><input type="checkbox" id="agentTabGroup" /><span><strong>Keep the agent's tabs together</strong><br><span class="muted small">Tabs the agent opens go into a "Sidekick" tab group.</span></span></label>
         <label>Never act on these sites <span class="muted small">(one per line; the agent can still read them)</span>
           <textarea id="blockedSites" spellcheck="false"></textarea>
         </label>
       </section>
 
+      <section class="card" id="sec-jobs">
+        <h2 tabindex="-1">Jobs</h2>
+        <p class="muted">The daily batch and what goes into it. Nothing is ever sent before you approve a batch on the <a class="link" href="jobs.html">Jobs page</a>.</p>
+        <label class="switch-row"><input type="checkbox" id="jDailyBatch" /><span><strong>Build a batch every morning</strong><br><span class="muted small">Sidekick picks the best jobs (one per company) and notifies you. You approve them on the Jobs page, and each one then runs at a random time over the day.</span></span></label>
+        <div class="row2">
+          <label>Batch time <span class="muted small">(New York time)</span>
+            <select id="jBatchHour"><option value="0">12:00 AM</option><option value="1">1:00 AM</option><option value="2">2:00 AM</option><option value="3">3:00 AM</option><option value="4">4:00 AM</option><option value="5">5:00 AM</option><option value="6">6:00 AM</option><option value="7">7:00 AM</option><option value="8" selected>8:00 AM</option><option value="9">9:00 AM</option><option value="10">10:00 AM</option><option value="11">11:00 AM</option><option value="12">12:00 PM</option><option value="13">1:00 PM</option><option value="14">2:00 PM</option><option value="15">3:00 PM</option><option value="16">4:00 PM</option><option value="17">5:00 PM</option><option value="18">6:00 PM</option><option value="19">7:00 PM</option><option value="20">8:00 PM</option><option value="21">9:00 PM</option><option value="22">10:00 PM</option><option value="23">11:00 PM</option></select>
+          </label>
+          <label>Jobs per batch <input id="jBatchSize" type="number" min="1" max="30" step="1" /></label>
+          <label>Applications per day, at most <input id="jDailyCap" type="number" min="1" max="50" step="1" /></label>
+          <label>Spread approved jobs over <span class="muted small">(hours)</span> <input id="jSpread" type="number" min="2" max="24" step="1" /></label>
+          <label>Wait for your answer before setting a job aside <span class="muted small">(minutes)</span> <input id="jWait" type="number" min="1" max="120" step="1" /></label>
+          <label>One application per company every <span class="muted small">(days)</span> <input id="jCompanyDays" type="number" min="7" max="180" step="1" /></label>
+        </div>
+        <fieldset class="checks" id="jRegions">
+          <legend>Where to look</legend>
+          <label class="check"><input type="checkbox" value="usa" /> United States</label>
+          <label class="check"><input type="checkbox" value="canada" /> Canada</label>
+          <label class="check"><input type="checkbox" value="europe" /> Europe (UK, EU, Switzerland, Norway)</label>
+          <label class="check"><input type="checkbox" value="uae" /> United Arab Emirates</label>
+          <p class="muted small">Remote jobs count for the country they're in. Only jobs with signs the company sponsors visas there are kept.</p>
+        </fieldset>
+        <label class="switch-row"><input type="checkbox" id="jInternships" /><span><strong>Include internships</strong><br><span class="muted small">Off by default: you're looking for a full-time job.</span></span></label>
+      </section>
+
+      <section class="card" id="sec-email">
+        <h2 tabindex="-1">Email</h2>
+        <p class="muted">Not connected yet: Sidekick reads no email today. These choices take effect when Gmail is connected (school mail is forwarded there). Mail is only ever moved to Trash, never deleted, with one-click undo.</p>
+        <label class="switch-row"><input type="checkbox" id="emailTriage" /><span><strong>Sort new mail</strong><br><span class="muted small">Important, needs a reply, FYI, promotions, junk.</span></span></label>
+        <label class="switch-row"><input type="checkbox" id="emailCleanup" /><span><strong>Clean up</strong><br><span class="muted small">Move mail from the senders you marked "trash" to Trash.</span></span></label>
+        <label>Replies
+          <select id="emailReplyMode">
+            <option value="approve">Draft every reply; I approve each one (recommended)</option>
+            <option value="some">Send some kinds on their own (choose below)</option>
+          </select>
+        </label>
+        <fieldset class="checks" id="emailAuto">
+          <legend>Send these without asking</legend>
+          <label class="check"><input type="checkbox" id="emailAutoCourse" /> Course logistics (office hours, confirming a deadline)</label>
+          <label class="check"><input type="checkbox" id="emailAutoScheduling" /> Accepting a time someone offered</label>
+          <label class="check"><input type="checkbox" id="emailAutoReceipts" /> Acknowledging a receipt or confirmation</label>
+        </fieldset>
+      </section>
+
+      <section class="card" id="sec-school">
+        <h2 tabindex="-1">School</h2>
+        <p class="muted">Coming next: Moodle and MyOpenMath deadlines, syllabus dates and course emails in one list, ranked "do now, do next, later", with reminders. Read and organize only: Sidekick never submits coursework.</p>
+      </section>
+
+      <section class="card" id="sec-notify">
+        <h2 tabindex="-1">Notifications</h2>
+        <p class="muted">Chrome notifications. Turning one off loses nothing: questions wait on the Jobs page, and due applications wait for the side panel.</p>
+        <label class="switch-row"><input type="checkbox" id="notifyNeedsYou" /><span><strong>An application needs you</strong><br><span class="muted small">A question memory can't answer, a sign-in or a human check.</span></span></label>
+        <label class="switch-row"><input type="checkbox" id="notifyBatch" /><span><strong>Today's batch is ready to approve</strong></span></label>
+        <label class="switch-row"><input type="checkbox" id="notifyDue" /><span><strong>An application is due and the side panel is closed</strong></span></label>
+        <label class="switch-row"><input type="checkbox" id="notifyAgent" /><span><strong>The agent needs your OK or finishes</strong><br><span class="muted small">For tasks you start in the side panel, while you're looking at something else.</span></span></label>
+        <div class="row2">
+          <label>Quiet hours from <select id="quietFrom"><option value="">Off</option><option value="0">12:00 AM</option><option value="1">1:00 AM</option><option value="2">2:00 AM</option><option value="3">3:00 AM</option><option value="4">4:00 AM</option><option value="5">5:00 AM</option><option value="6">6:00 AM</option><option value="7">7:00 AM</option><option value="8">8:00 AM</option><option value="9">9:00 AM</option><option value="10">10:00 AM</option><option value="11">11:00 AM</option><option value="12">12:00 PM</option><option value="13">1:00 PM</option><option value="14">2:00 PM</option><option value="15">3:00 PM</option><option value="16">4:00 PM</option><option value="17">5:00 PM</option><option value="18">6:00 PM</option><option value="19">7:00 PM</option><option value="20">8:00 PM</option><option value="21">9:00 PM</option><option value="22">10:00 PM</option><option value="23">11:00 PM</option></select></label>
+          <label>until <select id="quietTo"><option value="">Off</option><option value="0">12:00 AM</option><option value="1">1:00 AM</option><option value="2">2:00 AM</option><option value="3">3:00 AM</option><option value="4">4:00 AM</option><option value="5">5:00 AM</option><option value="6">6:00 AM</option><option value="7">7:00 AM</option><option value="8">8:00 AM</option><option value="9">9:00 AM</option><option value="10">10:00 AM</option><option value="11">11:00 AM</option><option value="12">12:00 PM</option><option value="13">1:00 PM</option><option value="14">2:00 PM</option><option value="15">3:00 PM</option><option value="16">4:00 PM</option><option value="17">5:00 PM</option><option value="18">6:00 PM</option><option value="19">7:00 PM</option><option value="20">8:00 PM</option><option value="21">9:00 PM</option><option value="22">10:00 PM</option><option value="23">11:00 PM</option></select></label>
+        </div>
+        <p class="muted small hint-after">In quiet hours (your computer's clock) job notifications wait, and show together when they end.</p>
+      </section>
+
+      <section class="card" id="sec-usage">
+        <h2 tabindex="-1">Spend</h2>
+        <p class="muted">Hard caps in dollars: when a cap is reached, no more model calls are made until the day or month turns over (or you raise it), and every worker stops at a safe point. 0 means no cap.</p>
+        <div class="meters" id="meters"></div>
+        <div class="row2">
+          <label>Cap per day ($) <input id="capDaily" type="number" min="0" max="50" step="0.5" /></label>
+          <label>Cap per month ($) <input id="capMonthly" type="number" min="0" max="500" step="1" /></label>
+        </div>
+        <p class="muted">Tokens sent to and received from your AI provider, per model. "Cached" input is billed at a small fraction of the normal price. Dollar totals are on the Jobs page.</p>
+        <div id="usage"></div>
+      </section>
       <section class="card" id="sec-pages">
-        <h2>Pages &amp; tools</h2>
+        <h2 tabindex="-1">Pages</h2>
         <div class="pages">
           <a href="jobs.html"><strong>Jobs</strong><span class="small">Eligible jobs, today's batch, applications</span></a>
           <a href="profile.html"><strong>Profile</strong><span class="small">Resume, details, memories, documents</span></a>
@@ -182,16 +267,6 @@
         <p class="muted small">Run the quality checks after changing models or custom instructions.</p>
       </section>
 
-      <section class="card" id="sec-usage">
-        <h2>Spend &amp; usage</h2>
-        <p class="muted">Hard caps in dollars: when a cap is reached, no more model calls are made until the day or month turns over (or you raise it), and every worker stops at a safe point. 0 means no cap.</p>
-        <div class="row2">
-          <label>Cap per day ($) <input id="capDaily" type="number" min="0" max="50" step="0.5" /></label>
-          <label>Cap per month ($) <input id="capMonthly" type="number" min="0" max="500" step="1" /></label>
-        </div>
-        <p class="muted">Tokens sent to and received from your AI provider, per model. "Cached" input is billed at a small fraction of the normal price. Dollar totals are on the Jobs page.</p>
-        <div id="usage"></div>
-      </section>
     </main>
   </div>
 
