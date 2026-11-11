@@ -8,7 +8,7 @@
 import type { LocalSchema } from "./schema.js";
 
 // The names writes are grouped under; a write that touches several keys uses one name for all.
-export type StorageLock = "memories" | "docs" | "skills" | "adapters" | "siteNotes" | "applications" | "chats" | "usage" | "traceIndex" | "benchRuns" | "benchParams" | "evalRuns" | "jobs" | "jobCompanies" | "orchestrator" | "actionLog" | "scheduled" | "firedAlarms" | "assignments" | "reminders" | "facts" | "answers" | "profile";
+export type StorageLock = "memories" | "docs" | "skills" | "adapters" | "siteNotes" | "applications" | "chats" | "usage" | "traceIndex" | "benchRuns" | "benchParams" | "evalRuns" | "jobs" | "jobCompanies" | "orchestrator" | "actionLog" | "scheduled" | "firedAlarms" | "assignments" | "reminders" | "facts" | "answers" | "profile" | "dailyBatch";
 
 // Waiting longer than this for another page's write means something is stuck: the write goes
 // ahead without the lock rather than never (LESSONS rule 4).

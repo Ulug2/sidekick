@@ -78,7 +78,7 @@ export interface LocalSchema extends Settings {
   jobs: Job[]; // jobs/store: every posting found, whether you can take it, and its status
   jobCompanies: Company[]; // jobs/store: the companies whose job boards are read
   sponsorLists: SponsorLists; // jobs/sponsors: UK Skilled Worker sponsors and US H-1B approvals by employer
-  jobSettings: { dailyCap: number; monthlyCap: number; internships?: boolean }; // ui/jobs: applications per day, (monthlyCap: old; capMonthly is the real cap), internships too?
+  jobSettings: { dailyCap: number; monthlyCap: number; internships?: boolean; dailyBatch?: boolean; batchHour?: number; batchSize?: number; spreadHours?: number; needsYouWaitMinutes?: number }; // ui/jobs: applications per day, (monthlyCap: old; capMonthly is the real cap), internships too?
   // ---------- orchestrator (docs/ARCHITECTURE.md §3) ----------
   orchestrator: { workers?: WorkerRecord[]; needsYou?: NeedsYouItem[]; paused?: string | null; lastBatchAt?: number; counter?: number; counterDay?: string }; // orchestrator/workers, world
   actionLog: ActionLogEntry[]; // orchestrator/log: every irreversible action, newest first
@@ -92,6 +92,7 @@ export interface LocalSchema extends Settings {
   [doc: `doc:${string}`]: DocChunks;
   [trace: `trace:${string}`]: RunTrace; // a run without its images
   [shot: `traceShot:${string}`]: string; // a screenshot (JPEG data URL), written once
+  [jobShot: `jobShot:${string}`]: string; // jobs-run: the confirmation page after an application (JPEG data URL)
 }
 export interface SessionSchema {
   // The context menu's hand-off to the panel (background → sidepanel).
@@ -99,7 +100,7 @@ export interface SessionSchema {
   // Run a benchmark task (ui/bench → sidepanel).
   benchPending: BenchPending;
   // Start today's application batch (ui/jobs → sidepanel): the queued jobs, in order.
-  jobBatch: { ts: number; windowId?: number };
+  jobBatch: { ts: number; windowId?: number; only?: string[] }; // only: these job ids (Save & resume)
   jobBatchStop: boolean; // the Jobs page's Stop: the panel ends the batch after the current job
 }
 

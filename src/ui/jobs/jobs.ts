@@ -11,6 +11,10 @@ import type { ActionLogEntry } from "../../orchestrator/types.js";
 import { boardFromUrl, changeCompanies, companyKey, DEFAULT_JOB_SETTINGS, getCompanies, getJobs, jobStats, jobsCsv, pickBatch, queueJobs, setJobStatus } from "../../jobs/store.js";
 import { discoverCompanies, loadSponsors, rejudgeJobs, scanCompanies, topSponsors } from "../../jobs/scan.js";
 import { downloadSponsorLists } from "../../jobs/sponsors.js";
+import { normalizeLevel } from "../../jobs/sponsorship.js";
+import { approveSpread, BATCH_TZ, cancelApplication, syncDailyAlarm } from "../../jobs/daily.js";
+import { resolveNeedsYou } from "../../jobs/needs-you.js";
+import { chromeHost } from "../../orchestrator/host.js";
 import type { Company, Job, JobStatus, Region } from "../../jobs/types.js";
 
 type Tab = "apply" | "batch" | "applied" | "needs" | "filtered" | "companies" | "activity";
@@ -25,8 +29,8 @@ function h(tag: string, attrs: Record<string, string> = {}, ...children: Child[]
 const when = (t: number) => new Date(t).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const ago = (t?: number) => { if (!t) return "never"; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
 const day = (t?: number) => t ? new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
-const REGION: Record<Region, string> = { usa: "USA", europe: "Europe", uae: "UAE" };
-const SPONSOR: Record<string, string> = { strong: "sponsors", likely: "likely sponsors", possible: "may sponsor", unknown: "unknown", no: "no sponsorship" };
+const REGION: Record<Region, string> = { usa: "USA", europe: "Europe", canada: "Canada", uae: "UAE" };
+const SPONSOR: Record<string, string> = { confirmed: "sponsors", likely: "likely sponsors", unknown: "unknown", no: "no sponsorship" };
 
 let tab: Tab = "apply";
 let jobs: Job[] = [];
@@ -38,28 +42,41 @@ let running: AbortController | null = null;
 
 // ---------- one job ----------
 export function renderJob(j: Job): HTMLElement {
-  const li = h("li", { class: `job ${j.sponsor}`, "data-id": j.id });
+  const level = normalizeLevel(j.sponsor);
+  const li = h("li", { class: `job ${level}`, "data-id": j.id });
   const main = h("div", { class: "main" },
     h("a", { class: "title", href: j.url, target: "_blank", rel: "noopener noreferrer" }, j.title), " ", h("span", { class: "co" }, `· ${j.company}`),
     h("div", { class: "meta" },
       ...j.regions.map(r => h("span", { class: "chip" }, REGION[r])),
-      h("span", { class: `chip sponsor-${j.sponsor}` }, SPONSOR[j.sponsor] || j.sponsor),
+      h("span", { class: `chip sponsor-${level}` }, SPONSOR[level] || level),
+      j.status === "queued" ? h("span", { class: "chip" }, j.scheduledAt ? `at ${new Date(j.scheduledAt).toLocaleString("en-US", { timeZone: BATCH_TZ, weekday: "short", hour: "numeric", minute: "2-digit" })} ET` : "not approved") : "",
       j.status !== "found" ? h("span", { class: `chip status-${j.status}` }, j.status.replace("_", " ")) : "",
       h("span", {}, j.location || "no location"),
       j.postedAt ? h("span", {}, `posted ${day(j.postedAt)}`) : "",
       j.appliedAt ? h("span", {}, `applied ${day(j.appliedAt)}`) : "",
       h("span", { class: "chip", title: "priority" }, `P${j.score}`)
     ),
-    h("div", { class: `why${j.ok ? "" : " blocked"}` }, j.ok ? j.why.join(" · ") : j.blocked || ""),
+    h("div", { class: `why${j.ok ? "" : " blocked"}` }, j.ok ? (j.evidence?.length ? j.evidence.map(e => `${e.confidence}: ${e.text}${e.date && !e.text.includes(e.date) ? ` (${e.date})` : ""}`) : j.why).join(" · ") : j.blocked || ""),
     j.note && j.status !== "found" ? h("div", { class: `why${j.status === "needs_you" ? " blocked" : ""}` }, j.note) : ""
   );
   if (j.coverLetter) main.append(h("details", { class: "letter" }, h("summary", {}, "Cover letter"), h("pre", {}, j.coverLetter)));
+  if (j.status === "needs_you" && j.needsYou) main.append(needsYouCard(j));
+  if (j.answers?.length || j.shot) {
+    const d = h("details", { class: "letter sent" }, h("summary", {}, `What was sent${j.answers?.length ? ` (${j.answers.length} fields)` : ""}${j.shot ? " + confirmation" : ""}`),
+      j.answers?.length ? h("ul", {}, ...j.answers.map(a => h("li", {}, a))) : "");
+    if (j.shot) d.addEventListener("toggle", async () => {
+      if (!(d as HTMLDetailsElement).open || d.querySelector("img")) return;
+      const url = (await chrome.storage.local.get(j.shot!))[j.shot!];
+      if (typeof url === "string" && url.startsWith("data:image/")) d.append(h("img", { src: url, alt: `Confirmation page after applying to ${j.company}` }));
+    });
+    main.append(d);
+  }
   const acts = h("div", { class: "acts" });
   const row = h("div", { class: "row" });
   const btn = (label: string, fn: () => Promise<void>, cls = "mini") => { const b = h("button", { type: "button", class: cls }, label); b.onclick = () => fn().then(render); return b; };
   if (j.status === "found" && j.ok) row.append(btn("Add to batch", () => queueJobs([j.id])), btn("Skip", () => setJobStatus(j.id, "skipped")));
-  if (j.status === "queued") row.append(btn("Remove from batch", () => setJobStatus(j.id, "found")), btn("Skip", () => setJobStatus(j.id, "skipped")));
-  if (["found", "queued", "needs_you"].includes(j.status)) row.append(btn("Applied by hand", () => setJobStatus(j.id, "applied")));
+  if (j.status === "queued") row.append(btn("Remove from batch", async () => { await cancelApplication(chromeHost, j.id); await setJobStatus(j.id, "found"); }), btn("Skip", async () => { await cancelApplication(chromeHost, j.id); await setJobStatus(j.id, "skipped"); }));
+  if (["found", "queued", "needs_you"].includes(j.status)) row.append(btn("Applied by hand", async () => { await cancelApplication(chromeHost, j.id); await setJobStatus(j.id, "applied", { needsYou: undefined }); }));
   if (j.status === "skipped" || (j.status === "found" && !j.ok)) row.append(btn(j.ok ? "Unskip" : "Keep anyway", () => updateLocal("jobs", (list = []) => list.map(x => x.id !== j.id ? x : { ...x, ok: true, why: x.ok ? x.why : ["You kept it"], blocked: undefined, status: "found", statusAt: Date.now() }))));
   if (["applied", "interview", "offer", "rejected"].includes(j.status)) {
     const sel = h("select", { "aria-label": "Status" }) as HTMLSelectElement;
@@ -76,6 +93,43 @@ export function renderJob(j: Job): HTMLElement {
   acts.append(note);
   li.append(h("div", { class: "bar" }), main, acts);
   return li;
+}
+
+// The card: the literal question(s) the form asked, one input each (the form's own options as a
+// list), then Save & resume: answers go to the answer bank and the job runs again now.
+export function needsYouCard(j: Job): HTMLElement {
+  const item = j.needsYou!;
+  const box = h("div", { class: "needs", role: "group", "aria-label": `Needs you: ${j.company}` });
+  const inputs: (HTMLInputElement | HTMLSelectElement | null)[] = [];
+  item.questions.forEach((q, i) => {
+    if (q.fieldType === "human" || q.fieldType === "file") {
+      inputs.push(null);
+      box.append(h("div", { class: "q" }, h("span", {}, q.question), h("span", { class: "hint" }, q.fieldType === "file" ? "Upload it on the form yourself (Open form ↗), then resume." : "Only you can do this (sign-in or a human check): open the form, do it, then resume.")));
+      return;
+    }
+    const id = `ny-${j.id.replace(/[^a-z0-9]/gi, "")}-${i}`;
+    let input: HTMLInputElement | HTMLSelectElement;
+    if (q.fieldType === "select" && q.options?.length) {
+      input = h("select", { id }) as HTMLSelectElement;
+      input.append(h("option", { value: "" }, "Choose…"), ...q.options.map(o => h("option", { value: o }, o)));
+    } else input = h("input", { id, type: "text", autocomplete: "off" }) as HTMLInputElement;
+    inputs.push(input);
+    box.append(h("label", { class: "q", for: id }, h("span", {}, q.question), input));
+  });
+  const status = h("span", { class: "hint", role: "status" });
+  const go = h("button", { type: "button", class: "mini go" }, "Save & resume") as HTMLButtonElement;
+  go.onclick = async () => {
+    go.disabled = true;
+    const answers: Record<number, string> = {};
+    inputs.forEach((el, i) => { if (el) answers[i] = el.value; });
+    const r = await resolveNeedsYou(j.id, answers);
+    if (r.missing.length) { status.textContent = `Answer this first: ${r.missing[0]}`; go.disabled = false; return; }
+    status.textContent = r.saved ? `Saved ${r.saved} answer${r.saved > 1 ? "s" : ""} for every later form. Applying again…` : "Applying again…";
+    const windowId = (await chrome.windows?.getCurrent?.().catch(() => null))?.id;
+    await chrome.storage.session.set({ jobBatch: { ts: Date.now(), windowId, only: [j.id] } });
+  };
+  box.append(h("div", { class: "row" }, go, status), h("span", { class: "hint" }, `Stopped ${when(item.since)}. Answers are saved to Memory, so other forms with the same question won't ask again.`));
+  return box;
 }
 
 function renderCompany(c: Company): HTMLElement {
@@ -120,6 +174,8 @@ export async function render(): Promise<void> {
   );
   const { jobBatch } = await chrome.storage.session.get("jobBatch").catch(() => ({ jobBatch: undefined }));
   const batchActive = !!jobBatch || jobs.some(j => j.status === "applying");
+  const unapproved = jobs.filter(j => j.status === "queued" && !j.scheduledAt).length;
+  $("#approve").hidden = !unapproved || !!running || batchActive;
   $("#start").hidden = !stats.queued || !!running || batchActive;
   $("#stop").hidden = !running && !batchActive;
   for (const b of document.querySelectorAll<HTMLButtonElement>("#tabs [role=tab]")) {
@@ -180,14 +236,18 @@ if ($("#jobsApp")) {
     $("#dailyCap").value = String(settings.dailyCap);
     { const { capDaily, capMonthly } = await readLocal(["capDaily", "capMonthly"]); $("#capDaily").value = String(capDaily ?? DEFAULT_CAPS.daily); $("#capMonthly").value = String(capMonthly ?? DEFAULT_CAPS.monthly); }
     $("#internships").checked = !!settings.internships;
+    $("#dailyBatch").checked = settings.dailyBatch !== false;
+    $("#batchSize").value = String(settings.batchSize);
     const saveSettings = async () => {
       const internshipsWas = !!settings.internships;
-      settings = { ...settings, dailyCap: Math.max(1, Math.min(50, Number($("#dailyCap").value) || DEFAULT_JOB_SETTINGS.dailyCap)), internships: !!$("#internships").checked };
+      settings = { ...settings, dailyCap: Math.max(1, Math.min(50, Number($("#dailyCap").value) || DEFAULT_JOB_SETTINGS.dailyCap)), internships: !!$("#internships").checked, dailyBatch: !!$("#dailyBatch").checked, batchSize: Math.max(1, Math.min(50, Number($("#batchSize").value) || DEFAULT_JOB_SETTINGS.batchSize)) };
+      $("#batchSize").value = String(settings.batchSize);
       $("#dailyCap").value = String(settings.dailyCap);
       // The spend caps are Settings fields (core/llm/budget.ts reads them before every model call).
       const capDaily = Math.max(0, Math.min(50, Number($("#capDaily").value))), capMonthly = Math.max(0, Math.min(500, Number($("#capMonthly").value)));
       $("#capDaily").value = String(capDaily); $("#capMonthly").value = String(capMonthly);
       await chrome.storage.local.set({ jobSettings: settings, capDaily, capMonthly });
+      syncDailyAlarm(chromeHost).catch(() => {}); // sets or clears the 8 AM alarm
       if (internshipsWas !== settings.internships) {
         const n = await rejudgeJobs();
         $("#progress").textContent = settings.internships ? `Internships will be kept from the next scan on. Press Scan job boards.` : `Internships off: ${n} moved to Filtered out.`;
@@ -198,6 +258,8 @@ if ($("#jobsApp")) {
     $("#capDaily").onchange = saveSettings;
     $("#capMonthly").onchange = saveSettings;
     $("#internships").onchange = saveSettings;
+    $("#dailyBatch").onchange = saveSettings;
+    $("#batchSize").onchange = saveSettings;
     for (const b of document.querySelectorAll<HTMLButtonElement>("#tabs [role=tab]")) b.onclick = () => { tab = b.dataset.tab as Tab; render(); };
     $("#search").oninput = render;
     $("#region").onchange = render;
@@ -221,7 +283,7 @@ if ($("#jobsApp")) {
       const room = Math.max(0, settings.dailyCap - jobStats(list).appliedToday - jobStats(list).queued);
       const ids = pickBatch(list, room);
       await queueJobs(ids);
-      return ids.length ? `${ids.length} jobs in today's batch. Look them over, then press Approve & start batch.` : room ? "No eligible jobs left to add (one per company per month)." : `Today's limit of ${settings.dailyCap} is used up.`;
+      return ids.length ? `${ids.length} jobs in today's batch. Look them over, then press Approve & spread over the day (or Start now).` : room ? "No eligible jobs left to add (one per company per month)." : `Today's limit of ${settings.dailyCap} is used up.`;
     });
     $("#start").onclick = async () => {
       const windowId = (await chrome.windows?.getCurrent?.().catch(() => null))?.id;
@@ -230,6 +292,12 @@ if ($("#jobsApp")) {
       await chrome.storage.session.set({ jobBatch: { ts: Date.now(), windowId } });
       $("#progress").textContent = "Batch started: Sidekick opens its own Chrome window behind this one and applies there, one job at a time. Keep using this window; you'll be asked only when something needs you (Needs you tab).";
     };
+    $("#approve").onclick = () => withProgress("Approving…", async () => {
+      const plan = await approveSpread(chromeHost);
+      if (!plan.length) return "Nothing to approve.";
+      const fmt = (t: number) => new Date(t).toLocaleString("en-US", { timeZone: BATCH_TZ, weekday: "short", hour: "numeric", minute: "2-digit" });
+      return `Approved ${plan.length}: they run at random times from ${fmt(plan[0].at)} to ${fmt(plan[plan.length - 1].at)} ET (logged in Activity). Keep Chrome open with Sidekick's side panel open; nothing is asked unless something needs you.`;
+    });
     $("#stop").onclick = () => { running?.abort(); chrome.storage.session.remove("jobBatch"); chrome.storage.session.set({ jobBatchStop: true }); };
     $("#exportCsv").onclick = async () => download(`sidekick-jobs-${new Date().toISOString().slice(0, 10)}.csv`, jobsCsv(await getJobs()), "text/csv");
     ($("#addCompany") as HTMLFormElement).onsubmit = async e => {

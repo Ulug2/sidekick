@@ -191,7 +191,7 @@ export const AGENT_TOOLS: ToolDef[] = [
   {
     name: "ask_user",
     description: "Ask the user a question and wait for their answer. Use for missing information, decisions, sign-ins, passwords, CAPTCHAs, or anything you shouldn't guess. Ask all missing questions at once.",
-    parameters: { type: "object", properties: { question: { type: "string" } }, required: ["question"] }
+    parameters: { type: "object", properties: { question: { type: "string" }, options: { type: "array", items: { type: "string" }, description: "When asking about one form field with fixed choices (a dropdown or radio buttons): the choices exactly as the form shows them." } }, required: ["question"] }
   },
   {
     name: "log_application",

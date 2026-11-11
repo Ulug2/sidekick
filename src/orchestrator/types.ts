@@ -25,6 +25,7 @@ export interface WorkerTask {
   context?: WorldSlice; // the part of the world state this worker gets
   files?: Record<string, AgentFile>;
   jobId?: string;
+  countries?: string[]; // where the job is (honesty checks: "authorized to work here?")
   tabId?: number;
   maxCost?: number;
   resumeFrom?: { questions: NeedsYouQuestion[]; answers: Record<string, string> };
@@ -60,7 +61,7 @@ export interface WorldState {
 // What a worker gets: only what its kind needs.
 export interface WorldSlice { text: string; companiesApplied30d: string[]; queuedCompanies: string[] }
 
-export type ActionKind = "submit" | "send" | "trash" | "upload" | "visit" | "share" | "site_tool" | "undo";
+export type ActionKind = "submit" | "send" | "trash" | "upload" | "visit" | "share" | "site_tool" | "undo" | "schedule" | "needs_you";
 export interface ActionLogEntry { id: string; at: number; worker: number | null; kind: ActionKind; what: string; why: string; site?: string; jobId?: string; undo?: { kind: "untrash"; messageId: string; label?: string } }
 
 export type FullJob = Job;

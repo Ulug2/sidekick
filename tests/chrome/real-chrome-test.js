@@ -45,6 +45,13 @@ const PAGES = {
   '/apply-inner': `<!doctype html><html><head><title>Charlie application</title></head><body><main><form onsubmit="return false">
     <label for="nm">Full name</label><input id="nm"><label for="cv">Resume</label><input id="cv" type="file">
     <button type="button" id="sg" onclick="window.signed={name:nm.value,file:(cv.files[0]||{}).name||null}">Sign and submit</button></form></main></body></html>`,
+  // Needs You round trip (Phase 4): a question memory can't answer (the office), and a sponsorship
+  // question the honesty rule checks against the profile.
+  '/apply-q': `<!doctype html><html><head><title>Apply – Delta</title></head><body><main><h1>Mobile Engineer, New Grad</h1><p>Delta makes apps.</p>
+    <form id="app"><label for="of">Which office would you prefer to work from?</label><select id="of"><option value="">Select…</option><option>New York</option><option>Remote</option></select>
+    <label for="sp">Will you now or in the future require visa sponsorship?</label><select id="sp"><option value="">Select…</option><option>Yes</option><option>No</option></select>
+    <button type="submit">Submit application</button></form>
+    <script>document.getElementById('app').addEventListener('submit',e=>{e.preventDefault();window.sentD={of:of.value,sp:sp.value};document.querySelector('main').innerHTML='<h1>Thanks for applying to Delta!</h1>';});</script></main></body></html>`,
   '/polarframe': `<!doctype html><html><head><title>MyOpenMath</title></head><body><main>
     <p>Set up limits of integration to integrate over each polar region shown.</p>
     <svg width="160" height="90"><path d="M0 80 A80 80 0 0 1 160 80 Z" fill="#88f"/><text x="150" y="88" font-size="6">8</text></svg>
@@ -699,12 +706,13 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   // ---------- 17. the application batch: Jobs page → side panel → one agent run per job, cover letter PDF, human checks set aside ----------
   {
     const jobBase = (id, over) => ({ id, ats: 'greenhouse', board: 'acme', company: 'Acme', title: 'Software Engineer, New Grad', location: 'New York, NY', url: `${BASE}/apply`, applyUrl: `${BASE}/apply`, text: 'Build payments at Acme. We sponsor visas.', ok: true, regions: ['usa'], countries: ['US'], sponsor: 'strong', why: ['Posting offers visa sponsorship'], score: 90, status: 'queued', firstSeen: 1, lastSeen: 1, ...over });
-    await panel.evaluate(jobs => chrome.storage.local.set({ jobs, jobCompanies: [{ name: 'Acme', ats: 'greenhouse', board: 'acme', added: 1, source: 'you' }] }), [jobBase('greenhouse:acme:1', {}), jobBase('greenhouse:bravo:2', { board: 'bravo', company: 'Bravo', title: 'Backend Engineer', url: `${BASE}/apply-login`, applyUrl: `${BASE}/apply-login`, score: 80 }), jobBase('greenhouse:charlie:3', { board: 'charlie', company: 'Charlie', title: 'Platform Engineer, New Grad', url: `${BASE}/apply-frame`, applyUrl: `${BASE}/apply-frame`, score: 85 })]);
+    await panel.evaluate(jobs => chrome.storage.local.set({ jobs, jobCompanies: [{ name: 'Acme', ats: 'greenhouse', board: 'acme', added: 1, source: 'you' }] }), [jobBase('greenhouse:acme:1', {}), jobBase('greenhouse:bravo:2', { board: 'bravo', company: 'Bravo', title: 'Backend Engineer', url: `${BASE}/apply-login`, applyUrl: `${BASE}/apply-login`, score: 80 }), jobBase('greenhouse:charlie:3', { board: 'charlie', company: 'Charlie', title: 'Platform Engineer, New Grad', url: `${BASE}/apply-frame`, applyUrl: `${BASE}/apply-frame`, score: 85 }), jobBase('greenhouse:delta:4', { board: 'delta', company: 'Delta', title: 'Mobile Engineer, New Grad', url: `${BASE}/apply-q`, applyUrl: `${BASE}/apply-q`, score: 70 })]);
     // public.test stands in for an application system (greenhouse.io, workable.com…) framed into the company page.
-    await panel.evaluate(() => { globalThis.SK_BATCH_PAUSE_MS = 0; globalThis.SK_ASK_WAIT_MS = 1000; globalThis.SK_EXTRA_ATS = ['public.test']; });
+    await panel.evaluate(() => { globalThis.SK_BATCH_PAUSE_MS = 0; globalThis.SK_ASK_WAIT_MS = 1000; globalThis.SK_NEEDS_YOU_MS = 1500; globalThis.SK_EXTRA_ATS = ['public.test']; });
     const LETTER = 'Hi Acme team,\n\n' + 'I built a small payments dashboard for my college club last spring, and your posting is about payments, so this is the kind of work I want to learn properly. '.repeat(4) + 'I have not used Ruby yet, but I pick up languages quickly and I would rather learn it from people who ship it every day than from a tutorial. '.repeat(2) + '\n\nThanks,\nUlugbek';
     let letterCalls = 0;
     const letterAsks = [];
+    const deltaRuns = {};
     responder = b => {
       if (/You keep the pinned notes|reusable operating notes/.test(b.system)) return H.anthropicEvents([{ type: 'text', text: '{"notes":[]}' }]);
       if (/You write cover letters/.test(b.system)) { if (/Role: Software Engineer, New Grad/.test(JSON.stringify(b.messages.at(-1)))) letterCalls++; letterAsks.push(JSON.stringify(b.messages.at(-1)).slice(0, 120)); return H.anthropicEvents([{ type: 'text', text: LETTER }]); }
@@ -713,6 +721,18 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
         const all = JSON.stringify(b.messages);
         const bravo = /Backend Engineer at Bravo/.test(all);
         const fid = re => (all.match(new RegExp(String.raw`\[(\d+:\d+)\] [a-z:]+ \\"` + re)) || [])[1];
+        if (/Mobile Engineer, New Grad at Delta/.test(all)) {
+          deltaRuns[st] = (deltaRuns[st] || 0) + 1;
+          const q = 'Which office would you prefer to work from?';
+          const d = [[['ask_user', { question: q, options: ['New York', 'Remote'] }]],
+            // The office from memory; "Yes" for sponsorship contradicts his profile ("No") and is refused.
+            [['fill_fields', { fields: [{ id: idIn(all, 'Which office'), value: 'Remote' }, { id: idIn(all, 'Will you now or in the future require visa sponsorship'), value: 'Yes' }] }]],
+            [['fill_fields', { fields: [{ id: idIn(all, 'Will you now or in the future require visa sponsorship'), value: 'No' }] }]],
+            [['click', { id: idIn(all, 'Submit application'), description: 'Submit the application', final_action: true }]],
+            [['log_application', { company: 'Delta', role: 'Mobile Engineer, New Grad', status: 'submitted' }]],
+            [['done', { summary: 'Applied to Delta.' }]]][st];
+          return H.anthropicEvents(d.map(([name, input], k) => ({ type: 'tool_use', id: `d${st}_${k}`, name, input })), { stop: 'tool_use' });
+        }
         if (/Platform Engineer, New Grad at Charlie/.test(all)) {
           if (st === 0) charlieSystem = b.system;
           const c = [[['fill_fields', { fields: [{ id: fid('Full name'), value: 'Ulugbek Rivera' }] }], ['upload_file', { id: fid('Resume'), file: 'resume' }]],
@@ -737,7 +757,7 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
     await jobsPage.waitForSelector('#start:not([hidden])', { timeout: 10000 });
     await jobsPage.evaluate(() => { chrome.sidePanel.open = async () => {}; }); // the test's panel tab takes the batch (see 15)
     const hud = await jobsPage.locator('#hud').innerText();
-    check('Real Chrome jobs: the HUD shows the batch waiting for approval', /3\s+today's batch/i.test(hud.replace(/\n/g, ' ')), hud);
+    check('Real Chrome jobs: the HUD shows the batch waiting for approval', /4\s+today's batch/i.test(hud.replace(/\n/g, ' ')), hud);
     // What the Acme form receives (its tab is closed once the application is in).
     let sent = null, signed = null, charlieSystem = '';
     const onPage = async pg => {
@@ -780,6 +800,36 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
     await jobsPage.click('#tabs [data-tab=needs]');
     await jobsPage.waitForTimeout(200);
     check('Real Chrome jobs: the Jobs page shows the set-aside job under Needs you', /Bravo/.test(await jobsPage.locator('#list').innerText()) && /Waiting for you/.test(await jobsPage.locator('#list').innerText()));
+    // ---- Needs You round trip (docs/BUGS.md 2): card → Save & resume → filled from memory → submitted ----
+    const delta = final.find(j => j.company === 'Delta');
+    const card = jobsPage.locator('#list .job', { hasText: 'Delta' }).locator('.needs');
+    const cardText = await card.innerText().catch(() => '');
+    const opts = await card.locator('select option').allTextContents().catch(() => []);
+    check('Real Chrome Needs You: an unanswered question sets the job aside with a card: the literal question and the form\'s options', delta?.status === 'needs_you' && delta.needsYou?.questions?.[0]?.question === 'Which office would you prefer to work from?' && /Which office would you prefer to work from\?/.test(cardText) && opts.join('|') === 'Choose…|New York|Remote', JSON.stringify({ status: delta?.status, ny: delta?.needsYou, cardText, opts }));
+    check('Real Chrome Needs You: it was logged', ((await panel.evaluate(() => chrome.storage.local.get('actionLog'))).actionLog || []).some(e => e.kind === 'needs_you' && e.jobId === 'greenhouse:delta:4'));
+    let sentD = null;
+    const captureD = (async () => {
+      const pg = await ctx.waitForEvent('page', { predicate: x => /apply-q/.test(x.url()) || true, timeout: 60000 }).catch(() => null);
+      if (!pg) return;
+      await pg.waitForURL(/\/apply-q$/, { timeout: 30000 }).catch(() => {});
+      for (let i = 0; i < 300 && !sentD; i++) { try { sentD = await pg.evaluate(() => window.sentD || null); } catch { break; } if (!sentD) await new Promise(r => setTimeout(r, 200)); }
+    })();
+    await card.locator('select').selectOption('Remote');
+    await card.getByRole('button', { name: 'Save & resume' }).click();
+    await panel.bringToFront();
+    const delta2 = await (async () => { for (let i = 0; i < 240; i++) { const j = (await panel.evaluate(() => chrome.storage.local.get('jobs'))).jobs.find(x => x.company === 'Delta'); if (j && j.traceId !== delta?.traceId && !['queued', 'applying'].includes(j.status)) return j; await panel.waitForTimeout(500); } return null; })();
+    await captureD;
+    const bank = (await panel.evaluate(() => chrome.storage.local.get('answers'))).answers || [];
+    check('Real Chrome Needs You: Save & resume files the answer in memory with the form\'s options', bank.some(a => a.question === 'Which office would you prefer to work from?' && a.answer === 'Remote' && a.options?.join('|') === 'New York|Remote'), JSON.stringify(bank));
+    const d2trace = delta2?.traceId && (await panel.evaluate(k => chrome.storage.local.get(k), 'trace:' + delta2.traceId))['trace:' + delta2.traceId];
+    const d2events = (d2trace?.steps || []).flatMap(s => s.events);
+    const d2results = (d2trace?.steps || []).flatMap(s => s.actions).map(a => a.result || '').join('\n');
+    check('Real Chrome Needs You: the second run answers the same question from memory (nothing asked) and submits', delta2?.status === 'applied' && sentD?.of === 'Remote' && !d2events.some(e => e.kind === 'ask') && /Answered from Sidekick's memory/.test(d2results), JSON.stringify({ status: delta2?.status, note: delta2?.note, sentD, events: d2events }));
+    check('Real Chrome honesty: a sponsorship answer that contradicts the profile is refused in code; the truthful one goes in', sentD?.sp === 'No' && /contradicts his profile/.test(d2results), d2results.slice(0, 800));
+    const shotKey = delta2?.shot;
+    const shotUrl = shotKey && (await panel.evaluate(k => chrome.storage.local.get(k), shotKey))[shotKey];
+    check('Real Chrome jobs: an application keeps exactly what was entered and a screenshot of the confirmation page', (delta2?.answers || []).some(a => /Remote/.test(a)) && (delta2?.answers || []).some(a => /“No”/.test(a)) && /^data:image\/jpeg/.test(shotUrl || ''), JSON.stringify({ answers: delta2?.answers, shot: shotKey, len: (shotUrl || '').length }));
+    await jobsPage.bringToFront();
     for (const [w, name] of [[760, 'half'], [1280, 'wide']]) { await jobsPage.setViewportSize({ width: w, height: 900 }); await jobsPage.waitForTimeout(150); const ov = await jobsPage.evaluate(() => document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth); check(`Real Chrome jobs: the page fits at ${w}px`, ov <= 1, `overflow ${ov}px`); await shot(jobsPage, `17-jobs-${name}`); }
     await jobsPage.close();
   }

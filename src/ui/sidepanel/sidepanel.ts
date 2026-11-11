@@ -13,7 +13,7 @@ import { createTypewriter, addError, showToast, addUserMessage, addAiMessage, re
 import { ICON, LOGO } from "./icons.js";
 import { addAgentRun, agentRun, runAgentCard, agentHistory, INTERRUPTED } from "./agent-card.js";
 import { checkBenchPending } from "./bench-run.js";
-import { checkJobBatch } from "./jobs-run.js";
+import { checkJobBatch, runDueApplications } from "./jobs-run.js";
 import type { AgentFile } from "../../agent/types.js";
 import type { WorkerTask } from "../../orchestrator/types.js";
 import { renderMarkdown, renderReview } from "./markdown.js";
@@ -782,6 +782,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "session" && changes.pending?.newValue) checkPending();
   if (area === "session" && changes.benchPending?.newValue) checkBenchPending().catch(err => addError(`Benchmark: ${err.message}`));
   if (area === "session" && changes.jobBatch?.newValue) checkJobBatch().catch(err => addError(`Applications: ${err.message}`));
+  if (area === "local" && (changes.firedAlarms?.newValue as unknown[] | undefined)?.length) runDueApplications().catch(err => addError(`Applications: ${err.message}`));
   if (area === "local" && Object.keys(changes).some(k => !k.startsWith("chat"))) updateBadge();
 });
 
@@ -836,6 +837,7 @@ $("#chatSearch").addEventListener("input", renderChatList);
   await checkPending();
   checkBenchPending().catch(err => addError(`Benchmark: ${err.message}`));
   checkJobBatch().catch(err => addError(`Applications: ${err.message}`));
+  runDueApplications().catch(err => addError(`Applications: ${err.message}`)); // alarms that fired while the panel was closed
   setTimeout(() => reflectStaleChats().catch(() => {}), 1500);
   input.focus();
 })();

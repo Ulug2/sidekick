@@ -49,7 +49,9 @@ declare global {
   var SK_STALL_MS: number | undefined;
   var SK_PAGE_MS: number | undefined;
   var SK_BATCH_PAUSE_MS: number | undefined; // tests: no human pause between applications
-  var SK_ASK_WAIT_MS: number | undefined; // tests: how long a question may wait in a batch
+  var SK_ASK_WAIT_MS: number | undefined; // tests: how long an approval may wait in a batch
+  var SK_NEEDS_YOU_MS: number | undefined; // tests: how long a question waits before Needs You
+  var SK_BUSY_POLL_MS: number | undefined; // tests: how often a waiting application checks the panel is free
   var SK_EXTRA_ATS: string[] | undefined; // tests: hosts that count as application systems (orchestrator/policy)
   var SK_WEB_MS: number | undefined;
 }

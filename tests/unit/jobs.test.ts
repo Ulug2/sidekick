@@ -28,11 +28,11 @@ describe("whereIs", () => {
     expect(whereIs("San Francisco, Seattle, New York; London").regions.sort()).toEqual(["europe", "usa"]);
   });
   it("doesn't mistake other countries' cities or same-named places", () => {
-    expect(whereIs("Toronto, CA").regions).toEqual([]); // Canada, not California
-    expect(whereIs("Toronto, Canada").regions).toEqual([]);
+    expect(whereIs("Toronto, CA")).toEqual({ regions: ["canada"], countries: ["CA"] }); // Canada, not California
+    expect(whereIs("Toronto, Canada").regions).toEqual(["canada"]);
     expect(whereIs("Bengaluru, India").regions).toEqual([]);
     expect(whereIs("Singapore").regions).toEqual([]);
-    expect(whereIs("London, Ontario").regions).toEqual([]);
+    expect(whereIs("London, Ontario").regions).toEqual(["canada"]);
     expect(whereIs("Cambridge, MA").countries).toEqual(["US"]);
     expect(whereIs("Mexico City").regions).toEqual([]);
     expect(whereIs("").regions).toEqual([]);
@@ -43,8 +43,9 @@ describe("judgeJob", () => {
   it("keeps an entry-level US job at an employer with H-1B history, scored above the rest", () => {
     const v = judgeJob(job({}), sponsors, DEFAULT_ROLES, NOW);
     expect(v.ok).toBe(true);
-    expect(v.sponsor).toBe("strong");
+    expect(v.sponsor).toBe("likely"); // H-1B history is evidence, not a promise (Phase 4)
     expect(v.why).toEqual(["Sponsored 64 H-1B visas (USCIS data)"]);
+    expect(v.evidence).toEqual([{ country: "US", confidence: "likely", source: "uscis-h1b", text: "Sponsored 64 H-1B visas (USCIS data)" }]);
     expect(v.regions).toEqual(["usa"]);
     const plain = judgeJob(job({ title: "Software Engineer" }), sponsors, DEFAULT_ROLES, NOW);
     const old = judgeJob(job({ postedAt: NOW - 90 * DAY }), sponsors, DEFAULT_ROLES, NOW);
@@ -65,10 +66,11 @@ describe("judgeJob", () => {
   });
   it("needs a sign of sponsorship outside the UAE; the UAE is always open", () => {
     expect(judgeJob(job({ company: "Unknown Co" }), none, DEFAULT_ROLES, NOW)).toMatchObject({ ok: false, sponsor: "unknown", blocked: "No sign they sponsor visas" });
-    expect(judgeJob(job({ company: "Unknown Co", text: "We offer visa sponsorship and relocation support." }), none, DEFAULT_ROLES, NOW)).toMatchObject({ ok: true, sponsor: "strong", why: ["Posting offers visa sponsorship"] });
-    expect(judgeJob(job({ company: "Careem", location: "Dubai, UAE" }), none, DEFAULT_ROLES, NOW)).toMatchObject({ ok: true, sponsor: "strong", regions: ["uae"], why: ["UAE: the employer arranges the work visa"] });
-    expect(judgeJob(job({ company: "Monzo", location: "London, UK" }), sponsors, DEFAULT_ROLES, NOW)).toMatchObject({ ok: true, sponsor: "strong", why: ["Licensed UK Skilled Worker sponsor (Home Office register)"] });
-    expect(judgeJob(job({ company: "Monzo", location: "Berlin, Germany" }), sponsors, DEFAULT_ROLES, NOW)).toMatchObject({ ok: true, sponsor: "possible" });
+    expect(judgeJob(job({ company: "Unknown Co", text: "We offer visa sponsorship and relocation support." }), none, DEFAULT_ROLES, NOW)).toMatchObject({ ok: true, sponsor: "confirmed", why: ["Posting: “offer visa sponsorship”"] });
+    expect(judgeJob(job({ company: "Careem", location: "Dubai, UAE" }), none, DEFAULT_ROLES, NOW)).toMatchObject({ ok: true, sponsor: "confirmed", regions: ["uae"], why: ["UAE: the employer arranges the work visa"] });
+    expect(judgeJob(job({ company: "Monzo", location: "London, UK" }), sponsors, DEFAULT_ROLES, NOW)).toMatchObject({ ok: true, sponsor: "confirmed", why: ["Licensed UK Skilled Worker sponsor (Home Office register)"] });
+    // Germany: any employer can hire him, so only the posting's wording counts; silence is unknown (not batched).
+    expect(judgeJob(job({ company: "Monzo", location: "Berlin, Germany" }), sponsors, DEFAULT_ROLES, NOW)).toMatchObject({ ok: false, sponsor: "unknown" });
     expect(judgeJob(job({ company: "Some GmbH", location: "Berlin, Germany", text: "Relocation package included." }), none, DEFAULT_ROLES, NOW)).toMatchObject({ ok: true, sponsor: "likely" });
     expect(judgeJob(job({ company: "Ramp", location: "New York, NY" }), sponsors, DEFAULT_ROLES, NOW)).toMatchObject({ ok: true, sponsor: "likely", why: ["Sponsored 2 H-1B visas (USCIS data)"] });
   });
@@ -86,7 +88,7 @@ describe("judgeJob", () => {
     expect(judgeJob(job({ title: "PhD Machine Learning Engineer, Intern" }), sponsors, DEFAULT_ROLES, NOW).blocked).toBe("For PhD students");
     expect(judgeJob(job({ title: "Account Executive" }), sponsors, DEFAULT_ROLES, NOW).blocked).toBe("Not one of your target roles");
     expect(judgeJob(job({ title: "Mobile Developer" }), sponsors, ["mobile developer"], NOW).ok).toBe(true);
-    expect(judgeJob(job({ location: "Singapore" }), sponsors, DEFAULT_ROLES, NOW).blocked).toBe("Not in the US, Europe or the UAE (Singapore)");
+    expect(judgeJob(job({ location: "Singapore" }), sponsors, DEFAULT_ROLES, NOW).blocked).toBe("Not in the US, Canada, Europe or the UAE (Singapore)");
   });
   it("ignores 'executive sponsor' and 'sponsorship deals' (not visa talk)", () => {
     const v = judgeJob(job({ company: "Unknown Co", text: "You will serve as executive sponsor and sell event sponsorships." }), none, DEFAULT_ROLES, NOW);

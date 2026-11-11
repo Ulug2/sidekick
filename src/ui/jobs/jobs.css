@@ -68,7 +68,7 @@ body .top { background: color-mix(in srgb, var(--bg) 85%, transparent); }
 .jobs, .companies { list-style: none; margin: 0; padding: 0; }
 .job { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); align-items: start; }
 .job .bar { align-self: stretch; border-radius: 3px; background: linear-gradient(180deg, var(--cyan), transparent); opacity: .35; }
-.job.strong .bar { opacity: 1; }
+.job.confirmed .bar, .job.strong .bar { opacity: 1; }
 .job.likely .bar { opacity: .7; }
 .job .main { min-width: 0; }
 .job .title { font-weight: 600; color: var(--text); text-decoration: none; }
@@ -76,9 +76,9 @@ body .top { background: color-mix(in srgb, var(--bg) 85%, transparent); }
 .job .co { color: var(--muted); }
 .job .meta { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 3px; font-size: 12px; color: var(--muted); align-items: center; }
 .chip { display: inline-block; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); font: 11px/1.6 var(--mono); color: var(--muted); }
-.chip.sponsor-strong { color: var(--green); border-color: rgba(74, 222, 128, .4); }
+.chip.sponsor-confirmed, .chip.sponsor-strong { color: var(--green); border-color: rgba(74, 222, 128, .4); }
 .chip.sponsor-likely { color: var(--cyan); border-color: rgba(56, 217, 245, .4); }
-.chip.sponsor-possible { color: var(--amber); border-color: rgba(245, 181, 58, .4); }
+.chip.sponsor-unknown, .chip.sponsor-possible { color: var(--amber); border-color: rgba(245, 181, 58, .4); }
 .chip.status-applied { color: var(--green); } .chip.status-interview, .chip.status-offer { color: var(--amber); } .chip.status-rejected, .chip.status-closed { color: var(--red); } .chip.status-needs_you { color: var(--amber); }
 .job .why { font-size: 12px; color: var(--faint); margin-top: 2px; }
 .job .blocked { color: var(--amber); }
@@ -105,3 +105,12 @@ body .top { background: color-mix(in srgb, var(--bg) 85%, transparent); }
   .job .acts .row { justify-content: flex-start; }
   .job input.note { width: 100%; }
 }
+
+/* Needs You: one input per question, then Save & resume */
+.needs { margin-top: 8px; padding: 10px 12px; border: 1px solid rgba(245, 181, 58, .45); border-radius: 10px; background: var(--surface); display: grid; gap: 8px; }
+.needs .q { display: grid; gap: 4px; font-size: 13px; }
+.needs .q input, .needs .q select { padding: 5px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 7px; font: inherit; font-size: 13px; width: 100%; box-sizing: border-box; }
+.needs .hint { font-size: 12px; color: var(--muted); }
+.needs .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.job .sent ul { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
+.job .sent img { display: block; max-width: 100%; margin-top: 6px; border: 1px solid var(--border); border-radius: 8px; }

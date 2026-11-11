@@ -11,17 +11,17 @@
 //   when the posting offers visa sponsorship or relocation, or the employer sponsors elsewhere.
 // - United Arab Emirates: every employer arranges the work visa, so every job is open.
 import type { Job, SponsorLevel, Region } from "./types.js";
+import { sponsorshipFor, type Evidence, type SponsorData } from "./sponsorship.js";
+export type { SponsorData } from "./sponsorship.js";
+export { sentences } from "./sponsorship.js";
 
-export interface SponsorData {
-  h1b: (company: string) => number; // H-1B approvals found for this employer (0 = none found)
-  ukSponsor: (company: string) => boolean; // on the UK Skilled Worker register
-}
 export interface Verdict {
   ok: boolean;
   regions: Region[];
   countries: string[];
   sponsor: SponsorLevel;
   why: string[]; // short reasons, shown in the dashboard
+  evidence: Evidence[]; // each with its source and date (jobs/sponsorship.ts)
   blocked?: string; // why it can't be taken, when ok is false
   score: number; // higher first
 }
@@ -71,6 +71,7 @@ const EUROPE_WORD = /\b(europe|emea|eu remote|remote[- ,(]*(eu|europe))\b/i;
 // Strings that name a city in another country with the same name as one above.
 // "Toronto, CA" is Canada, not California.
 const CANADA_CA = /\b(toronto|vancouver|montreal|montréal|ottawa|calgary|waterloo|edmonton|kitchener|mississauga|quebec|québec|winnipeg|halifax|victoria),?\s*(ca|canada|on|bc|qc|ab)\b/gi;
+const CANADA_RE = /\b(canada|toronto|vancouver|montreal|montréal|ottawa|calgary|waterloo|edmonton|kitchener|mississauga|winnipeg|halifax|québec|quebec city)\b/i;
 const NOT_THERE = /\b(london,? (ontario|on)\b|paris,? (tx|texas)|dublin,? (ca|oh|ohio|california)|cambridge,? (ma|massachusetts)|birmingham,? (al|alabama)|manchester,? (nh|new hampshire)|athens,? (ga|georgia))\b/i;
 
 export function whereIs(location: string): { regions: Region[]; countries: string[] } {
@@ -79,39 +80,14 @@ export function whereIs(location: string): { regions: Region[]; countries: strin
   const clean = loc.replace(CANADA_CA, "Canada").replace(NOT_THERE, m => (/,\s*(ca|oh|ohio|california|ma|massachusetts|tx|texas|al|alabama|nh|new hampshire|ga|georgia)\b/i.test(m) ? "United States" : "Canada"));
   if (US_RE.test(clean)) countries.add("US");
   if (UAE_RE.test(clean)) countries.add("AE");
+  if (CANADA_RE.test(clean)) countries.add("CA");
   for (const [c, re] of EU_RES) if (re.test(clean)) countries.add(c);
   const regions = new Set<Region>();
-  for (const c of countries) regions.add(c === "US" ? "usa" : c === "AE" ? "uae" : "europe");
+  for (const c of countries) regions.add(c === "US" ? "usa" : c === "AE" ? "uae" : c === "CA" ? "canada" : "europe");
   if (!countries.size && EUROPE_WORD.test(clean)) regions.add("europe");
   return { regions: [...regions], countries: [...countries] };
 }
 
-// ---------- what the posting says ----------
-// "Executive sponsor", "sponsorship deals" and the like don't count: only visa wording does.
-const NO_SPONSOR = [
-  /\b(unable|not able|cannot|can ?not|can't|do not|don't|does not|doesn't|will not|won't|are not able|is not able|not in a position|no longer)\b[^.]{0,40}\b(sponsor|sponsorship)\b[^.]{0,40}\b(visa|work|employment|immigration|h-?1b|authori[sz]ation|candidates|applicants|this (role|position))/i,
-  /\b(visa|immigration|employment|work)[- ]?(visa )?sponsorship\b[^.]{0,30}\b(is )?(not|un)(available| be provided| offered|able)/i,
-  /\bwithout (the need for |requiring |needing )?(current or future |now or in the future |any )?(employer |visa |immigration |employment )?sponsorship\b/i,
-  /\bno (visa|immigration|employment|work[- ]?visa|h-?1b) sponsorship\b/i,
-  /\bsponsorship (is )?not (available|provided|offered)\b/i
-];
-const CITIZENS_ONLY = [
-  /\b(must be|be) (a )?(u\.?s\.?|united states) citizens?\b/i,
-  /\bu\.?s\.? citizenship (is )?(required|needed|mandatory)\b/i,
-  /\b(only )?(u\.?s\.? citizens|green card holders)( (and|or) (green card holders|permanent residents|u\.?s\.? citizens))?( only| are eligible)\b/i,
-  /\b(active|current|ability to obtain|eligible for|obtain and maintain) (a |an )?(u\.?s\.? )?(government |dod |secret |top secret |ts\/sci |security )+clearance\b/i,
-  /\b(itar|export control)[^.]{0,80}\b(u\.?s\.? person|citizen|permanent resident)/i,
-  /\b(require[sd]?|must be|only|eligib\w+|restricted to|limited to|open to)\b[^.]{0,60}\bu\.?s\.? persons?\b/i,
-  /\bu\.?s\.? persons?\b[^.]{0,40}\b(only|required|status|as defined)\b/i,
-  /\bmust (already )?have (the )?(full |existing )?right to work in the (uk|united kingdom|eu|european union)\b/i
-];
-const SPONSORS = [
-  /\b(we|will|can|able to|happy to|do|does)\b[^.]{0,30}\bsponsor\b[^.]{0,30}\b(visa|visas|work permit|h-?1b|immigration|relocation)/i,
-  /\b(visa|immigration|work permit|h-?1b|blue card|skilled worker)[- ]?(sponsorship|support)\b[^.]{0,30}\b(is |are )?(available|provided|offered|possible)\b/i,
-  /\b(offer|offers|provide|provides|including|includes|with|plus)\b[^.]{0,30}\b(visa|immigration|work permit|blue card) (sponsorship|support|assistance)\b/i,
-  /\brelocation (package|support|assistance|bonus)\b/i,
-  /\b(sponsorship|visa support) for (international|non-eu|non-uk) (candidates|applicants|hires)\b/i
-];
 const SENIOR = /\b(senior|sr\.?|staff|principal|lead|manager|director|head of|vp|vice president|architect|distinguished|fellow|iii|iv|level [3-9]|l[5-9])\b/i;
 const NOT_FOR_YOU = /\b(ph\.?d\.?|doctoral|master'?s|mba|high school)\b/i;
 const EXPERIENCE = /\b([4-9]|1\d)\+? (or more )?years?\b[^.]{0,40}\b(experience|of professional|in industry|of industry)/i;
@@ -120,61 +96,36 @@ export const INTERN_RE = /\b(intern|interns|internship|internships|co-?op|summer
 const ENTRY = /\b(intern|internship|new grad|new graduate|graduate|entry[- ]level|junior|jr\.?|early career|university|campus|associate|apprentice|i\b|level 1|l1|2026|2027)\b/i;
 export const DEFAULT_ROLES = ["software engineer", "software developer", "software engineering", "backend", "back-end", "frontend", "front-end", "full stack", "full-stack", "fullstack", "mobile engineer", "ios engineer", "android engineer", "react native", "web developer", "data engineer", "machine learning engineer", "ml engineer", "ai engineer", "platform engineer", "infrastructure engineer", "forward deployed engineer", "solutions engineer", "product engineer", "swe"];
 
-export const sentences = (text: string, re: RegExp[]) => re.map(r => String(text || "").match(r)?.[0]).filter(Boolean) as string[];
 
 // roles: what to look for in titles (the profile's target roles, or DEFAULT_ROLES).
 export interface JudgeOptions { internships?: boolean }
 export function judgeJob(job: Pick<Job, "title" | "company" | "location" | "text" | "postedAt">, sponsors: SponsorData, roles: string[] = DEFAULT_ROLES, now = Date.now(), opts: JudgeOptions = {}): Verdict {
   const { regions, countries } = whereIs(job.location);
-  const why: string[] = [];
-  const no = (blocked: string): Verdict => ({ ok: false, regions, countries, sponsor: "no", why, blocked, score: 0 });
+  const no = (blocked: string, sponsor: SponsorLevel = "no"): Verdict => ({ ok: false, regions, countries, sponsor, why: [], evidence: [], blocked, score: 0 });
   const title = String(job.title || "");
   const text = `${title}\n${job.text || ""}`;
-  if (!regions.length) return no(job.location ? `Not in the US, Europe or the UAE (${job.location})` : "No location given");
+  if (!regions.length) return no(job.location ? `Not in the US, Canada, Europe or the UAE (${job.location})` : "No location given");
   const roleHit = roles.some(r => title.toLowerCase().includes(r.toLowerCase()));
   if (!roleHit) return no("Not one of your target roles");
   if (NOT_FOR_YOU.test(title)) return no(`For ${title.match(NOT_FOR_YOU)![0]} students`);
   if (!opts.internships && INTERN_RE.test(title)) return no("Internship, not a job");
   if (SENIOR.test(title) && !/\b(intern|new grad|graduate|junior|entry)\b/i.test(title)) return no("Senior role");
   if (EXPERIENCE.test(job.text || "") && !ENTRY.test(title)) return no(`Asks for ${(job.text || "").match(EXPERIENCE)![1]}+ years of experience`);
-  const citizen = sentences(text, CITIZENS_ONLY)[0];
-  if (citizen) return no(`Says: “${citizen.trim()}”`);
-  const refuses = sentences(text, NO_SPONSOR)[0];
-  const offers = sentences(text, SPONSORS)[0];
 
-  // Sponsorship, region by region; the job is kept if any of its countries works.
-  let best = "unknown" as SponsorLevel;
-  const rank: Record<SponsorLevel, number> = { no: 0, unknown: 1, possible: 2, likely: 3, strong: 4 };
-  const consider = (lvl: SponsorLevel, reason: string) => { if (rank[lvl] > rank[best]) best = lvl; if (!why.includes(reason)) why.push(reason); };
-  const h1b = sponsors.h1b(job.company);
-  const uk = sponsors.ukSponsor(job.company);
-  for (const c of countries.length ? countries : ["EU"]) {
-    if (c === "AE") consider("strong", "UAE: the employer arranges the work visa");
-    else if (c === "US") {
-      if (refuses) continue;
-      if (offers) consider("strong", "Posting offers visa sponsorship");
-      if (h1b >= 5) consider("strong", `Sponsored ${h1b} H-1B visas (USCIS data)`);
-      else if (h1b > 0) consider("likely", `Sponsored ${h1b} H-1B visa${h1b > 1 ? "s" : ""} (USCIS data)`);
-    } else if (c === "UK") {
-      if (refuses) continue;
-      if (uk) consider("strong", "Licensed UK Skilled Worker sponsor (Home Office register)");
-      else if (offers) consider("likely", "Posting offers visa sponsorship");
-    } else {
-      if (refuses) continue;
-      if (offers) consider("likely", "Posting offers visa sponsorship or relocation");
-      else if (h1b >= 5 || uk) consider("possible", "Sponsors visas in other countries; Europe needs a work permit they'd support");
-    }
-  }
-  if (refuses && best === "unknown") return no(`Says: “${refuses.trim()}”`);
-  if (best === "unknown") return { ok: false, regions, countries, sponsor: "unknown", why: ["No sign they sponsor visas"], blocked: "No sign they sponsor visas", score: 0 };
+  // Sponsorship with evidence (jobs/sponsorship.ts); only confirmed and likely are kept.
+  const s = sponsorshipFor(job.company, text, countries.length ? countries : regions.includes("europe") ? ["EU"] : [], sponsors);
+  if (s.blocked) return no(s.blocked);
+  const why = s.evidence.map(e => e.text).concat(s.stale ? [s.stale] : []);
+  const best = s.confidence;
+  if (best !== "confirmed" && best !== "likely") return { ok: false, regions, countries, sponsor: "unknown", why: why.length ? why : ["No sign they sponsor visas"], evidence: s.evidence, blocked: "No sign they sponsor visas", score: 0 };
 
   // Order: sponsorship first, then how entry-level the role is, then how fresh the posting is.
-  let score = { strong: 50, likely: 35, possible: 20, unknown: 0, no: 0 }[best];
+  let score = best === "confirmed" ? 50 : 35;
   if (/\b(new grad|new graduate|graduate|entry[- ]level|junior|early career|university|campus)\b/i.test(title)) score += 25;
   else if (/\bintern(ship)?\b/i.test(title)) score += 20;
   else if (!/\bii\b/i.test(title)) score += 12;
   const days = job.postedAt ? (now - job.postedAt) / 864e5 : 60;
   score += days <= 7 ? 15 : days <= 30 ? 10 : days <= 60 ? 5 : 0;
   if (regions.includes("usa")) score += 5; // STEM OPT: up to 3 years of work without a new visa
-  return { ok: true, regions, countries, sponsor: best, why, score };
+  return { ok: true, regions, countries, sponsor: best, why, evidence: s.evidence, score };
 }

@@ -20,7 +20,22 @@ export async function targetRoles(): Promise<string[]> {
 }
 export async function loadSponsors(): Promise<{ data: SponsorData; lists: SponsorLists | null }> {
   const { sponsorLists } = await readLocal("sponsorLists");
-  return { data: sponsorLookup(sponsorLists), lists: sponsorLists || null };
+  const lists = sponsorLists ? { ...sponsorLists, ...(await shippedLca()) } : null;
+  return { data: sponsorLookup(lists), lists };
+}
+// DOL LCA counts shipped with the extension (public/data/lca.json, scripts/sponsors/build-lca.mjs).
+// Absent until built: then the US evidence is USCIS H-1B data only.
+let lcaCache: Pick<SponsorLists, "lca" | "lcaYears" | "lcaBuilt"> | null = null;
+export async function shippedLca(): Promise<Pick<SponsorLists, "lca" | "lcaYears" | "lcaBuilt">> {
+  if (lcaCache) return lcaCache;
+  try {
+    const res = await fetch(chrome.runtime.getURL("data/lca.json"));
+    if (!res.ok) return (lcaCache = {});
+    const d = await res.json() as { fy?: string; built?: number; counts?: Record<string, number> };
+    const lca: Record<string, number> = {};
+    for (const [name, n] of Object.entries(d.counts || {})) { const k = normCompany(name); if (k) lca[k] = (lca[k] || 0) + Number(n || 0); }
+    return (lcaCache = { lca, lcaYears: String(d.fy || ""), lcaBuilt: Number(d.built) || 0 });
+  } catch { return (lcaCache = {}); }
 }
 
 export async function judgeOptions(): Promise<JudgeOptions> {
@@ -38,7 +53,7 @@ export async function rejudgeJobs(): Promise<number> {
     const v = judgeJob(j, data, roles, Date.now(), opts);
     if (v.ok === j.ok && v.blocked === j.blocked) return j;
     changed++;
-    return { ...j, ok: v.ok, regions: v.regions, countries: v.countries, sponsor: v.sponsor, why: v.why, blocked: v.blocked, score: v.score, text: v.ok ? j.text : undefined, status: "found" as const };
+    return { ...j, ok: v.ok, regions: v.regions, countries: v.countries, sponsor: v.sponsor, why: v.why, evidence: v.evidence, blocked: v.blocked, score: v.score, text: v.ok ? j.text : undefined, status: "found" as const };
   }));
   return changed;
 }

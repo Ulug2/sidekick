@@ -5,12 +5,19 @@
 //   file USCIS still publishes is FY2023.
 // Both are downloaded on the Jobs page when you press "Update sponsor lists" (about 13 MB), turned
 // into a list of names, and kept in chrome.storage.local.
-import type { SponsorData } from "./eligibility.js";
+import { LCA_STALE_DAYS, type SponsorData } from "./sponsorship.js";
 import { webFetchOpts } from "../core/web/web.js";
 
 export const UK_REGISTER_API = "https://www.gov.uk/api/content/government/publications/register-of-licensed-sponsors-workers";
 export const H1B_FILES = ["https://www.uscis.gov/sites/default/files/document/data/h1b_datahubexport-2023.csv", "https://www.uscis.gov/sites/default/files/document/data/h1b_datahubexport-2022.csv"];
-export interface SponsorLists { uk: string[]; us: Record<string, number>; ukDate?: string; usYears?: string; updated: number }
+export interface SponsorLists {
+  uk: string[]; us: Record<string, number>; ukDate?: string; usYears?: string; updated: number;
+  // Phase 4 (optional until loaded): DOL LCA certifications per employer (public/data/lca.json, built
+  // by scripts/sponsors/build-lca.mjs), the Dutch IND register, Canadian positive-LMIA employers.
+  lca?: Record<string, number>; lcaYears?: string; lcaBuilt?: number;
+  nl?: string[]; nlDate?: string;
+  ca?: Record<string, number>; caDate?: string;
+}
 
 // "STRIPE, INC." → "stripe"; "Amazon.com Services LLC" → "amazon com services".
 const SUFFIX = /\b(incorporated|inc|llc|l l c|llp|lp|ltd|limited|corp|corporation|co|company|plc|gmbh|ag|bv|b v|nv|sa|s a|sas|sarl|srl|spa|ab|as|oy|aps|pty|pte|holdings?|group|the|dba|uk|usa|us|pbc|opco)\b/g;
@@ -22,18 +29,26 @@ export function normCompany(name: string): string {
 // ("Amazon Com Services", "Stripe Payments", "Datadog North America").
 const SAME_EMPLOYER = /^(business|bank|brands|networks|interactive|media|studios|cloud|data|platforms?|enterprises|markets|securities|trading|capital|com|services?|technologies|technology|tech|labs?|software|systems|digital|solutions|global|international|north america|america|americas|payments|financial|health|ai|io|hq|operations|europe|emea|uk|london|ireland|deutschland|germany|netherlands|france)( |$)/;
 
-export function sponsorLookup(lists: SponsorLists | null | undefined): SponsorData {
-  const uk = new Set(lists?.uk || []);
-  const us = lists?.us || {};
+export function sponsorLookup(lists: SponsorLists | null | undefined, now = Date.now()): SponsorData {
   // First word → registered names, to find "amazon com services" from "Amazon".
-  const byFirst = new Map<string, string[]>();
-  for (const n of Object.keys(us)) { const f = n.split(" ")[0]; if (f.length >= 3) (byFirst.get(f) || byFirst.set(f, []).get(f)!).push(n); }
-  const ukFirst = new Map<string, string[]>();
-  for (const n of uk) { const f = n.split(" ")[0]; if (f.length >= 3) (ukFirst.get(f) || ukFirst.set(f, []).get(f)!).push(n); }
-  const variants = (key: string, first: Map<string, string[]>) => key.length < 3 ? [] : (first.get(key.split(" ")[0]) || []).filter(n => n === key || (n.startsWith(key + " ") && SAME_EMPLOYER.test(n.slice(key.length + 1))));
+  const index = (names: Iterable<string>) => {
+    const first = new Map<string, string[]>();
+    for (const n of names) { const f = n.split(" ")[0]; if (f.length >= 3) (first.get(f) || first.set(f, []).get(f)!).push(n); }
+    return (company: string) => {
+      const key = normCompany(company);
+      return key.length < 3 ? [] : (first.get(key.split(" ")[0]) || []).filter(n => n === key || (n.startsWith(key + " ") && SAME_EMPLOYER.test(n.slice(key.length + 1))));
+    };
+  };
+  const counts = (m: Record<string, number> | undefined) => { const find = index(Object.keys(m || {})); return (c: string) => find(c).reduce((a, n) => a + (m![n] || 0), 0); };
+  const member = (list: string[] | undefined) => { const set = new Set(list || []); const find = index(set); return (c: string) => set.has(normCompany(c)) || find(c).length > 0; };
   return {
-    h1b: company => { const k = normCompany(company); return variants(k, byFirst).reduce((a, n) => a + (us[n] || 0), 0); },
-    ukSponsor: company => { const k = normCompany(company); return uk.has(k) || variants(k, ukFirst).length > 0; }
+    h1b: counts(lists?.us),
+    ukSponsor: member(lists?.uk),
+    ...(lists?.lca && { lca: counts(lists.lca) }),
+    ...(lists?.nl && { nlSponsor: member(lists.nl) }),
+    ...(lists?.ca && { caLmia: counts(lists.ca) }),
+    dates: { h1b: lists?.usYears?.split(",")[0]?.trim(), uk: lists?.ukDate, lca: lists?.lcaYears, ind: lists?.nlDate, lmia: lists?.caDate },
+    lcaStale: !!lists?.lca && (!lists.lcaBuilt || now - lists.lcaBuilt > LCA_STALE_DAYS * 864e5)
   };
 }
 

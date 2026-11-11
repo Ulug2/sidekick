@@ -24,7 +24,8 @@
       <div class="hero-actions">
         <button type="button" id="scan" class="primary">Scan job boards</button>
         <button type="button" id="build">Build today's batch</button>
-        <button type="button" id="start" class="go" hidden>Approve &amp; start batch</button>
+        <button type="button" id="approve" class="go" hidden>Approve &amp; spread over the day</button>
+        <button type="button" id="start" hidden>Start now</button>
         <button type="button" id="stop" class="danger" hidden>Stop</button>
       </div>
     </section>
@@ -37,6 +38,8 @@
       <label>API limit per day <span class="dollar">$<input type="number" id="capDaily" min="0" max="50" step="0.5"></span></label>
       <label>per month <span class="dollar">$<input type="number" id="capMonthly" min="0" max="500" step="1"></span></label>
       <label class="check"><input type="checkbox" id="internships"> Include internships</label>
+      <label class="check"><input type="checkbox" id="dailyBatch"> Build a batch at 8 AM ET</label>
+      <label>Batch size <input type="number" id="batchSize" min="1" max="50" step="1"></label>
       <span class="spacer"></span>
       <button type="button" id="sponsors">Update sponsor lists</button>
       <button type="button" id="discover">Find more companies</button>

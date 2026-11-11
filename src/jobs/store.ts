@@ -8,7 +8,9 @@ import { updateLocal } from "../core/storage/update.js";
 import { readLocal } from "../core/storage/schema.js";
 
 export const UNSEEN_DROP_DAYS = 30;
-export const DEFAULT_JOB_SETTINGS = { dailyCap: 20, monthlyCap: 25, internships: false }; // applications per day; dollars of API per month; internships too? // postings filtered out and gone this long are forgotten
+// dailyBatch: build a batch at batchHour (Eastern) every day; batchSize jobs; approved ones spread over
+// spreadHours; a question waits needsYouWaitMinutes (after a notification) before the job is set aside.
+export const DEFAULT_JOB_SETTINGS = { dailyCap: 20, monthlyCap: 25, internships: false, dailyBatch: true, batchHour: 8, batchSize: 18, spreadHours: 20, needsYouWaitMinutes: 10 }; // applications per day; dollars of API per month; internships too? // postings filtered out and gone this long are forgotten
 
 export async function getJobs(): Promise<Job[]> { return (await readLocal("jobs")).jobs || []; }
 export async function getCompanies(): Promise<Company[]> {
@@ -51,7 +53,7 @@ export function mergeScan(list: Job[], company: Pick<Company, "ats" | "board">, 
     seen.add(p.id);
     const v = p.verdict;
     const old = byId.get(p.id);
-    const fields = { ...p, text: v.ok ? p.text : undefined, ok: v.ok, regions: v.regions, countries: v.countries, sponsor: v.sponsor, why: v.why, blocked: v.blocked, score: v.score, lastSeen: now };
+    const fields = { ...p, text: v.ok ? p.text : undefined, ok: v.ok, regions: v.regions, countries: v.countries, sponsor: v.sponsor, why: v.why, evidence: v.evidence, blocked: v.blocked, score: v.score, lastSeen: now };
     delete (fields as { verdict?: Verdict }).verdict;
     if (old) byId.set(p.id, { ...old, ...fields, status: old.status === "closed" ? "found" : old.status });
     else byId.set(p.id, { ...fields, status: "found", firstSeen: now });

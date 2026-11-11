@@ -131,6 +131,20 @@ General rules that came out of these: design for the long version of a task; eve
 - **Rule:** a shortcut that skips asking the user must fail toward asking: exact matches only in code, and verify any model-chosen value against stored data.
 - **Tests:** unit memory (the reviewer's pairs, secrets), memory-answers (made-up classifier value is thrown away).
 
+### 20. Phase 4's first draft could apply unapproved and read "We do not offer visa sponsorship" as an offer (caught in review, 2026-11-11)
+- **What.** A reviewer agent found:
+  - an alarm that fired while the panel was closed survived "Remove from batch", so a later re-queue would have run unapproved;
+  - the "offers sponsorship" patterns had no negation check;
+  - the honesty rules checked typing and selecting but not clicks (custom dropdowns and Ashby Yes/No buttons are clicked);
+  - option text like "I am authorized … and do not require sponsorship" was read from its first words;
+  - the next-day 8 AM alarm skipped a day after 10 PM.
+- **Rule.**
+  - Anything that can start an application re-checks approval at the moment it runs (queued **and** `scheduledAt` set), and cancelling clears every trace of the schedule (alarm, stored item, fired queue).
+  - Positive wording rules always check for a negator just before the match.
+  - A form-answer rule must cover every way a value gets in: type, select, tick and click.
+  - Yes/no meaning is read from the whole phrase.
+  - Tests: unit phase4, daily-batch, memory-answers.
+
 ## Earlier lessons (v0.7–v0.9)
 - **A double-check must not overrule a right answer without evidence** (v0.7.2 pipeline problem). Replacements need a code check (objective or residuals) under both setups.
 - **Examples in prompts anchor the model.** Use neutral numbers, never the real answer.

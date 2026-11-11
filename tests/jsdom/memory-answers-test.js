@@ -36,8 +36,8 @@ function classifierReply(body) {
   return null;
 }
 
-async function run(plan) {
-  const page = new JSDOM(FORM, { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://boards.greenhouse.io/acme/jobs/1' }).window; prep(page);
+async function run(plan, form = FORM) {
+  const page = new JSDOM(form, { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://boards.greenhouse.io/acme/jobs/1' }).window; prep(page);
   const w = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only', url: 'chrome-extension://abc/sidepanel.html' }).window;
   w.chrome = {
     storage: { local, session: makeStore(), onChanged: { addListener() {} } },
@@ -64,7 +64,7 @@ async function run(plan) {
   const ui = {
     signal: new AbortController().signal,
     step: () => ({ waiting() {}, done() {} }), note() {},
-    approve: async () => true,
+    approve: async a => { (calls.approvals ||= []).push(a.title); return false; },
     ask: async q => { calls.asks.push(q); return ANSWER; }
   };
   const r = await w.runAgent('Apply for this job using my profile', ui, { record: false });
@@ -135,6 +135,20 @@ async function run(plan) {
     const s = d.querySelector('[data-key="gpa"]'); s.value = '4111 1111 1111 1111'; s.dispatchEvent(new pw.Event('input'));
     await sleep(700);
     check('Memory page: a card-number-looking value is refused, never stored', !local.data().facts.gpa && /never stores those/.test(d.querySelector('#saveState').textContent));
+  }
+
+  // ---------- honesty on clicks (review 2026-11-11): a Yes/No button for a sponsorship question ----------
+  {
+    await local.set({ profile: { ...local.data().profile, needsSponsorship: 'Yes' } });
+    const SPONSOR_FORM = `<!doctype html><html><head><title>Apply</title></head><body><main><form>
+      <div role="radiogroup" aria-label="Do you need sponsorship?"><button type="button" role="radio" aria-checked="false">Yes</button><button type="button" role="radio" aria-checked="false">No</button></div>
+      </form></main></body></html>`;
+    calls.approvals = [];
+    await run([
+      ({ id }) => ['click', { id: id('No') }],
+      () => ['done', { summary: 'ok' }]
+    ], SPONSOR_FORM);
+    check('Clicking "No" for "Do you need sponsorship?" when the profile says Yes asks first (declined here, so nothing clicked)', calls.approvals.some(t => /Click “No”\? It doesn't match your profile/.test(t)), JSON.stringify(calls.approvals));
   }
 
   console.log(results.join('\n'));

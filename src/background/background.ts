@@ -2,6 +2,8 @@
 import type { SessionSchema } from "../core/storage/schema.js";
 import { markFired, restoreAlarms } from "../orchestrator/scheduler.js";
 import { chromeHost } from "../orchestrator/host.js";
+import { APPLY_PREFIX, BATCH_ALARM, ensureDailyBatch, onBatchAlarm } from "../jobs/daily.js";
+import { readLocal } from "../core/storage/schema.js";
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
 
@@ -24,6 +26,20 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 // ---------- the orchestrator's clock (docs/ARCHITECTURE.md §3.2) ----------
-// Alarms survive Chrome restarts; fired ones are queued in storage for the orchestrator page.
-chrome.alarms.onAlarm.addListener(alarm => { markFired(alarm.name, alarm.scheduledTime).catch(console.error); });
+// Alarms survive Chrome restarts; fired ones are queued in storage for the page that runs them.
+// The 8 AM batch is built right here (storage and code only, no model calls).
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === BATCH_ALARM) { onBatchAlarm(chromeHost).catch(console.error); return; }
+  markFired(alarm.name, alarm.scheduledTime).then(() => alarm.name.startsWith(APPLY_PREFIX) ? applicationDue(alarm.name.slice(APPLY_PREFIX.length)) : undefined).catch(console.error);
+});
+// Applications run in the side panel; if it's closed, say so (it can only be opened by a click).
+async function applicationDue(jobId: string): Promise<void> {
+  const open = await chrome.runtime.getContexts?.({ contextTypes: [chrome.runtime.ContextType.SIDE_PANEL] }).catch(() => []);
+  if (open?.length) return;
+  const job = ((await readLocal("jobs")).jobs || []).find(j => j.id === jobId);
+  await chromeHost.notify("An application is due", `${job ? `${job.title} at ${job.company}` : "A job in your batch"}: open Sidekick's side panel and it starts (it waits until then).`);
+}
 chrome.runtime.onStartup.addListener(() => { restoreAlarms(chromeHost).catch(console.error); });
+// Every time the service worker starts (Chrome start, install, any event): keep the 8 AM alarm
+// set, and build today's batch if 8 AM passed while Chrome was closed.
+ensureDailyBatch(chromeHost).catch(console.error);

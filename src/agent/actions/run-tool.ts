@@ -3,6 +3,8 @@ import type { AgentState, AgentUI, PageActionResult, ToolOutcome } from "../type
 import { skPageAct } from "../../page/act.js";
 import { logApplication, type Profile } from "../../assistant/profile-core.js";
 import { learnFromAnswer, resolveQuestion, type Resolution } from "../../memory/answers.js";
+import { checkAnswer, questionFor } from "../../memory/honesty.js";
+import { needsYouWait } from "../../jobs/needs-you.js";
 import { askModel } from "../../orchestrator/brain.js";
 import { describeSafe, describeCall, quote } from "./describe.js";
 import { RISKY_WORDS, siteBlocked, gateShare, gateVisit, CAPTCHA_RE, policyContext, inPlan } from "../safety/gates.js";
@@ -114,6 +116,17 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
         const site = siteOf(el?.host ? "https://" + el.host : tab.url || "");
         if (kinds.length && !(await gateShare(state, site, kinds, el?.label || "a field", askApproval))) return declined();
       }
+      // Honesty in code (brief §6.4): work authorization, sponsorship and self-identification
+      // answers must match his profile. Refused in a batch; asked about otherwise.
+      const honest = call.name === "set_checked" ? (a.checked ? state.elements[String(a.id)]?.label : "") : typed;
+      const hel = state.elements[String(a.id)];
+      if (honest && hel) {
+        const h = checkAnswer(questionFor(hel), String(honest), profile, state.task?.countries);
+        if (!h.ok) {
+          if (state.task?.policy === "approved-batch") return fail(`Not entered: ${h.reason}`);
+          if (!(await askApproval(`Enter “${String(honest).slice(0, 80)}” for “${hel.label.slice(0, 80)}”? It doesn't match your profile`, h.reason || ""))) return declined();
+        }
+      }
       const alwaysAsk = state.settings.approvalMode === "every" && !["click", "click_at", "site_tool"].includes(call.name);
       if (alwaysAsk && !(await askApproval(label, ""))) return declined();
     }
@@ -125,6 +138,24 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
         if (!el) return fail(`Element [${a.id}] isn't in the latest snapshot.`);
         // A "prove you're human" check is for the human. Sidekick never tries to pass one (rule in code, not only in the prompt).
         if (CAPTCHA_RE.test(`${el.label} ${el.section} ${a.description || ""}`)) return fail("That's a CAPTCHA or a 'verify you are human' check. Sidekick never tries to pass those. Use ask_user so the user does it, then continue.");
+        // Honesty on clicks too: custom dropdown options and Yes/No buttons (Greenhouse react-select,
+        // Ashby) are chosen by clicking. The question is the element's own, or the few elements
+        // before it on the page; the description the model gave is included.
+        if (/option|radio|button|checkbox|menuitem|tab|switch/.test(el.role) && el.label.length <= 160) {
+          const ids = Object.keys(state.elements), at = ids.indexOf(String(a.id));
+          // The nearest question only (walking back over sibling options like "Yes" / "No"), so a
+          // sponsorship question two fields up doesn't judge this one.
+          let near = "";
+          for (let k = at - 1; k >= Math.max(0, at - 6) && !near && !/question: "/.test(el.line); k--) {
+            const e = state.elements[ids[k]];
+            if (/question: "/.test(e.line) || !/option|radio|button|checkbox|menuitem/.test(e.role) || e.label.length > 30) near = questionFor(e);
+          }
+          const h = checkAnswer(`${near} ${a.description || ""} ${questionFor(el)}`, el.label, profile, state.task?.countries);
+          if (!h.ok) {
+            if (state.task?.policy === "approved-batch") return fail(`Not clicked: ${h.reason}`);
+            if (!(await askApproval(`Click “${el.label.slice(0, 80)}”? It doesn't match your profile`, h.reason || ""))) return declined();
+          }
+        }
         if (everyClick || a.final_action || RISKY_WORDS.test(el.label) || RISKY_WORDS.test(a.description || "")) {
           const site = siteOf(el.host ? "https://" + el.host : (await chrome.tabs.get(state.tabId)).url || "");
           const d = decide({ kind: "final-click", site, label: el.label, description: a.description }, await policyContext(state));
@@ -509,7 +540,18 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
           if (fromMemory.length) toAsk = r.remaining.join("\n");
         }
         step.waiting();
-        const answer = await ui.ask(toAsk);
+        // In an approved batch nobody is watching: notify, wait a while, then set the job aside
+        // with one card question per field (jobs/needs-you.ts) and end the run.
+        let answer: string;
+        if (state.task?.policy === "approved-batch" && state.task.jobId) {
+          const parts = humanStep ? [question] : (fromMemory.length ? toAsk.split("\n") : [question]);
+          const got = await needsYouWait(ui.ask(toAsk), { task: state.task, questions: parts, options: Array.isArray(a.options) ? a.options.map(String) : undefined, human: humanStep, url: (await chrome.tabs.get(state.tabId).catch(() => null))?.url, signal: state.signal });
+          if (got === null) {
+            step.done(false, "Waiting for you: set aside");
+            return { text: "Finished: the question was saved for the user (Needs You) and this application will resume later.", done: true, summary: `Waiting for you: ${toAsk.slice(0, 200)}` };
+          }
+          answer = got;
+        } else answer = await ui.ask(toAsk);
         state.answers.push(toAsk.slice(0, 160));
         step.done(true);
         // Kept for every later form: split into question/answer pairs and facts (one cheap call, in the background).

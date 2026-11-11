@@ -9,7 +9,8 @@ Baseline at the start: v0.9.6, commit `9c6c657`; 685 jsdom checks, 46 unit tests
 Delivered: `BUGS.md` (four root causes with file:line), this plan, `ARCHITECTURE.md` v1 section, `DESIGN.md`, `COSTS.md`. Decisions for Ulugbek are listed at the end.
 
 ## Status
-- Phase 1: done (2026-11-10). Phase 2: done (2026-11-11, `41708aa`). Phase 3: done (2026-11-11).
+- Phase 1: done (2026-11-10). Phase 2: done (2026-11-11, `41708aa`). Phase 3: done (2026-11-11, `283beac`).
+- Phase 4: done (2026-11-11) except: Workday / Teamtailor / BambooHR boards (not started); the DOL LCA data is not shipped yet (the script `scripts/sponsors/build-lca.mjs` builds `public/data/lca.json` from DOL's quarterly files, which he downloads); the IND and LMIA lists are supported in code but have no downloader yet (no evidence from them until then). Applications due while the side panel is closed wait for it (a notification says so); Phase 9 moves this to the Powerhouse page.
 
 ## Phase 2: orchestrator core
 

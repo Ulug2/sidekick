@@ -50,8 +50,9 @@ export async function markFired(name: string, at: number): Promise<void> {
   await updateLocal("scheduled", (list = []) => list.filter(x => x.name !== name));
   await updateLocal("firedAlarms", (list = []) => [...list, { name, at }].slice(-200));
 }
-export async function takeFired(): Promise<{ name: string; at: number }[]> {
+// Takes the fired alarms (only those whose name starts with `prefix`, if given; the rest stay).
+export async function takeFired(prefix = ""): Promise<{ name: string; at: number }[]> {
   let taken: { name: string; at: number }[] = [];
-  await updateLocal("firedAlarms", (list = []) => { taken = list; return []; });
+  await updateLocal("firedAlarms", (list = []) => { taken = list.filter(x => x.name.startsWith(prefix)); return list.filter(x => !x.name.startsWith(prefix)); });
   return taken;
 }

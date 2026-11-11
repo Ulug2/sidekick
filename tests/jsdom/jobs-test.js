@@ -77,13 +77,13 @@ const until = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now(
   const jobs = (await local.get('jobs')).jobs;
   check('Scan: 3 boards read, eligible jobs counted, the missing board reported', /Scanned 3 boards: 2 eligible jobs; 1 board failed/.test(p.text('#progress')) && jobs.length === 10, p.text('#progress'));
   const rows = [...doc.querySelectorAll('#list .job')];
-  check('To apply: one eligible job per board (the new-grad role; senior, no-right-to-work and Singapore filtered out), with the reason it qualifies', rows.length === 2 && rows.every(r => /Software Engineer, New Grad/.test(r.textContent)) && /Posting offers visa sponsorship/.test(rows[0].textContent) && /Sponsored 64 H-1B visas/.test(rows.find(r => /Stripe/.test(r.textContent)).textContent), rows.map(r => r.textContent.slice(0, 200)).join('\n'));
+  check('To apply: one eligible job per board (the new-grad role; senior, no-right-to-work and Singapore filtered out), with the reason it qualifies', rows.length === 2 && rows.every(r => /Software Engineer, New Grad/.test(r.textContent)) && /confirmed: Posting: “We sponsor visas”/.test(rows[0].textContent) && /Sponsored 64 H-1B visas/.test(rows.find(r => /Stripe/.test(r.textContent)).textContent), rows.map(r => r.textContent.slice(0, 200)).join('\n'));
   check('Tabs count what\'s where', p.text('#tabs [data-tab=apply] .n') === '2' && p.text('#tabs [data-tab=filtered] .n') === '8' && p.text('#tabs [data-tab=companies] .n') === '3', p.text('#tabs'));
   click(doc, '#tabs [data-tab=filtered]');
   await sleep(50);
   const filtered = [...doc.querySelectorAll('#list .job')];
   check('Internships are filtered out by default (he needs a job)', filtered.filter(r => /Intern \(Summer 2027\)/.test(r.textContent) && /Internship, not a job/.test(r.textContent)).length === 2 && !doc.querySelector('#internships').checked, filtered.map(r => r.textContent.slice(0, 100)).join('\n'));
-  check('Filtered out: each job shows why, as text (a script tag in a title does nothing)', filtered.length === 8 && filtered.some(r => /Senior Staff Engineer/.test(r.textContent) && /Not one of your target roles/.test(r.textContent)) && filtered.some(r => /Says: “Must have the right to work in the UK”/.test(r.textContent)) && filtered.some(r => /Not in the US, Europe or the UAE \(Singapore\)/.test(r.textContent)) && !doc.querySelector('#list img') && !doc.querySelector('#list b') && !p.w.pwned, filtered.map(r => r.textContent.slice(0, 160)).join('\n'));
+  check('Filtered out: each job shows why, as text (a script tag in a title does nothing)', filtered.length === 8 && filtered.some(r => /Senior Staff Engineer/.test(r.textContent) && /Not one of your target roles/.test(r.textContent)) && filtered.some(r => /Says: “Must have the right to work in the UK”/.test(r.textContent)) && filtered.some(r => /Not in the US, Canada, Europe or the UAE \(Singapore\)/.test(r.textContent)) && !doc.querySelector('#list img') && !doc.querySelector('#list b') && !p.w.pwned, filtered.map(r => r.textContent.slice(0, 160)).join('\n'));
   click(doc, '#tabs [data-tab=companies]');
   await sleep(50);
   check('Companies: each board\'s last scan and the failed one\'s error', /Stripe/.test(p.text('#companies')) && /1 matching/.test(p.text('#companies')) && /Gone Co has no greenhouse board called “gone”/.test(p.text('#companies')), p.text('#companies'));
@@ -117,7 +117,7 @@ const until = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now(
   click(doc, '#build');
   await until(() => /jobs in today's batch/.test(p.text('#progress')));
   const queued = (await local.get('jobs')).jobs.filter(j => j.status === 'queued');
-  check('Build today\'s batch: the eligible jobs are queued (one per company) and Approve appears', /2 jobs in today's batch/.test(p.text('#progress')) && queued.length === 2 && !doc.querySelector('#start').hidden && p.text('#hud').includes("today's batch"), p.text('#progress'));
+  check('Build today\'s batch: the eligible jobs are queued (one per company) and Approve appears', /2 jobs in today's batch/.test(p.text('#progress')) && queued.length === 2 && !doc.querySelector('#start').hidden && !doc.querySelector('#approve').hidden && p.text('#hud').includes("today's batch"), p.text('#progress'));
   click(doc, '#build');
   await until(() => /No eligible jobs left/.test(p.text('#progress')));
   check('Building again adds nothing (one application per company per month)', /No eligible jobs left to add/.test(p.text('#progress')));
