@@ -53,6 +53,23 @@ With the OpenAI key instead (Terra for the brain, Luna for workers): Lean ≈ $2
 
 Code, not advice: `core/llm/budget.ts` reads the usage log (dollars per model per day, already recorded) and refuses model calls when today's or this month's total reaches the cap set in Settings (daily default $6, monthly default $140 on Standard). When the cap trips, every worker stops at a safe point (never mid-submit), the brain is not called, and the Powerhouse shows "Paused: spend cap" with the numbers; a Chrome notification tells him. The Jobs page's per-run limit ($0.60) stays.
 
+## The chosen plan: $25 a month (decided 2026-11-10)
+
+| Line | Model | $/month |
+|---|---|---|
+| Applications, 15/day × ~15 steps | Haiku 5.5 (Sonnet 5.5 only on a retry) | 6.75 |
+| Cover letters, 15/day | Sonnet 5.5 | 4.50 |
+| 8 AM batch ranking, 1/day | Sonnet 5.5 (Fable 5.1 only when he asks a hard question in chat; off by default) | 2.00 |
+| Reviews of failed runs, Needs-You triage | Sonnet 5.5 | 1.50 |
+| Email triage + extraction (Gmail, with school mail forwarded) | Haiku 5.5 | 0.50 |
+| Email reply drafts, ~5/day | Sonnet 5.5 | 1.50 |
+| School reads (Haiku) + daily ranking (Sonnet) | | 1.60 |
+| Chat as today | mixed | 3.00 |
+| Answer-bank matching, eligibility edge cases | Haiku 5.5 | 0.50 |
+| **Total** | | **≈ $22** |
+
+Caps: daily $1.00, monthly $25.00 (Settings → Spend). At 20 applications a day the total is ≈ $26; the batch size defaults to 15. The brain is Sonnet 5.5 at this budget; `models.ts` keeps `brain: "claude-sonnet-5-5"` and `brainDeep: "claude-fable-5-1"` for the few calls he asks for explicitly.
+
 ## What to decide at the checkpoint
 
 1. Which plan (Lean / Standard / Full), or a number.

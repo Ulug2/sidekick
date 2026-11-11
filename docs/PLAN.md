@@ -78,7 +78,7 @@ Acceptance: fixtures copied from his Moodle and MyOpenMath pages (he exports the
 
 - Gmail through the Gmail API with `chrome.identity` (he creates the OAuth client for the extension ID; tokens encrypted at rest, see ARCHITECTURE §3.5).
 - Outlook: try Microsoft Graph with a device-code flow and `Mail.Read` + `Mail.Send`; if the tenant requires admin consent (likely, see RESEARCH_NOTES), fall back to (a) an Outlook rule forwarding to Gmail, or (b) the browser worker reading Outlook on the web read-only. The choice is his.
-- Triage (Haiku) into important / needs reply / FYI / promo / junk; cleanup moves promo and junk to Trash with a log and one-click undo (restore the label/folder); replies drafted by Sonnet in approval mode, with a per-category auto-send whitelist in Settings; every date, deadline and action item goes to the reminder list and, when it's coursework, to Phase 7.
+- Senders review first (decision 6): the inbox grouped by sender over the last 3 months, most frequent first, with counts and sample subjects; he marks keep / trash / unsubscribe per sender; rules are stored and shown in Settings → Email. Then triage (Haiku) into important / needs reply / FYI / promo / junk; cleanup moves mail from trash-marked senders (and, if he turns it on, Haiku-classified junk) to Trash with a log and one-click undo (restore the label); replies drafted by Sonnet in approval mode, with a per-category auto-send whitelist in Settings; every date, deadline and action item goes to the reminder list and, when it's coursework, to Phase 7.
 - Everything from an email is untrusted content; an email that tries to instruct the agent is flagged on the Powerhouse and in the log.
 
 Acceptance: fake Gmail API in tests; triage fixture set of 30 emails with expected labels; undo restores; a reply is never sent without approval unless its category is whitelisted; injection flagged.
@@ -95,11 +95,11 @@ Acceptance: a real-Chromium test that closes the Powerhouse tab and sees the ala
 
 - One night's dry run with the real key at Lean settings and 5 applications; LESSONS.md updated with everything found; a final review by a second agent of each module against SECURITY.md; version 1.0.0.
 
-## Decisions for Ulugbek (checkpoint)
+## Decisions (made 2026-11-10)
 
-1. Budget: Lean / Standard / Full (COSTS.md), and applications per day.
-2. Keys: add an Anthropic key for the brain (Fable 5.1) or stay OpenAI-only (Terra as the brain).
-3. Runtime: extension-hosted orchestrator now, daemon later only if needed (ARCHITECTURE §3.2), or the daemon from the start.
-4. Memory storage: local (IndexedDB/chrome.storage, recommended) or Supabase + pgvector.
-5. Outlook fallback if the school tenant blocks consent: forward to Gmail, or browser reading.
-6. Email cleanup: on from the start (Trash only, with undo) or off until triage proves itself.
+1. **Budget: $25 a month.** Brain = Sonnet 5.5; Fable 5.1 only for explicit hard questions; browser workers on Haiku 5.5 with Sonnet on retry; batch size 15 (COSTS.md "The chosen plan"). Caps: $1/day, $25/month.
+2. **Keys:** an Anthropic API key (Console → "Somewhere else: use an API key"); the OpenAI key stays as a fallback provider.
+3. **Runtime:** extension-hosted orchestrator behind a `Host` interface; daemon later only if needed.
+4. **Memory:** local on the Mac.
+5. **School email:** forwarded from Outlook to Gmail; Sidekick reads Gmail only.
+6. **Email cleanup:** Trash only, with undo, and only for senders he has marked. Phase 8 starts with a **Senders review**: Sidekick groups the inbox by sender (last 3 months), shows the most frequent ones with sample subjects and counts, he marks each keep / trash / unsubscribe, and cleanup applies to marked senders only; new frequent senders are proposed, never auto-trashed.
