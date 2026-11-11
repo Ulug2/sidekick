@@ -3,7 +3,7 @@
 import type { JobBrief, WorldSlice, WorldState } from "./types.js";
 import type { Job } from "../jobs/types.js";
 import { readLocal } from "../core/storage/schema.js";
-import { DEFAULT_CAPS, spendFor } from "../core/llm/budget.js";
+import { DEFAULT_CAPS, overCap, spendFor } from "../core/llm/budget.js";
 
 const DAY = 864e5;
 const brief = (j: Job): JobBrief => ({ id: j.id, company: j.company, title: j.title, status: j.status, appliedAt: j.appliedAt, score: j.score, location: j.location });
@@ -27,7 +27,7 @@ export async function buildWorld(now = Date.now()): Promise<WorldState> {
     assignments: assignments.map(a => ({ id: a.id, course: a.course, title: a.title, due: a.due, status: a.status })),
     reminders: reminders.map(r => ({ id: r.id, text: r.text, at: r.at })),
     workers: orchestrator?.workers || [],
-    spend: { today: spend.today, month: spend.month, capDaily: capDaily ?? DEFAULT_CAPS.daily, capMonthly: capMonthly ?? DEFAULT_CAPS.monthly, paused: orchestrator?.paused || null },
+    spend: { today: spend.today, month: spend.month, capDaily: capDaily ?? DEFAULT_CAPS.daily, capMonthly: capMonthly ?? DEFAULT_CAPS.monthly, paused: orchestrator?.paused === "you" ? "paused by you" : overCap(spend, { daily: capDaily ?? DEFAULT_CAPS.daily, monthly: capMonthly ?? DEFAULT_CAPS.monthly }) ? "spend cap" : null },
     lastBatchAt: orchestrator?.lastBatchAt
   };
 }

@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Powerhouse mockup</title>
+<!-- Static mockup for docs/DESIGN.md §1 (v1 Phase 6). No data, no storage, no model calls: the only
+     script switches between states so the reviewer can see every pose. The real page draws the
+     same scene from orchestrator state (src/ui/powerhouse/). -->
+<style>
+  :root {
+    --bg: #ffffff; --surface: #f4f4f4; --surface-2: #ebebeb; --border: #e5e5e5;
+    --text: #0d0d0d; --muted: #6b6b6b; --faint: #9a9a9a;
+    --beige: #e8dcc4; --beige-hover: #ddcdae; --beige-text: #2a2117; --accent-strong: #a8915f;
+    --ok: #2f7d4f; --err: #b42318; --warn: #8a5a00; --focus: rgba(0,0,0,.12);
+    /* the scene */
+    --board: #e7ece8; --board-2: #dde4df; --trace: #b9814f; --trace-op: .32; --die: #d5dcd7; --die-line: #c6cec9;
+    --rack: #9aa39e; --rack-dark: #7d8681; --mat: #cfd8d2;
+    --sk-body: #fcfcfa; --sk-line: #b4bab6; --w-body: #b3b9b5; --w-line: #8c938f; --eye: #161816;
+    --glow: #c8964f; --tag-q: #f2c14e; --tag-err: #d64545;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #212121; --surface: #2f2f2f; --surface-2: #3a3a3a; --border: #383838;
+      --text: #ececec; --muted: #a8a8a8; --faint: #767676;
+      --beige: #ddceb0; --beige-hover: #e9dcc2; --beige-text: #1d1912; --accent-strong: #ddceb0;
+      --ok: #7fd1a0; --err: #ff8f85; --warn: #e8b85c; --focus: rgba(255,255,255,.14);
+      --board: #1b1e1d; --board-2: #202423; --trace: #4fc3d9; --trace-op: .28; --die: #262a29; --die-line: #303534;
+      --rack: #5b625f; --rack-dark: #474d4a; --mat: #2b302e;
+      --sk-body: #f1f1ec; --sk-line: #8a908c; --w-body: #858c88; --w-line: #646b67; --eye: #0e0f0e;
+      --glow: #5fd4ea;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14.5px/1.6 Inter, -apple-system, BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; font-weight: 500; font-size: 13.5px; cursor: pointer; color: var(--text); border: 1px solid var(--border); background: transparent; border-radius: 999px; padding: 6px 14px; }
+  button:hover { background: var(--surface); }
+  button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
+  button.primary { background: var(--beige); color: var(--beige-text); border-color: transparent; }
+
+  /* top bar */
+  .top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 10px 24px; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+  .brand { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .chip { font-size: 12.5px; padding: 2px 10px; border-radius: 999px; background: var(--surface); color: var(--muted); white-space: nowrap; }
+  .chip.run { color: var(--ok); }
+  .chip.pause { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+  .meters { display: flex; gap: 18px; flex: 1; min-width: 220px; justify-content: flex-end; }
+  .meter { display: grid; gap: 3px; font-size: 12px; width: 150px; color: var(--muted); }
+  .meter .bar { height: 5px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+  .meter .bar i { display: block; height: 100%; background: var(--accent-strong); border-radius: inherit; }
+
+  main { max-width: 1140px; margin: 0 auto; padding: 18px 20px 60px; }
+  .states { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
+  .states button[aria-pressed=true] { background: var(--beige); color: var(--beige-text); border-color: transparent; }
+  .note { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+
+  /* the stage: 16:9, scales down to 420px */
+  .stage { position: relative; width: 100%; max-width: 1100px; aspect-ratio: 16 / 9; margin: 0 auto; border-radius: 18px; overflow: hidden; border: 1px solid var(--border); background: var(--board); }
+  .stage svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .bubble { position: absolute; max-width: 34%; padding: 8px 12px; border-radius: 14px; background: var(--bg); border: 1px solid var(--border); box-shadow: 0 6px 20px rgba(0,0,0,.08); font-size: clamp(10px, 1.35vw, 14px); line-height: 1.4; font-weight: 500; }
+  .bubble::after { content: ""; position: absolute; left: 22px; bottom: -7px; width: 12px; height: 12px; background: var(--bg); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); transform: rotate(45deg); }
+  .hit { position: absolute; border-radius: 12px; cursor: pointer; background: transparent; border: 0; padding: 0; }
+  .hit:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+  .hit:focus-visible { box-shadow: 0 0 0 3px var(--focus), inset 0 0 0 2px var(--accent-strong); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); font-size: 12.5px; margin: 12px auto 0; max-width: 1100px; }
+
+  /* the drawer */
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 100%; background: var(--bg); border-left: 1px solid var(--border); box-shadow: -12px 0 40px rgba(0,0,0,.08); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; transform: translateX(100%); transition: transform .2s ease; z-index: 8; }
+  .drawer.open { transform: none; }
+  .drawer h2 { font-size: 16px; margin: 0; }
+  .drawer .meta { font-size: 12.5px; color: var(--muted); }
+  .drawer ol { margin: 0; padding: 0 0 0 18px; font-size: 13px; overflow: auto; flex: 1; border-top: 1px solid var(--border); padding-top: 10px; }
+  .drawer ol li { padding: 3px 0; }
+  .drawer ol li:last-child { font-weight: 500; }
+  .drawer .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .drawer .cost { font-variant-numeric: tabular-nums; }
+  @media (max-width: 760px) { .drawer { width: 100%; } .top { padding: 10px 16px; } main { padding: 14px 12px 40px; } }
+
+  /* ---------- scene: what is shown in which state ---------- */
+  [data-show] { display: none; }
+  .stage[data-scene="idle"] [data-show~="idle"],
+  .stage[data-scene="thinking"] [data-show~="thinking"],
+  .stage[data-scene="dispatch"] [data-show~="dispatch"],
+  .stage[data-scene="working"] [data-show~="working"],
+  .stage[data-scene="needs"] [data-show~="needs"],
+  .stage[data-scene="failed"] [data-show~="failed"],
+  .stage[data-scene="paused"] [data-show~="paused"] { display: inline; }
+  .stage[data-scene="dispatch"] .bubble[data-show~="dispatch"] { display: block; }
+  .stage[data-scene="paused"] * { animation-play-state: paused !important; }
+
+  /* characters: colours come from the instance (custom properties inherit into <use>) */
+  .sk { --body: var(--sk-body); --line: var(--sk-line); }
+  .wk { --body: var(--w-body); --line: var(--w-line); }
+  .limb { stroke: var(--body); stroke-width: 9; stroke-linecap: round; fill: none; }
+  .limb-o { stroke: var(--line); stroke-width: 11; stroke-linecap: round; fill: none; }
+  .skin { fill: var(--body); stroke: var(--line); stroke-width: 2; }
+  .eye { fill: var(--eye); }
+  .eyes { transform-box: fill-box; transform-origin: center; animation: blink 6s infinite; }
+  @keyframes blink { 0%, 95%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.12); } }
+
+  /* push-ups: 1.2 s, exactly while a brain call (Sidekick) or a reading task (worker) runs */
+  .pushup-body { transform-box: view-box; animation: pushup 1.2s ease-in-out infinite; }
+  @keyframes pushup { 0%, 100% { transform: rotate(62deg); } 50% { transform: rotate(70deg); } }
+  /* pull-ups: body up, arms shorten from the bar */
+  .pull-body { animation: pull 1.6s ease-in-out infinite; }
+  .pull-arms { transform-box: fill-box; transform-origin: top; animation: pullarm 1.6s ease-in-out infinite; }
+  @keyframes pull { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-38px); } }
+  @keyframes pullarm { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.6); } }
+  /* sit-ups: the upper body swings up from the floor around the hips */
+  .situp-upper { animation: situp 1.5s ease-in-out infinite; }
+  @keyframes situp { 0%, 100% { transform: rotate(-82deg); } 50% { transform: rotate(-22deg); } }
+  /* the glowing trace from Sidekick to the worker he is addressing */
+  .wire { fill: none; stroke: var(--glow); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 14 12; animation: flow .8s linear infinite; filter: drop-shadow(0 0 6px var(--glow)); }
+  @keyframes flow { to { stroke-dashoffset: -26; } }
+  .hand-wave { transform-box: fill-box; transform-origin: bottom; animation: wave 1.4s ease-in-out infinite; }
+  @keyframes wave { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(8deg); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stage *, .drawer { animation: none !important; transition: none !important; }
+    .pushup-body { transform: rotate(66deg); }
+    .situp-upper { transform: rotate(-50deg); }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">Powerhouse</div>
+  <span class="chip run" id="statusChip">Running · 3 workers</span>
+  <div class="meters" aria-label="Spend">
+    <div class="meter"><span>Today $0.31 of $1.00</span><div class="bar"><i style="width:31%"></i></div></div>
+    <div class="meter"><span>Month $6.12 of $25.00</span><div class="bar"><i style="width:24%"></i></div></div>
+  </div>
+  <button type="button" id="pause">Pause</button>
+</header>
+
+<main>
+  <div class="states" role="group" aria-label="Mockup state">
+    <button type="button" data-scene="idle">Idle</button>
+    <button type="button" data-scene="thinking">Brain call (push-ups)</button>
+    <button type="button" data-scene="dispatch" aria-pressed="true">Dispatch (shouting)</button>
+    <button type="button" data-scene="working">Workers working</button>
+    <button type="button" data-scene="needs">Needs you</button>
+    <button type="button" data-scene="failed">Failed</button>
+    <button type="button" data-scene="paused">Paused: spend cap</button>
+  </div>
+  <p class="note">Mockup only. In the real page every pose comes from orchestrator state: Sidekick does push-ups exactly while a brain model call is in flight; workers appear when a task starts and leave 30 s after it ends. Click a character for the drawer.</p>
+
+  <div class="stage" id="stage" data-scene="dispatch">
+    <svg viewBox="0 0 1600 900" role="img" aria-labelledby="sceneTitle sceneDesc">
+      <title id="sceneTitle">Sidekick's gym inside the CPU</title>
+      <desc id="sceneDesc">Sidekick, a white alien coach, and numbered workers exercising: pull-ups for applications, push-ups for reading, sit-ups for writing, the bench for idle.</desc>
+      <defs>
+        <!-- die tiles for the walls -->
+        <pattern id="die" width="40" height="40" patternUnits="userSpaceOnUse">
+          <rect width="40" height="40" fill="var(--die)"/>
+          <path d="M40 0H0V40" fill="none" stroke="var(--die-line)" stroke-width="1.5"/>
+        </pattern>
+        <!-- the upper body, hips at 0,0: torso, neck, oval alien head, two large eyes -->
+        <g id="upper">
+          <line class="limb-o" x1="0" y1="-52" x2="0" y2="-62"/>
+          <rect class="skin" x="-14" y="-56" width="28" height="58" rx="13"/>
+          <path class="skin" d="M0 -122 C31 -122 34 -82 19 -66 C11 -56 -11 -56 -19 -66 C-34 -82 -31 -122 0 -122Z"/>
+          <g class="eyes">
+            <ellipse class="eye" cx="-11" cy="-88" rx="7" ry="12" transform="rotate(-28 -11 -88)"/>
+            <ellipse class="eye" cx="11" cy="-88" rx="7" ry="12" transform="rotate(28 11 -88)"/>
+          </g>
+        </g>
+        <!-- standing legs, feet at 0,0 -->
+        <g id="legs">
+          <path class="limb-o" d="M-7 -50 L-9 0 M7 -50 L9 0"/><path class="limb" d="M-7 -50 L-9 0 M7 -50 L9 0"/>
+        </g>
+        <!-- POSES (feet or seat at 0,0) -->
+        <g id="p-idle"><!-- arms crossed -->
+          <use href="#legs"/><use href="#upper" y="-50"/>
+          <path class="limb-o" d="M-13 -92 Q0 -74 14 -88 M13 -92 Q0 -80 -14 -86"/><path class="limb" d="M-13 -92 Q0 -74 14 -88 M13 -92 Q0 -80 -14 -86"/>
+        </g>
+        <g id="p-point"><!-- shouting, right arm pointing left at a worker -->
+          <use href="#legs"/><use href="#upper" y="-50"/>
+          <ellipse cx="0" cy="-114" rx="5" ry="4" fill="var(--eye)"/>
+          <path class="limb-o" d="M12 -96 L22 -60 M-12 -96 L-62 -126"/><path class="limb" d="M12 -96 L22 -60 M-12 -96 L-62 -126"/>
+        </g>
+        <g id="p-push"><!-- push-up: the straight body pivots on the feet; hands on the floor -->
+          <g class="pushup-body"><use href="#legs"/><use href="#upper" y="-50"/>
+            <path class="limb-o" d="M0 -92 L36 -76"/><path class="limb" d="M0 -92 L36 -76"/></g>
+        </g>
+        <g id="p-pull"><!-- pull-up: hands on the bar (y -230), body rises -->
+          <g class="pull-arms"><path class="limb-o" d="M-30 -230 L-13 -142 M30 -230 L13 -142"/><path class="limb" d="M-30 -230 L-13 -142 M30 -230 L13 -142"/></g>
+          <g class="pull-body"><use href="#legs" y="-36"/><use href="#upper" y="-86"/></g>
+        </g>
+        <g id="p-situp"><!-- sit-up: knees up, upper body swings around the hips -->
+          <path class="limb-o" d="M0 -8 L34 -44 L66 0"/><path class="limb" d="M0 -8 L34 -44 L66 0"/>
+          <g transform="translate(0 -8)"><g class="situp-upper"><use href="#upper"/>
+            <path class="limb-o" d="M-6 -40 L14 -66"/><path class="limb" d="M-6 -40 L14 -66"/></g></g>
+        </g>
+        <g id="p-sit"><!-- sitting on the bench (seat at 0,0; feet at 0,+60) -->
+          <path class="limb-o" d="M0 0 L36 0 L38 60"/><path class="limb" d="M0 0 L36 0 L38 60"/>
+          <use href="#upper"/>
+          <path class="limb-o" d="M8 -40 L30 -8"/><path class="limb" d="M8 -40 L30 -8"/>
+        </g>
+        <g id="p-raise"><!-- sitting, one hand up: needs you -->
+          <path class="limb-o" d="M0 0 L36 0 L38 60"/><path class="limb" d="M0 0 L36 0 L38 60"/>
+          <use href="#upper"/>
+          <g class="hand-wave"><path class="limb-o" d="M12 -46 L48 -116"/><path class="limb" d="M12 -46 L48 -116"/></g>
+        </g>
+        <g id="p-slump"><!-- failed: on the floor, leaning back against the rack, head down -->
+          <path class="limb-o" d="M0 0 L62 4 M0 0 L56 -6"/><path class="limb" d="M0 0 L62 4 M0 0 L56 -6"/>
+          <g transform="rotate(-16)"><use href="#upper"/></g>
+          <path class="limb-o" d="M-6 -36 L-4 0"/><path class="limb" d="M-6 -36 L-4 0"/>
+        </g>
+        <g id="p-floor"><!-- Sidekick paused: sitting on the floor, arms round the knees -->
+          <path class="limb-o" d="M0 0 L30 -34 L52 0"/><path class="limb" d="M0 0 L30 -34 L52 0"/>
+          <use href="#upper"/>
+          <path class="limb-o" d="M6 -40 L30 -32"/><path class="limb" d="M6 -40 L30 -32"/>
+        </g>
+        <!-- a numbered badge and the two tags -->
+        <g id="badge-bg"><circle r="17" fill="var(--bg)" stroke="var(--line, #888)" stroke-width="2"/></g>
+      </defs>
+
+      <!-- ===== room ===== -->
+      <rect width="1600" height="900" fill="var(--board)"/>
+      <rect width="1600" height="150" fill="url(#die)"/>
+      <rect y="150" width="1600" height="6" fill="var(--die-line)"/>
+      <!-- copper traces and vias on the floor -->
+      <g stroke="var(--trace)" stroke-opacity="var(--trace-op)" stroke-width="4" fill="none" stroke-linecap="round">
+        <path d="M0 790 H420 L470 740 H1130 L1180 790 H1600"/>
+        <path d="M0 840 H300 L340 800 H700 L740 840 H1600"/>
+        <path d="M120 156 V300 L170 350 V560 M1480 156 V280 L1430 330 V560"/>
+        <path d="M600 156 V220 L640 260 H960 L1000 220 V156"/>
+        <path d="M0 880 H1600"/>
+      </g>
+      <g fill="var(--trace)" fill-opacity="calc(var(--trace-op) + .15)">
+        <circle cx="420" cy="790" r="7"/><circle cx="1180" cy="790" r="7"/><circle cx="340" cy="800" r="7"/><circle cx="740" cy="840" r="7"/>
+        <circle cx="170" cy="560" r="7"/><circle cx="1430" cy="560" r="7"/><circle cx="640" cy="260" r="7"/><circle cx="960" cy="260" r="7"/>
+      </g>
+      <rect y="760" width="1600" height="3" fill="var(--die-line)"/>
+
+      <!-- heat-sink rack, left: the pull-up bar (applications) -->
+      <g>
+        <g fill="var(--rack)">
+          <rect x="140" y="548" width="44" height="212" rx="4"/><rect x="560" y="548" width="44" height="212" rx="4"/>
+        </g>
+        <g fill="var(--rack-dark)">
+          <rect x="132" y="600" width="60" height="8"/><rect x="132" y="628" width="60" height="8"/><rect x="132" y="656" width="60" height="8"/><rect x="132" y="684" width="60" height="8"/><rect x="132" y="712" width="60" height="8"/><rect x="132" y="740" width="60" height="8"/>
+          <rect x="552" y="600" width="60" height="8"/><rect x="552" y="628" width="60" height="8"/><rect x="552" y="656" width="60" height="8"/><rect x="552" y="684" width="60" height="8"/><rect x="552" y="712" width="60" height="8"/><rect x="552" y="740" width="60" height="8"/>
+        </g>
+        <rect x="150" y="569" width="444" height="14" rx="7" fill="var(--rack-dark)"/>
+        <text x="372" y="540" text-anchor="middle" font-size="22" fill="var(--muted)" font-weight="600">APPLY</text>
+      </g>
+      <!-- mat (reading: push-ups; writing: sit-ups) -->
+      <rect x="850" y="748" width="380" height="14" rx="7" fill="var(--mat)"/>
+      <text x="1060" y="800" text-anchor="middle" font-size="22" fill="var(--muted)" font-weight="600">READ · WRITE</text>
+      <!-- heat-sink rack, right: the bench (idle) -->
+      <g>
+        <rect x="1240" y="668" width="320" height="22" rx="8" fill="var(--rack)"/>
+        <g fill="var(--rack-dark)"><rect x="1262" y="690" width="16" height="70"/><rect x="1522" y="690" width="16" height="70"/>
+          <rect x="1290" y="690" width="6" height="40"/><rect x="1310" y="690" width="6" height="40"/><rect x="1330" y="690" width="6" height="40"/><rect x="1350" y="690" width="6" height="40"/><rect x="1370" y="690" width="6" height="40"/><rect x="1390" y="690" width="6" height="40"/><rect x="1410" y="690" width="6" height="40"/><rect x="1430" y="690" width="6" height="40"/><rect x="1450" y="690" width="6" height="40"/><rect x="1470" y="690" width="6" height="40"/><rect x="1490" y="690" width="6" height="40"/></g>
+        <text x="1400" y="800" text-anchor="middle" font-size="22" fill="var(--muted)" font-weight="600">BENCH</text>
+      </g>
+
+      <!-- ===== the trace to the addressed worker (dispatch) ===== -->
+      <path class="wire" data-show="dispatch" d="M780 762 H520 L480 722 H392 V700"/>
+
+      <!-- ===== workers ===== -->
+      <!-- Agent 1: applying (pull-ups) -->
+      <g class="wk" transform="translate(300 760) scale(.8)" data-show="dispatch working needs failed">
+        <use href="#p-pull"/>
+        <g transform="translate(-40 -150)"><circle r="19" fill="var(--bg)" stroke="var(--line)" stroke-width="3"/><text y="7" text-anchor="middle" font-size="20" font-weight="700" fill="var(--text)">1</text></g>
+      </g>
+      <!-- Agent 3: applying (pull-ups), the one Sidekick is shouting at -->
+      <g class="wk" transform="translate(450 760) scale(.8)" data-show="dispatch working">
+        <use href="#p-pull"/>
+        <g transform="translate(-40 -150)"><circle r="19" fill="var(--bg)" stroke="var(--line)" stroke-width="3"/><text y="7" text-anchor="middle" font-size="20" font-weight="700" fill="var(--text)">3</text></g>
+      </g>
+      <!-- Agent 2: reading (push-ups) -->
+      <g class="wk" transform="translate(880 760) scale(.8)" data-show="dispatch working needs failed">
+        <use href="#p-push"/>
+        <g transform="translate(70 -130)"><circle r="19" fill="var(--bg)" stroke="var(--line)" stroke-width="3"/><text y="7" text-anchor="middle" font-size="20" font-weight="700" fill="var(--text)">2</text></g>
+      </g>
+      <!-- Agent 4: writing a cover letter (sit-ups) -->
+      <g class="wk" transform="translate(1150 760) scale(.8)" data-show="working">
+        <use href="#p-situp"/>
+        <g transform="translate(30 -150)"><circle r="19" fill="var(--bg)" stroke="var(--line)" stroke-width="3"/><text y="7" text-anchor="middle" font-size="20" font-weight="700" fill="var(--text)">4</text></g>
+      </g>
+      <!-- Agent 5: idle on the bench -->
+      <g class="wk" transform="translate(1300 668) scale(.8)" data-show="idle thinking dispatch working needs failed paused">
+        <use href="#p-sit"/>
+        <g transform="translate(-30 -150)"><circle r="19" fill="var(--bg)" stroke="var(--line)" stroke-width="3"/><text y="7" text-anchor="middle" font-size="20" font-weight="700" fill="var(--text)">5</text></g>
+      </g>
+      <!-- Agent 3 needs you: on the bench, hand up, yellow "?" -->
+      <g class="wk" transform="translate(1420 668) scale(.8)" data-show="needs failed">
+        <use href="#p-raise"/>
+        <g transform="translate(-34 -150)"><circle r="19" fill="var(--bg)" stroke="var(--line)" stroke-width="3"/><text y="7" text-anchor="middle" font-size="20" font-weight="700" fill="var(--text)">3</text></g>
+        <g transform="translate(40 -170)"><rect x="-20" y="-24" width="40" height="40" rx="10" fill="var(--tag-q)"/><text y="8" text-anchor="middle" font-size="28" font-weight="800" fill="#2a2000">?</text></g>
+      </g>
+      <!-- Agent 6 failed: slumped against the left rack, red tag -->
+      <g class="wk" transform="translate(620 760) scale(.8)" data-show="failed">
+        <use href="#p-slump"/>
+        <g transform="translate(-10 -150)"><circle r="19" fill="var(--bg)" stroke="var(--line)" stroke-width="3"/><text y="7" text-anchor="middle" font-size="20" font-weight="700" fill="var(--text)">6</text></g>
+        <g transform="translate(40 -140)"><rect x="-20" y="-24" width="40" height="40" rx="10" fill="var(--tag-err)"/><text y="8" text-anchor="middle" font-size="28" font-weight="800" fill="#fff">!</text></g>
+      </g>
+
+      <!-- ===== Sidekick, the coach ===== -->
+      <g class="sk" transform="translate(800 760)">
+        <g data-show="idle needs failed"><use href="#p-idle"/></g>
+        <g data-show="thinking working" transform="translate(-110 0)"><use href="#p-push"/></g>
+        <g data-show="dispatch"><use href="#p-point"/></g>
+        <g data-show="paused"><use href="#p-floor"/>
+          <g transform="translate(60 -40)"><rect x="0" y="-22" width="128" height="34" rx="17" fill="var(--bg)" stroke="var(--line)" stroke-width="2"/><text x="64" y="2" text-anchor="middle" font-size="18" font-weight="600" fill="var(--warn)">spend cap</text></g>
+        </g>
+      </g>
+    </svg>
+
+    <!-- the shout: real dispatch text, 6 s or until the next event -->
+    <div class="bubble" data-show="dispatch" style="left:47%;top:40%">Agent 3! Finish the Stripe application, the form's on page 2.</div>
+    <!-- click targets (keyboard reachable) over each character -->
+    <button class="hit" style="left:46%;top:58%;width:9%;height:28%" aria-label="Sidekick: today's plan" data-open="sk"></button>
+    <button class="hit" style="left:24%;top:46%;width:8%;height:40%" aria-label="Agent 3: applying at Stripe" data-open="w3"></button>
+  </div>
+
+  <div class="legend" aria-hidden="true">
+    <span>Pull-ups: applying</span><span>Push-ups: reading</span><span>Sit-ups: writing</span><span>Bench: idle</span><span>Hand up: needs you</span><span>Slumped: failed (hover for the error)</span>
+  </div>
+</main>
+
+<aside class="drawer" id="drawer" aria-label="Worker details">
+  <div class="row" style="justify-content:space-between;align-items:center"><h2>Agent 3 · Apply: Stripe</h2><button type="button" id="closeDrawer" aria-label="Close">✕</button></div>
+  <div class="meta">claude-haiku-5-5 · started 09:42 · <span class="cost">41k tokens · $0.06</span></div>
+  <ol>
+    <li>Opened stripe.com/jobs/listing/…/apply</li>
+    <li>Filled 9 fields from your profile</li>
+    <li>Answered "Will you require sponsorship?" with Yes (profile)</li>
+    <li>Attached resume.pdf</li>
+    <li>Page 2: "Education"</li>
+  </ol>
+  <div class="row"><button type="button">Stop</button><button type="button">Open its tab</button></div>
+</aside>
+
+<script>
+  // Mockup only: switch the shown state, open and close the drawer.
+  const stage = document.getElementById('stage');
+  const chip = document.getElementById('statusChip');
+  const label = { idle: ['Sleeping until 8:00', ''], thinking: ['Running · thinking', 'run'], dispatch: ['Running · 3 workers', 'run'], working: ['Running · 4 workers', 'run'], needs: ['Running · 1 needs you', 'run'], failed: ['Running · 1 failed', 'run'], paused: ['Paused: spend cap', 'pause'] };
+  for (const b of document.querySelectorAll('.states button')) b.onclick = () => {
+    stage.dataset.scene = b.dataset.scene;
+    for (const x of document.querySelectorAll('.states button')) x.setAttribute('aria-pressed', String(x === b));
+    chip.textContent = label[b.dataset.scene][0]; chip.className = 'chip ' + label[b.dataset.scene][1];
+  };
+  const drawer = document.getElementById('drawer');
+  for (const h of document.querySelectorAll('[data-open]')) h.onclick = () => { drawer.classList.add('open'); document.getElementById('closeDrawer').focus(); };
+  document.getElementById('closeDrawer').onclick = () => drawer.classList.remove('open');
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') drawer.classList.remove('open'); });
+</script>
+</body>
+</html>

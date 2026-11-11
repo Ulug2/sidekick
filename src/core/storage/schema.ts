@@ -18,6 +18,7 @@ import type { Scheduled } from "../../orchestrator/scheduler.js";
 import type { StoredFact } from "../../memory/facts.js";
 import type { SavedAnswer } from "../../memory/answers.js";
 import type { SponsorLists } from "../../jobs/sponsors.js";
+import type { BrainCall } from "../../orchestrator/activity.js";
 
 // ---------- chats (ui/sidepanel) ----------
 export interface ChatIndexEntry { id: string; title: string; updatedAt: number }
@@ -80,7 +81,7 @@ export interface LocalSchema extends Settings {
   sponsorLists: SponsorLists; // jobs/sponsors: UK Skilled Worker sponsors and US H-1B approvals by employer
   jobSettings: { dailyCap: number; monthlyCap: number; internships?: boolean; dailyBatch?: boolean; batchHour?: number; batchSize?: number; spreadHours?: number; needsYouWaitMinutes?: number; regions?: Region[]; companyDays?: number }; // ui/jobs, Settings → Jobs: applications per day, (monthlyCap: old; capMonthly is the real cap), internships too?
   // ---------- orchestrator (docs/ARCHITECTURE.md §3) ----------
-  orchestrator: { workers?: WorkerRecord[]; needsYou?: NeedsYouItem[]; paused?: string | null; lastBatchAt?: number; counter?: number; counterDay?: string }; // orchestrator/workers, world
+  orchestrator: { workers?: WorkerRecord[]; needsYou?: NeedsYouItem[]; paused?: string | null; lastBatchAt?: number; counter?: number; counterDay?: string; lastShout?: { text: string; at: number; workerId: string }; dismissed?: string[] }; // dismissed: failed workers he cleared from the Powerhouse; // paused: "you" (Pause) or null; older versions wrote "spend-cap", which is ignored // orchestrator/workers, world
   actionLog: ActionLogEntry[]; // orchestrator/log: every irreversible action, newest first
   scheduled: Scheduled[]; // orchestrator/scheduler: alarms to recreate after a restart
   heldNotices: { title: string; message: string; at: number }[]; // orchestrator/host: notifications held back in quiet hours, shown when they end
@@ -103,6 +104,7 @@ export interface SessionSchema {
   // Start today's application batch (ui/jobs → sidepanel): the queued jobs, in order.
   jobBatch: { ts: number; windowId?: number; only?: string[] }; // only: these job ids (Save & resume)
   jobBatchStop: boolean; // the Jobs page's Stop: the panel ends the batch after the current job
+  brainCalls: BrainCall[]; // orchestrator/activity: brain model calls in flight (the Powerhouse push-ups)
 }
 
 export async function readLocal<K extends keyof LocalSchema>(keys: K | K[]): Promise<Partial<Pick<LocalSchema, K>>> {

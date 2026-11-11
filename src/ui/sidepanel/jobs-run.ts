@@ -14,8 +14,8 @@ import { getProfile } from "../../assistant/profile-core.js";
 import { readLocal } from "../../core/storage/schema.js";
 import { sleepMs } from "../../core/browser/screen.js";
 import { currentSpend, overCap } from "../../core/llm/budget.js";
-import { getSettings } from "../../core/llm/settings.js";
-import { approvedSitesFor, newTask } from "../../orchestrator/workers.js";
+import { getSettings, modelFor } from "../../core/llm/settings.js";
+import { approvedSitesFor, newTask, pausedByYou, runAsWorker } from "../../orchestrator/workers.js";
 import { DEFAULT_JOB_SETTINGS, getJobs, jobStats, setJobStatus } from "../../jobs/store.js";
 import { letterFileName, writeCoverLetter } from "../../jobs/cover.js";
 import { judgeRun } from "../../jobs/batch.js";
@@ -136,12 +136,19 @@ async function drain(): Promise<void> {
     while (queue.length) {
       if (await stopRequested()) { reason = "you pressed Stop"; queue.length = 0; break; }
       if ((reason = await cap())) { queue.length = 0; break; }
-      // A chat or agent run of yours goes first; the application waits for it.
+      // A chat or agent run of yours goes first; the application waits for it. So does Pause
+      // (the Powerhouse): nothing new starts until Resume.
       if (busy) { await sleepMs(globalThis.SK_BUSY_POLL_MS ?? 15000); continue; }
+      if (await pausedByYou()) {
+        if (!saidPaused) { saidPaused = true; showToast(`Applications are paused (Powerhouse). ${queue.length} waiting; they continue when you press Resume.`); }
+        await sleepMs(globalThis.SK_BUSY_POLL_MS ?? 5000);
+        continue;
+      }
+      saidPaused = false;
       const id = queue.shift()!;
       const job = (await getJobs()).find(j => j.id === id && j.status === "queued" && j.ok);
       if (!job) continue;
-      await applyOne(job);
+      if (await applyOne(job) === "paused") queue.unshift(id);
       if (queue.length && !(await stopRequested())) {
         const [lo, hi] = PAUSE_BETWEEN_MS;
         await sleepMs(globalThis.SK_BATCH_PAUSE_MS ?? lo + Math.random() * (hi - lo));
@@ -153,7 +160,8 @@ async function drain(): Promise<void> {
   }
 }
 
-async function applyOne(job: Job): Promise<void> {
+let saidPaused = false;
+async function applyOne(job: Job): Promise<"paused" | void> {
   const profile = await getProfile();
   await cancelApplication(chromeHost, job.id); // it runs now: its alarm is no longer needed
   await setJobStatus(job.id, "applying", { needsYou: undefined });
@@ -161,9 +169,13 @@ async function applyOne(job: Job): Promise<void> {
   let files: Record<string, { name: string; type: string; base64: string }> | undefined;
   let letter = job.coverLetter || "";
   if (!letter && job.text) {
-    try { letter = await writeCoverLetter(job, profile); await updateLocal("jobs", (list = []) => list.map(j => j.id !== job.id ? j : { ...j, coverLetter: letter })); }
+    try { letter = await runAsWorker("write", `Cover letter: ${job.company}`, () => writeCoverLetter(job, profile), { jobId: job.id, model: modelFor(await getSettings(), "smart") }); await updateLocal("jobs", (list = []) => list.map(j => j.id !== job.id ? j : { ...j, coverLetter: letter })); }
     catch (err: any) { showToast(`No cover letter for ${job.company}: ${err.message}`); }
   }
+  // Paused while the letter was written: the form is not opened. The job goes back to the front of
+  // this panel's queue (it runs after Resume); its alarm is already gone, so it keeps no time: if
+  // the panel closes meanwhile, it needs a new approval (never an approval without an alarm).
+  if (await pausedByYou()) { await setJobStatus(job.id, "queued", { scheduledAt: undefined }); return "paused"; }
   if (letter) files = { cover_letter: { name: letterFileName(profile, job.company), type: "application/pdf", base64: textPdf(letter, { title: `Cover letter – ${job.company}` }).base64 } };
   const tab = await batchTab(job.applyUrl);
   const t0 = Date.now();

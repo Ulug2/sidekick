@@ -160,6 +160,29 @@ General rules that came out of these: design for the long version of a task; eve
   - Check jump targets in real Chromium; scroll offsets stack.
   - Tests: pages, jobs, daily-batch, unit phase5, real-chrome 9.
 
+### 22. The Powerhouse's first draft drew things that weren't happening (caught in design review and real Chromium, 2026-11-11)
+- **What.**
+  - The mockup always showed a worker on the bench and Sidekick doing push-ups while workers worked; neither had a real source. The review asked for a state-to-visual table and a pure `deriveScene()`.
+  - `orchestrator.paused` was written on a spend-cap error, never cleared, and never read: a Pause button on top of it would have done nothing.
+  - In real Chromium the trace never appeared: `.hidden = false` on an SVG element sets a plain property, not the attribute. jsdom passed the same wrong way.
+  - `page.css` gives every `svg` an icon stroke, and the scene inherited black outlines.
+  - The code review then found more:
+    - Pause was shown as "stopping" a running application that actually finished.
+    - A Pause pressed during the cover letter still opened the form.
+    - Dead runs counted as working forever.
+    - Every storage write rebuilt the list and the drawer, so keyboard focus was lost.
+    - A storage hiccup after a paid cover letter threw the letter away.
+- **Rule.**
+  - A status view gets a contract first: every visual names its state, and no figure exists without a record.
+  - A flag that something obeys needs a test where it is obeyed. A state that ends by itself (the spend cap) is computed, never stored.
+  - On SVG, use attributes (`toggleAttribute("hidden")`).
+  - Check jsdom assertions of visibility against real Chromium.
+  - A status label must not promise more than the code does.
+  - Re-check pause at every point where work becomes visible to the outside (before the form opens).
+  - A UI that re-renders on storage changes keeps focus by id.
+  - Recording work for display must never be able to fail the work.
+  - Tests: powerhouse (20), unit phase6 (14), real-chrome 9b and 17 (Pause obeyed).
+
 ## Earlier lessons (v0.7–v0.9)
 - **A double-check must not overrule a right answer without evidence** (v0.7.2 pipeline problem). Replacements need a code check (objective or residuals) under both setups.
 - **Examples in prompts anchor the model.** Use neutral numbers, never the real answer.

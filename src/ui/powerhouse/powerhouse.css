@@ -1,0 +1,126 @@
+/* The Powerhouse (docs/DESIGN.md §1): a live status view drawn as a gym inside the CPU. The scene is
+   decoration over real state; the worker list below it is the accessible path and the whole story
+   at narrow widths. Animations run only on working figures and only while the tab is visible. */
+:root {
+  --board: #e7ece8; --die: #d5dcd7; --die-line: #c6cec9; --trace: #b9814f; --trace-op: .32; --via-op: .45;
+  --rack: #9aa39e; --rack-dark: #7d8681; --mat: #cfd8d2; --zone: #4f5753;
+  --sk-body: #fcfcfa; --sk-line: #b4bab6; --w-body: #b3b9b5; --w-line: #8c938f; --eye: #161816;
+  --glow: #b07a35; --tag-q: #f2c14e; --tag-q-text: #2a2000; --tag-err: #b42318;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --board: #1b1e1d; --die: #262a29; --die-line: #303534; --trace: #4fc3d9; --trace-op: .28; --via-op: .4;
+    --rack: #5b625f; --rack-dark: #474d4a; --mat: #2b302e; --zone: #a9b0ac;
+    --sk-body: #f1f1ec; --sk-line: #8a908c; --w-body: #8b928e; --w-line: #646b67; --eye: #0e0f0e;
+    --glow: #5fd4ea; --tag-err: #e5534b;
+  }
+}
+
+.ph-top { gap: 14px; flex-wrap: wrap; justify-content: flex-start; }
+.ph-top .links { margin-left: auto; display: flex; gap: 14px; }
+.ph-top .links a { color: var(--muted); text-decoration: none; }
+.ph-top .links a:hover { color: var(--text); }
+.ph-chip { font-size: 12.5px; padding: 2px 10px; border-radius: 999px; background: var(--surface); color: var(--muted); white-space: nowrap; }
+.ph-chip[data-tone=run] { color: var(--ok); }
+.ph-chip[data-tone=pause] { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.ph-chip[data-tone=warn] { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
+.ph-meters.meters { display: flex; gap: 16px; margin: 0; }
+.ph-meters .meter { width: 190px; font-size: 12px; gap: 3px; }
+.ph-meters .meter-top span { white-space: nowrap; }
+
+#powerhouseApp { max-width: 1140px; margin: 0 auto; padding: 18px 20px 60px; }
+.stage { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden; border: 1px solid var(--border); background: var(--board); }
+/* page.css gives every svg an icon stroke; the scene sets its own strokes per shape */
+.stage > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; fill: #000; stroke: none; stroke-width: 0; }
+.zone-label { fill: var(--zone); }
+.bubble {
+  position: absolute; max-width: 36%; padding: 8px 12px; border-radius: 14px; background: var(--bg); border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0,0,0,.08); font-size: clamp(11px, 1.3vw, 14px); line-height: 1.4; font-weight: 500;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; transform: translate(-50%, -100%);
+}
+.bubble[hidden] { display: none; }
+.ph-thinking { min-height: 1.5em; margin: 8px 2px 0; color: var(--muted); }
+
+/* characters: colours inherit into <use> through custom properties */
+.sk { --body: var(--sk-body); --line: var(--sk-line); }
+.wk { --body: var(--w-body); --line: var(--w-line); cursor: pointer; }
+.limb { stroke: var(--body); stroke-width: 9; stroke-linecap: round; fill: none; }
+.limb-o { stroke: var(--line); stroke-width: 11; stroke-linecap: round; fill: none; }
+.skin { fill: var(--body); stroke: var(--line); stroke-width: 2; }
+.eye { fill: var(--eye); }
+.badge circle { fill: var(--bg); stroke: var(--line); stroke-width: 3; }
+.badge text, .tag-text { fill: var(--text); }
+.tag-box { fill: var(--bg); stroke: var(--line, var(--border)); stroke-width: 2; }
+.tag-warn { fill: var(--warn); }
+.tag-q rect { fill: var(--tag-q); } .tag-q text { fill: var(--tag-q-text); }
+.tag-err rect { fill: var(--tag-err); } .tag-err text { fill: #fff; }
+.tag-word rect { fill: var(--bg); stroke: var(--line); stroke-width: 2; } .tag-word text { fill: var(--muted); }
+.coach-pose { display: none; }
+#coach[data-coach=idle] [data-coach=idle], #coach[data-coach=thinking] [data-coach=thinking],
+#coach[data-coach=shouting] [data-coach=shouting], #coach[data-coach=paused] [data-coach=paused] { display: inline; }
+
+/* motion: only figures marked .anim move, only while the tab is visible (.live) */
+.eyes { transform-box: fill-box; transform-origin: center; }
+.pushup-body { transform-box: view-box; transform: rotate(66deg); }
+.situp-upper { transform: rotate(-50deg); }
+.live .anim .eyes, .live #coach .eyes { animation: blink 6s infinite; }
+.live .anim .pushup-body, .live #coach[data-coach=thinking] .pushup-body { animation: pushup 1.2s ease-in-out infinite; animation-delay: var(--d, 0s); }
+.live .anim .pull-body { animation: pull 1.6s ease-in-out infinite; animation-delay: var(--d, 0s); }
+.pull-arms { transform-box: fill-box; transform-origin: top; }
+.live .anim .pull-arms { animation: pullarm 1.6s ease-in-out infinite; animation-delay: var(--d, 0s); }
+.live .anim .situp-upper { animation: situp 1.5s ease-in-out infinite; animation-delay: var(--d, 0s); }
+.hand-wave { transform-box: fill-box; transform-origin: bottom; }
+.live .wave .hand-wave { animation: wave 1.4s ease-in-out infinite; }
+@keyframes blink { 0%, 95%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.12); } }
+@keyframes pushup { 0%, 100% { transform: rotate(62deg); } 50% { transform: rotate(70deg); } }
+@keyframes pull { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-38px); } }
+@keyframes pullarm { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.6); } }
+@keyframes situp { 0%, 100% { transform: rotate(-82deg); } 50% { transform: rotate(-22deg); } }
+@keyframes wave { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(8deg); } }
+/* the trace to the worker Sidekick is addressing: a wide faint stroke under a dashed bright one */
+.wire { fill: none; stroke: var(--glow); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 16 12; }
+.live .wire { animation: flow .8s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -28; } }
+.wk:hover .skin { stroke: var(--text); }
+
+/* the list: the real controls */
+.ph-list { margin-top: 18px; }
+.ph-list h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
+#workerList { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+#workerList li { border-bottom: 1px solid var(--border); }
+#workerList button { all: unset; box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; width: 100%; padding: 10px 6px; cursor: pointer; border-radius: 10px; }
+#workerList button:hover { background: var(--surface); }
+#workerList button:focus-visible { box-shadow: 0 0 0 3px var(--focus); }
+.wl-n { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); font-weight: 600; font-size: 13px; }
+.wl-main { min-width: 0; }
+.wl-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.wl-sub { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.wl-state { font-size: 12px; padding: 1px 9px; border-radius: 999px; background: var(--surface); color: var(--muted); white-space: nowrap; }
+.wl-state[data-s=needs_you] { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.wl-state[data-s=failed] { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
+.wl-state[data-s=working] { color: var(--ok); }
+
+/* the drawer: off screen and inert when closed */
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 100%; background: var(--bg); border-left: 1px solid var(--border); box-shadow: -12px 0 40px rgba(0,0,0,.08); padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; transform: translateX(100%); visibility: hidden; transition: transform .2s ease, visibility 0s .2s; z-index: 8; }
+.drawer.open { transform: none; visibility: visible; transition: transform .2s ease; }
+.drawer-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.drawer-head h2 { font-size: 16px; margin: 0; overflow-wrap: anywhere; }
+.drawer-meta { color: var(--muted); }
+.drawer-body { font-size: 13.5px; overflow-wrap: anywhere; }
+.drawer-body p { margin: 0 0 6px; }
+.drawer-log { margin: 0; padding: 10px 0 0 18px; border-top: 1px solid var(--border); overflow: auto; flex: 1; }
+.drawer-log li { padding: 2px 0; overflow-wrap: anywhere; }
+.drawer-log li:last-child { font-weight: 500; }
+.drawer-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.drawer-actions a { color: inherit; font-size: 13.5px; align-self: center; }
+
+@media (max-width: 760px) {
+  .drawer { width: 100%; }
+  #powerhouseApp { padding: 14px 12px 40px; }
+  .ph-meters { order: 5; width: 100%; }
+  .ph-meters .meter { flex: 1; width: auto; }
+}
+@media (max-width: 560px) { .zone-label, #moreChip { display: none; } .ph-top .links { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .stage *, .drawer { animation: none !important; transition: none !important; }
+}

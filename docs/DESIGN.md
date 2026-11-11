@@ -18,7 +18,32 @@ A live status view drawn as a gym inside the CPU. Every animation maps to real o
 
 **Voice hook.** `src/ui/powerhouse/voice.ts` exports `speak(text: string): void` (no-op) and a `VoiceProvider` interface; the shout bubble calls it. Nothing else now.
 
-**Mockup.** `docs/design/powerhouse-mockup.html` (static, no script beyond a state toggle) is produced in Phase 6 before the real page.
+**Mockup.** `docs/design/powerhouse-mockup.html` (static, no script beyond a state toggle) is produced in Phase 6 before the real page. Reviewed 2026-11-11 by a second agent (approved with required changes, all taken; summary below).
+
+**The contract (after the review).** Every visual has exactly one real source; `src/ui/powerhouse/scene.ts` `deriveScene()` is the only place that maps state to poses, and the jsdom test drives it.
+
+| Visual | Real source | Notes |
+|---|---|---|
+| Sidekick push-ups | a brain model call in flight: `brainCalls` in session storage (`orchestrator/activity.ts trackBrain`, wrapped around every `role: "brain"` call) | entries older than 3 min don't count (a page closed mid-call) |
+| Sidekick shouting + bubble + glowing trace | `orchestrator.lastShout { text, at, workerId }`, written when a worker starts (`startWorker`, `runAsWorker`) | shown while `now - at < 6 s` and the worker is on stage; text is the task's real title (redacted, plain text), clamped to 3 lines; never replayed after a reload |
+| Sidekick sitting + tag | `orchestrator.paused === "you"` → "paused by you"; spend over a cap (live, `overCap`) → "spend cap: daily/monthly" | the old sticky `"spend-cap"` value is ignored; running workers freeze with a "stopping" tag |
+| Sidekick standing, arms crossed | none of the above | |
+| Pull-ups | worker `kind: apply`, `status: working` | |
+| Push-ups (worker) | `kind: read` or `classify`, `status: working` | |
+| Sit-ups | `kind: write`, `status: working` (cover letters: `runAsWorker`) | |
+| Hand up + "?" | `status: needs_you` (or a `needsYou` item for that worker) | stays until handled; never leaves on a timer |
+| Slumped + "!" | `status: failed`; the error in the list and drawer | stays until he dismisses it (drawer) or 24 h |
+| On the bench, "done" / "stopped" | `status: done` / `stopped`, for 30 s after `updatedAt` | then off stage; no worker is ever drawn without a record |
+| Top chip | working count; else "Sleeping until <next batch time>" from `jobSettings.batchHour` (or "Idle" when the daily batch is off); "Paused" / "Spend cap" | |
+
+**Layout.** Slots per area: bar 3, mat 2, bench 3, floor (failed) 2; extra workers go into the HTML list only, with a "+N more" chip on the stage. Below 560 px the in-scene labels are hidden and the list carries everything.
+
+**Accessibility.** The scene is `aria-hidden`; an HTML list of workers (one `<button>` each: "Agent 3, applying: Stripe, step: Page 2, needs you") is the keyboard and screen-reader path and opens the drawer. The drawer is `inert` when closed, takes focus on open, returns it on close, closes on Escape; its step log is `aria-live="polite"`. Reduced motion: no animation, static poses, every status also in text.
+
+**Cost of looking.** Animations run only while the tab is visible and only on figures that are working; the trace has no filter; workers are desynchronised (`--i` delays). The page re-renders from `chrome.storage.onChanged` with keyed figures (one `<g>` per worker id), and a 1 s ticker runs only while something is leaving or a shout is fresh.
+
+**Scope.** The page shows state and has Pause/Resume and Stop; it does not yet host the orchestrator loop or reopen itself (Phase 9). The voice hook stays a no-op stub.
+
 
 ## 2. The Jobs dashboard (restyled)
 

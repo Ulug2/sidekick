@@ -100,7 +100,7 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   };
 
   // ---------- 1. every page loads clean under the real CSP ----------
-  for (const p of ['sidepanel.html', 'profile.html', 'options.html', 'evals.html', 'mic.html', 'runs.html', 'bench.html', 'jobs.html', 'memory.html']) {
+  for (const p of ['sidepanel.html', 'profile.html', 'options.html', 'evals.html', 'mic.html', 'runs.html', 'bench.html', 'jobs.html', 'memory.html', 'powerhouse.html']) {
     const page = await ctx.newPage();
     watch(page, p);
     const csp = [];
@@ -376,7 +376,7 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   // ---------- 9. options: new settings round-trip ----------
   const opt = await ctx.newPage();
   await opt.goto(url('options.html'));
-  check('Real Chrome settings: eleven sections in a sidebar of buttons, model names folded away', (await opt.locator('#sidenav button').count()) === 11 && (await opt.locator('#sec-connect #anthropicKey').count()) === 1 && !(await opt.locator('details.advanced').evaluate(d => d.open)) && (await opt.locator('#sec-pages .pages a').count()) === 6);
+  check('Real Chrome settings: eleven sections in a sidebar of buttons, model names folded away', (await opt.locator('#sidenav button').count()) === 11 && (await opt.locator('#sec-connect #anthropicKey').count()) === 1 && !(await opt.locator('details.advanced').evaluate(d => d.open)) && (await opt.locator('#sec-pages .pages a').count()) === 7);
   // v1 Phase 5 acceptance: Tab reaches every nav item; arrow keys move; 760 and 1280 px, light and
   // dark, no sideways scroll; under 860 px the nav is one sticky row that scrolls inside itself.
   {
@@ -420,6 +420,49 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
       await shot(opt, `09-settings-${name}-notify`);
     }
     await opt.emulateMedia({ colorScheme: 'light' });
+  }
+
+  // ---------- 9b. v1 Phase 6: the Powerhouse with real-shaped state ----------
+  {
+    const ph = await ctx.newPage();
+    watch(ph, 'powerhouse.html');
+    await ph.goto(url('powerhouse.html'));
+    const t = Date.now();
+    const W = (o) => ({ n: 1, kind: 'apply', title: 'Apply: Software Engineer, New Grad at Stripe', model: 'claude-haiku-5-5', status: 'working', step: 'Page 2: Education', startedAt: t, updatedAt: t, cost: 0.03, ...o });
+    await ph.evaluate(async ([t, workers]) => {
+      await chrome.storage.local.set({ orchestrator: { workers, needsYou: [{ workerId: 'w4', jobId: 'j4', since: t, stoppedAt: '', questions: [] }], lastShout: { text: 'Agent 1! Apply: Software Engineer, New Grad at Stripe', at: Date.now(), workerId: 'w1' } } });
+    }, [t, [W({ id: 'w1' }), W({ id: 'w2', n: 2, title: 'Apply: Backend Engineer at Ramp', startedAt: t + 1 }), W({ id: 'w3', n: 3, kind: 'write', title: 'Cover letter: Plaid', step: 'Writing', startedAt: t + 2 }), W({ id: 'w4', n: 4, status: 'needs_you', title: 'Apply: Platform Engineer at Bravo', startedAt: t + 3 }), W({ id: 'w5', n: 5, kind: 'read', title: 'Read: Datadog careers page', startedAt: t + 4 }), W({ id: 'w6', n: 6, status: 'failed', error: 'The form wants an account and a password.', title: 'Apply: SRE at Delta', startedAt: t + 5 })]]);
+    await ph.waitForTimeout(500);
+    const figs = await ph.evaluate(() => [...document.querySelectorAll('#figures > g')].map(g => `${g.dataset.id}:${g.querySelector('use').getAttribute('href')}`).sort().join(','));
+    check('Real Chrome Powerhouse: each worker drawn with its pose (pull-ups, sit-ups, push-ups, hand up, slumped), Sidekick shouting at Agent 1', figs === 'w1:#p-pull,w2:#p-pull,w3:#p-situp,w4:#p-raise,w5:#p-push,w6:#p-slump' && await ph.getAttribute('#coach', 'data-coach') === 'shouting' && await ph.isVisible('#bubble') && await ph.isVisible('#wire') && (await ph.textContent('#chip')) === 'Running · 4 working · 1 needs you', figs + ' | ' + await ph.textContent('#chip'));
+    check('Real Chrome Powerhouse: animations run while the tab is visible, only on working figures', await ph.evaluate(() => document.getElementById('stage').classList.contains('live') && document.querySelector('[data-id=w1]').classList.contains('anim') && !document.querySelector('[data-id=w4]').classList.contains('anim')));
+    for (const [w, name] of [[760, 'half'], [1280, 'wide'], [420, 'narrow']]) {
+      await ph.setViewportSize({ width: w, height: 900 });
+      await ph.waitForTimeout(150);
+      const ov = await ph.evaluate(() => document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth);
+      check(`Real Chrome Powerhouse: fits at ${w}px`, ov <= 1, `overflow ${ov}px`);
+      await shot(ph, `09b-powerhouse-${name}`);
+    }
+    // the keyboard path: Tab into the list, Enter opens the drawer, Escape closes it and focus returns
+    await ph.setViewportSize({ width: 1280, height: 900 });
+    await ph.evaluate(() => document.activeElement?.blur());
+    let reached = '';
+    for (let i = 0; i < 20 && reached !== 'w4'; i++) { await ph.keyboard.press('Tab'); reached = await ph.evaluate(() => document.activeElement?.dataset?.open || ''); }
+    await ph.keyboard.press('Enter');
+    await ph.waitForTimeout(300);
+    const opened = await ph.evaluate(() => ({ open: document.getElementById('drawer').classList.contains('open'), inert: document.getElementById('drawer').inert, focus: document.activeElement?.id, title: document.getElementById('drawerTitle').textContent }));
+    await shot(ph, '09b-powerhouse-drawer');
+    await ph.keyboard.press('Escape');
+    await ph.waitForTimeout(300);
+    const back = await ph.evaluate(() => ({ focus: document.activeElement?.dataset?.open, inert: document.getElementById('drawer').inert }));
+    check('Real Chrome Powerhouse: Tab reaches a worker in the list, Enter opens its drawer (focus inside), Escape closes it and focus returns', reached === 'w4' && opened.open && !opened.inert && opened.focus === 'closeDrawer' && /Agent 4 · Apply: Platform Engineer at Bravo/.test(opened.title) && back.focus === 'w4' && back.inert, JSON.stringify({ reached, opened, back }));
+    await ph.click('#pause');
+    await ph.waitForTimeout(300);
+    check('Real Chrome Powerhouse: Pause stores the pause and Sidekick sits down', (await ph.evaluate(() => chrome.storage.local.get('orchestrator'))).orchestrator.paused === 'you' && await ph.getAttribute('#coach', 'data-coach') === 'paused');
+    await shot(ph, '09b-powerhouse-paused');
+    await ph.click('#pause');
+    await ph.evaluate(() => chrome.storage.local.set({ orchestrator: {} }));
+    await ph.close();
   }
   await opt.waitForTimeout(300);
   check('Real Chrome options: tie-break models and learning switch shown with defaults', await opt.inputValue('#anthropicBest') === 'claude-opus-5-5' && await opt.inputValue('#openaiBest') === 'gpt-6-astra' && await opt.isChecked('#learnSites'));
@@ -816,8 +859,16 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
       await pg.waitForURL(/\/apply$/, { timeout: 30000 }).catch(() => {});
       for (let i = 0; i < 300 && !sent; i++) { try { sent = await pg.evaluate(() => window.sent || null); } catch { break; } if (!sent) await new Promise(r => setTimeout(r, 200)); }
     })();
+    // v1 Phase 6: Pause (Powerhouse) is obeyed by the runner: Start now while paused applies nothing;
+    // Resume lets it go on.
+    await panel.evaluate(() => { globalThis.SK_BUSY_POLL_MS = 300; return chrome.storage.local.get('orchestrator').then(({ orchestrator = {} }) => chrome.storage.local.set({ orchestrator: { ...orchestrator, paused: 'you' } })); });
     await jobsPage.click('#start');
     await panel.bringToFront();
+    await panel.waitForTimeout(2500);
+    const whilePaused = (await panel.evaluate(() => chrome.storage.local.get('jobs'))).jobs;
+    const pausedToast = await panel.evaluate(() => document.body.innerText.includes('Applications are paused (Powerhouse)'));
+    check('Real Chrome Pause: while paused, Start now opens no form and applies to nothing, and says why', whilePaused.every(j => j.status !== 'applying' && j.status !== 'applied') && pausedToast && letterCalls === 0, JSON.stringify({ statuses: whilePaused.map(j => j.status), pausedToast, letterCalls }));
+    await panel.evaluate(() => chrome.storage.local.get('orchestrator').then(({ orchestrator = {} }) => chrome.storage.local.set({ orchestrator: { ...orchestrator, paused: null } })));
     const final = await (async () => { for (let i = 0; i < 240; i++) { const j = (await panel.evaluate(() => chrome.storage.local.get('jobs'))).jobs; if (j.every(x => !['queued', 'applying'].includes(x.status))) return j; await panel.waitForTimeout(500); } return (await panel.evaluate(() => chrome.storage.local.get('jobs'))).jobs; })();
     await capture;
     const acme = final.find(j => j.company === 'Acme'), bravo = final.find(j => j.company === 'Bravo');

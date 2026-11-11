@@ -21,7 +21,6 @@ import type { AutonomyLevel, WorkerTask } from "../../orchestrator/types.js";
 import { ROLES } from "../../core/llm/models.js";
 import { memoryForForms } from "../../memory/answers.js";
 import { finishWorker, startWorker, workerStep } from "../../orchestrator/workers.js";
-import { updateLocal } from "../../core/storage/update.js";
 
 export const AGENT_MAX_STEPS = 40;
 export const KEEP_FULL_SNAPSHOTS = 2; // older page snapshots are shortened to save tokens
@@ -193,8 +192,8 @@ export async function runAgent(goal: string, ui: AgentUI, opts: { history?: stri
   } catch (err: any) {
     const stopped = err?.name === "AbortError" || err?.name === "SpendCapError";
     await rec?.finish(stopped ? "stopped" : "failed", err?.name === "SpendCapError" ? String(err.message) : null, stopped ? undefined : String(err?.message || err));
-    // The spend cap: the whole orchestrator pauses, not just this run.
-    if (err?.name === "SpendCapError") await updateLocal("orchestrator", (o = {}) => ({ ...o, paused: "spend-cap" })).catch(() => {});
+    // The spend cap needs no flag: every model call checks it live (core/llm/budget.ts), so all
+    // workers stop at their next call and it ends by itself when the day or month turns over.
     if (task) await finishWorker(task.id, stopped ? "stopped" : "failed", { error: String(err?.message || err).slice(0, 200), traceId: rec?.id, cost: rec?.trace.totals.cost || 0 });
     throw err;
   } finally {
