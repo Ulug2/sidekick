@@ -2,6 +2,7 @@
 // results), the elements the model can act on, the agent's tool calls, and what it learns.
 // Types only: page scripts (src/page) may import these with `import type`.
 import type { TrustedInput } from "../core/browser/cdp.js";
+import type { AutonomyLevel, WorkerTask } from "../orchestrator/types.js";
 import type { Settings } from "../core/llm/settings.js";
 
 // ---------- page snapshot (page/snapshot.ts → agent) ----------
@@ -151,6 +152,10 @@ export interface AgentState {
   checkAsked?: boolean;
   files?: Record<string, AgentFile>; // files besides the resume the run may upload ("cover_letter")
   tier?: "fast" | "smart"; // the model tier for this run (job-application batches use "fast")
+  policy: AutonomyLevel; // orchestrator/policy: how much runs without asking
+  approvedSites: Set<string>; // sites the user approved for this run (an approved batch, an approved plan)
+  frameHosts: Set<string>; // hosts of the frames on the current page (a form embedded from another site)
+  task?: WorkerTask; // when this run is a numbered worker of the orchestrator
 }
 export interface AgentFile { name: string; type: string; base64: string }
 // A step card in the panel.

@@ -5,13 +5,15 @@ import { $ } from "../shared/dom.js";
 import { readLocal } from "../../core/storage/schema.js";
 import { updateLocal } from "../../core/storage/update.js";
 import { formatCost } from "../../core/llm/prices.js";
-import { monthSpend } from "../../bench/results.js";
+import { DEFAULT_CAPS, overCap, spendFor } from "../../core/llm/budget.js";
+import { readLog } from "../../orchestrator/log.js";
+import type { ActionLogEntry } from "../../orchestrator/types.js";
 import { boardFromUrl, changeCompanies, companyKey, DEFAULT_JOB_SETTINGS, getCompanies, getJobs, jobStats, jobsCsv, pickBatch, queueJobs, setJobStatus } from "../../jobs/store.js";
 import { discoverCompanies, loadSponsors, rejudgeJobs, scanCompanies, topSponsors } from "../../jobs/scan.js";
 import { downloadSponsorLists } from "../../jobs/sponsors.js";
 import type { Company, Job, JobStatus, Region } from "../../jobs/types.js";
 
-type Tab = "apply" | "batch" | "applied" | "needs" | "filtered" | "companies";
+type Tab = "apply" | "batch" | "applied" | "needs" | "filtered" | "companies" | "activity";
 
 type Child = Node | string | null | undefined | false;
 function h(tag: string, attrs: Record<string, string> = {}, ...children: Child[]): HTMLElement {
@@ -20,6 +22,7 @@ function h(tag: string, attrs: Record<string, string> = {}, ...children: Child[]
   for (const c of children) if (c) el.append(c);
   return el;
 }
+const when = (t: number) => new Date(t).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const ago = (t?: number) => { if (!t) return "never"; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
 const day = (t?: number) => t ? new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
 const REGION: Record<Region, string> = { usa: "USA", europe: "Europe", uae: "UAE" };
@@ -29,6 +32,8 @@ let tab: Tab = "apply";
 let jobs: Job[] = [];
 let companies: Company[] = [];
 let settings = { ...DEFAULT_JOB_SETTINGS };
+let caps = { ...DEFAULT_CAPS };
+let actions: ActionLogEntry[] = [];
 let running: AbortController | null = null;
 
 // ---------- one job ----------
@@ -89,23 +94,24 @@ function visible(): Job[] {
   const byTab: Record<Tab, (j: Job) => boolean> = {
     apply: j => j.ok && j.status === "found", batch: j => ["queued", "applying"].includes(j.status),
     applied: j => ["applied", "interview", "offer", "rejected"].includes(j.status), needs: j => j.status === "needs_you",
-    filtered: j => (!j.ok && j.status === "found") || j.status === "skipped" || j.status === "closed", companies: () => false
+    filtered: j => (!j.ok && j.status === "found") || j.status === "skipped" || j.status === "closed", companies: () => false, activity: () => false
   };
   return jobs.filter(byTab[tab]).filter(j => !region || j.regions.includes(region)).filter(j => !q || `${j.company} ${j.title} ${j.location}`.toLowerCase().includes(q))
     .sort((a, b) => tab === "applied" ? (b.appliedAt || 0) - (a.appliedAt || 0) : b.score - a.score || (b.postedAt || 0) - (a.postedAt || 0));
 }
 
 export async function render(): Promise<void> {
-  [jobs, companies] = await Promise.all([getJobs(), getCompanies()]);
+  [jobs, companies, actions] = await Promise.all([getJobs(), getCompanies(), readLog(200)]);
   const { lists } = await loadSponsors();
-  const { usage = {} } = await readLocal("usage");
+  const { usage = {}, capDaily, capMonthly } = await readLocal(["usage", "capDaily", "capMonthly"]);
+  caps = { daily: capDaily ?? DEFAULT_CAPS.daily, monthly: capMonthly ?? DEFAULT_CAPS.monthly };
   const stats = jobStats(jobs);
-  const spend = monthSpend(usage);
+  const spend = spendFor(usage);
   const lastScan = Math.max(0, ...companies.map(c => c.lastScan || 0));
   $("#sysline").replaceChildren(
     "SPONSOR LISTS ", h("b", {}, lists ? `UK ${lists.ukDate || "?"} · US H-1B FY${lists.usYears || "?"}` : "not downloaded"),
     "  ·  COMPANIES ", h("b", {}, String(companies.length)), "  ·  LAST SCAN ", h("b", {}, ago(lastScan)),
-    "  ·  API THIS MONTH ", h("b", {}, `${formatCost(spend.cost)} of $${settings.monthlyCap}`));
+    "  ·  API TODAY ", h("b", {}, `${formatCost(spend.today)} of $${caps.daily}`), "  ·  THIS MONTH ", h("b", {}, `${formatCost(spend.month)} of $${caps.monthly}`));
   const tile = (v: string | number, k: string, s = "", cls = "") => h("div", { class: `tile ${cls}` }, h("div", { class: "v" }, String(v)), h("span", { class: "k" }, k), s ? h("span", { class: "s" }, s) : "");
   const today = h("div", { class: "tile green" }, h("div", { class: "v" }, String(stats.appliedToday), h("small", {}, ` / ${settings.dailyCap}`)), h("span", { class: "k" }, "applied today"), h("span", { class: "s" }, `${stats.queued} in the batch`));
   $("#hud").replaceChildren(
@@ -119,21 +125,28 @@ export async function render(): Promise<void> {
   for (const b of document.querySelectorAll<HTMLButtonElement>("#tabs [role=tab]")) {
     const t = b.dataset.tab as Tab;
     b.setAttribute("aria-selected", String(t === tab));
-    const n = t === "companies" ? companies.length : jobs.filter(j => ({ apply: j.ok && j.status === "found", batch: ["queued", "applying"].includes(j.status), applied: ["applied", "interview", "offer", "rejected"].includes(j.status), needs: j.status === "needs_you", filtered: (!j.ok && j.status === "found") || ["skipped", "closed"].includes(j.status) } as Record<string, boolean>)[t]).length;
+    const n = t === "companies" ? companies.length : t === "activity" ? actions.length : jobs.filter(j => ({ apply: j.ok && j.status === "found", batch: ["queued", "applying"].includes(j.status), applied: ["applied", "interview", "offer", "rejected"].includes(j.status), needs: j.status === "needs_you", filtered: (!j.ok && j.status === "found") || ["skipped", "closed"].includes(j.status) } as Record<string, boolean>)[t]).length;
     b.querySelector(".n")!.textContent = String(n);
   }
   const warn = $("#warning");
-  const over = spend.cost >= settings.monthlyCap;
+  const over = overCap(spend, caps);
   warn.hidden = !over;
-  warn.textContent = over ? `This month's API spend (${formatCost(spend.cost)}) has reached your limit of $${settings.monthlyCap}; the batch won't start until next month or a higher limit.` : "";
-  const isCompanies = tab === "companies";
+  warn.textContent = over ? `${over.message} The batch won't start until then.` : "";
+  const isCompanies = tab === "companies", isActivity = tab === "activity";
   $("#companiesBox").hidden = !isCompanies;
-  $("#filters").hidden = isCompanies;
-  $("#list").hidden = isCompanies;
+  $("#activity").hidden = !isActivity;
+  $("#filters").hidden = isCompanies || isActivity;
+  $("#list").hidden = isCompanies || isActivity;
   if (isCompanies) { $("#companies").replaceChildren(...companies.map(renderCompany)); $("#empty").hidden = true; return; }
+  if (isActivity) {
+    $("#activity").replaceChildren(...actions.map(e => h("li", { class: "company" }, h("span", { class: "board" }, `${when(e.at)} · ${e.worker ? `Agent ${e.worker} · ` : ""}${e.kind}`), h("span", { class: "name", style: "min-width:0;font-weight:500" }, e.what), e.why ? h("span", { class: "board" }, e.why) : "")));
+    $("#empty").textContent = actions.length ? "" : "No actions yet. Every submit, upload and send lands here, with which agent did it and why.";
+    $("#empty").hidden = !!actions.length;
+    return;
+  }
   const rows = visible();
   $("#list").replaceChildren(...rows.slice(0, 300).map(renderJob));
-  const empty = { apply: lists ? "No eligible jobs yet. Press Scan job boards." : "Download the sponsor lists first (Update sponsor lists), then Scan job boards.", batch: "No batch yet. Press Build today's batch.", applied: "Nothing applied yet.", needs: "Nothing waiting for you.", filtered: "Nothing filtered out yet.", companies: "" }[tab];
+  const empty = { apply: lists ? "No eligible jobs yet. Press Scan job boards." : "Download the sponsor lists first (Update sponsor lists), then Scan job boards.", batch: "No batch yet. Press Build today's batch.", applied: "Nothing applied yet.", needs: "Nothing waiting for you.", filtered: "Nothing filtered out yet.", companies: "", activity: "" }[tab];
   $("#empty").textContent = rows.length ? "" : empty;
   $("#empty").hidden = !!rows.length;
 }
@@ -165,13 +178,16 @@ if ($("#jobsApp")) {
   (async () => {
     settings = { ...DEFAULT_JOB_SETTINGS, ...((await readLocal("jobSettings")).jobSettings || {}) };
     $("#dailyCap").value = String(settings.dailyCap);
-    $("#monthlyCap").value = String(settings.monthlyCap);
+    { const { capDaily, capMonthly } = await readLocal(["capDaily", "capMonthly"]); $("#capDaily").value = String(capDaily ?? DEFAULT_CAPS.daily); $("#capMonthly").value = String(capMonthly ?? DEFAULT_CAPS.monthly); }
     $("#internships").checked = !!settings.internships;
     const saveSettings = async () => {
       const internshipsWas = !!settings.internships;
-      settings = { dailyCap: Math.max(1, Math.min(50, Number($("#dailyCap").value) || DEFAULT_JOB_SETTINGS.dailyCap)), monthlyCap: Math.max(1, Math.min(200, Number($("#monthlyCap").value) || DEFAULT_JOB_SETTINGS.monthlyCap)), internships: !!$("#internships").checked };
-      $("#dailyCap").value = String(settings.dailyCap); $("#monthlyCap").value = String(settings.monthlyCap);
-      await chrome.storage.local.set({ jobSettings: settings });
+      settings = { ...settings, dailyCap: Math.max(1, Math.min(50, Number($("#dailyCap").value) || DEFAULT_JOB_SETTINGS.dailyCap)), internships: !!$("#internships").checked };
+      $("#dailyCap").value = String(settings.dailyCap);
+      // The spend caps are Settings fields (core/llm/budget.ts reads them before every model call).
+      const capDaily = Math.max(0, Math.min(50, Number($("#capDaily").value))), capMonthly = Math.max(0, Math.min(500, Number($("#capMonthly").value)));
+      $("#capDaily").value = String(capDaily); $("#capMonthly").value = String(capMonthly);
+      await chrome.storage.local.set({ jobSettings: settings, capDaily, capMonthly });
       if (internshipsWas !== settings.internships) {
         const n = await rejudgeJobs();
         $("#progress").textContent = settings.internships ? `Internships will be kept from the next scan on. Press Scan job boards.` : `Internships off: ${n} moved to Filtered out.`;
@@ -179,7 +195,8 @@ if ($("#jobsApp")) {
       render();
     };
     $("#dailyCap").onchange = saveSettings;
-    $("#monthlyCap").onchange = saveSettings;
+    $("#capDaily").onchange = saveSettings;
+    $("#capMonthly").onchange = saveSettings;
     $("#internships").onchange = saveSettings;
     for (const b of document.querySelectorAll<HTMLButtonElement>("#tabs [role=tab]")) b.onclick = () => { tab = b.dataset.tab as Tab; render(); };
     $("#search").oninput = render;
@@ -225,7 +242,7 @@ if ($("#jobsApp")) {
       $("#careersUrl").value = ""; $("#companyName").value = "";
       await withProgress(`Scanning ${name}…`, async (signal) => { const p = await scanCompanies([c], () => {}, signal); return p.errors[0] ? `Couldn't read ${name}'s board: ${p.errors[0]}` : `${name} added: ${p.found} eligible jobs.`; });
     };
-    chrome.storage.onChanged.addListener((changes, area) => { if ((area === "local" && (changes.jobs || changes.jobCompanies || changes.sponsorLists || changes.usage)) || (area === "session" && changes.jobBatch)) render(); });
+    chrome.storage.onChanged.addListener((changes, area) => { if ((area === "local" && (changes.jobs || changes.jobCompanies || changes.sponsorLists || changes.usage || changes.actionLog || changes.capDaily || changes.capMonthly)) || (area === "session" && changes.jobBatch)) render(); });
     await render();
   })();
 }

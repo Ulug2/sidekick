@@ -11,6 +11,7 @@ export const PRICES: Record<string, Price & { long?: Price & { over: number } }>
   "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, long: { over: 100000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 0.625 } },
   "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
   "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
+  "claude-fable-5-1": { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 }, // the "deep" role (models.ts); checked 2026-11-10
   // OpenAI bills cached input at 0.1× and no cache writes (usage.input excludes cached tokens).
   "gpt-5.6-terra": { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0 },
   "gpt-5.6-luna": { input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite: 0 }

@@ -1,10 +1,12 @@
+import { untrusted } from "../core/security/guard.js";
 // The agent's system prompt.
 import { profileToPrompt, type Profile } from "../assistant/profile-core.js";
 import type { Memory } from "../assistant/memory/memory.js";
 
-export function agentSystemPrompt(profile: Profile, { memories = [] as Memory[], assistantName = "Sidekick" } = {}): string {
+export function agentSystemPrompt(profile: Profile, { memories = [] as Memory[], assistantName = "Sidekick", world = "" } = {}): string {
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const about = profileToPrompt(profile, { includeResume: true }) + (memories.length ? `\n\n### Things you've learned about them\n${memories.map(m => `- ${m.text}`).join("\n")}` : "");
+  const about = profileToPrompt(profile, { includeResume: true }) + (memories.length ? `\n\n### Things you've learned about them\n${memories.map(m => `- ${m.text}`).join("\n")}` : "")
+    + (world ? `\n\n### Their job search right now (from Sidekick's records; world_query answers more)\n${untrusted("Sidekick's job records (names and titles from job boards)", world)}` : "");
   return `You are ${assistantName}'s browser agent. You operate the user's Chrome tab to complete the task they give you, using tools, one action at a time. Today is ${today}.
 
 ## How you see the page

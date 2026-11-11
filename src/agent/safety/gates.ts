@@ -1,6 +1,8 @@
 // Safety gates: final-action words, the fast-model check of new sites and shared details,
 // "never act on" sites. Rules live here in code, not only in the prompt.
 import type { AgentState, AskApproval } from "../types.js";
+import { decide, type PolicyContext } from "../../orchestrator/policy.js";
+import type { AutonomyLevel } from "../../orchestrator/types.js";
 import { hostOf } from "../page-calls.js";
 import { siteOf } from "../../core/security/sites.js";
 import { modelCall } from "../../core/llm/call.js";
@@ -34,18 +36,30 @@ Proposed step: ${detail}`;
     return { ok: false, reason: "The safety check couldn't run." };
   }
 }
-export const inPlan = (state: AgentState, site: string) => !!state.planApproval?.sites.has(site);
+export const inPlan = (state: AgentState, site: string) => state.approvedSites.has(site) || !!state.planApproval?.sites.has(site);
+
+// The policy's view of this run: the level, the approved sites, the page's own sites.
+export async function policyContext(state: AgentState): Promise<PolicyContext> {
+  const tab = await chrome.tabs.get(state.tabId).catch(() => null);
+  const pageSites = new Set<string>([siteOf(tab?.url || ""), ...[...(state.frameHosts || [])].map(h => siteOf("https://" + h))].filter(Boolean));
+  const level: AutonomyLevel = state.settings.approvalMode === "every" ? "every-click" : state.planApproval?.autoSubmit ? "approved-batch" : state.policy || "ask-final";
+  return { level, approvedSites: new Set([...state.approvedSites, ...(state.planApproval?.sites || [])]), pageSites, visitedOk: state.visitOk, sharedOk: state.shareOk };
+}
 
 // Going to a site not used yet in this task.
 export async function gateVisit(state: AgentState, url: string, askApproval: AskApproval): Promise<boolean> {
   const site = siteOf(url);
   if (!site || state.visitOk.has(site)) return true;
-  if (state.planApproval) {
-    if (inPlan(state, site)) { state.visitOk.add(site); return true; }
-    if (!(await askApproval(`Go to ${site}? It isn't in the plan you approved`, ""))) return false;
-  } else if (state.settings.actionCheck !== false) {
-    const v = await checkAction(state, `Go to ${url.slice(0, 200)} (site: ${site})`);
-    if (!v.ok && !(await askApproval(`Go to ${site}?`, `Safety check: ${v.reason}`))) return false;
+  const ctx = await policyContext(state);
+  const d = decide({ kind: "visit", site }, ctx);
+  if (d.verdict === "refuse") return false;
+  if (d.verdict === "ask") {
+    if (state.planApproval || ctx.approvedSites.size) {
+      if (!(await askApproval(`Go to ${site}? It isn't in the plan you approved`, ""))) return false;
+    } else if (state.settings.actionCheck !== false && (ctx.level === "ask-final" || ctx.level === "read-only")) {
+      const v = await checkAction(state, `Go to ${url.slice(0, 200)} (site: ${site})`);
+      if (!v.ok && !(await askApproval(`Go to ${site}?`, `Safety check: ${v.reason}`))) return false;
+    } else if (ctx.level === "every-click" && !(await askApproval(`Go to ${site}?`, ""))) return false;
   }
   state.visitOk.add(site);
   return true;
@@ -53,17 +67,19 @@ export async function gateVisit(state: AgentState, url: string, askApproval: Ask
 // Typing your personal details on a site for the first time in this task.
 export async function gateShare(state: AgentState, site: string, kinds: string[], field: string, askApproval: AskApproval): Promise<boolean> {
   if (!site || state.shareOk.has(site)) return true;
-  if (inPlan(state, site) || state.settings.actionCheck === false) { state.shareOk.add(site); return true; }
-  const v = await checkAction(state, `Type the user's ${kinds.join(", ")} into the field "${field}" on ${site}`);
-  if (!v.ok && !(await askApproval(`Share your ${kinds.join(", ")} with ${site}?`, `Safety check: ${v.reason}`))) return false;
+  const ctx = await policyContext(state);
+  const d = decide({ kind: "share", site, kinds }, ctx);
+  if (d.verdict === "refuse") return false;
+  if (d.verdict === "ask") {
+    if (state.settings.actionCheck === false && ctx.level !== "every-click") { state.shareOk.add(site); return true; }
+    const v = ctx.level === "every-click" ? { ok: false, reason: "you asked to approve every step" } : await checkAction(state, `Type the user's ${kinds.join(", ")} into the field "${field}" on ${site}`);
+    if (!v.ok && !(await askApproval(`Share your ${kinds.join(", ")} with ${site}?`, `Safety check: ${v.reason}`))) return false;
+  }
   state.shareOk.add(site);
   return true;
 }
-// Final clicks that can still go without asking after you approve a plan "submit without
-// asking": never anything with money, deleting or publishing.
 // Human checks the agent must leave to the human (a code rule; the prompt says so too).
 export const CAPTCHA_RE = /\b(captcha|recaptcha|hcaptcha|i'?m not a robot|not a robot|verify (that )?you('?re| are) (a )?human|human verification|prove you('?re| are) human|press and hold|cloudflare turnstile)\b/i;
-export const NEVER_AUTO = /\b(pay|purchase|buy|order|checkout|check out|donate|transfer|delete|remove|unsubscribe|publish|post|sign and)\b/i;
 
 export function siteBlocked(state: AgentState, url: string): string | undefined {
   const host = hostOf(url);

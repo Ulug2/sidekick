@@ -1,5 +1,7 @@
 // The service worker. Clicking the toolbar icon (or pressing the shortcut) opens the side panel.
 import type { SessionSchema } from "../core/storage/schema.js";
+import { markFired, restoreAlarms } from "../orchestrator/scheduler.js";
+import { chromeHost } from "../orchestrator/host.js";
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
 
@@ -20,3 +22,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   };
   chrome.storage.session.set({ pending });
 });
+
+// ---------- the orchestrator's clock (docs/ARCHITECTURE.md §3.2) ----------
+// Alarms survive Chrome restarts; fired ones are queued in storage for the orchestrator page.
+chrome.alarms.onAlarm.addListener(alarm => { markFired(alarm.name, alarm.scheduledTime).catch(console.error); });
+chrome.runtime.onStartup.addListener(() => { restoreAlarms(chromeHost).catch(console.error); });

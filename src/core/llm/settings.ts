@@ -1,4 +1,5 @@
 // Settings (with their defaults and model IDs) and which provider and model a call uses.
+import { MODEL_IDS, LEGACY_MODEL_IDS, modelForTier, providerOf } from "./models.js";
 import type { Provider, Tier } from "./types.js";
 
 // Everything else (persona, routing, tools) lives in brain.js.
@@ -8,13 +9,17 @@ export const DEFAULT_SETTINGS = {
   anthropicKey: "",
   openaiKey: "",
   // Two tiers: "fast" for everyday questions, "smart" for math, code, analysis and agent work.
-  anthropicFast: "claude-haiku-5-5",
-  anthropicSmart: "claude-sonnet-5-5",
-  openaiFast: "gpt-5.6-luna",
-  openaiSmart: "gpt-5.6-terra",
+  // The IDs live in models.ts (the only file that may name a model); these are the overrides.
+  anthropicFast: MODEL_IDS.anthropic.fast,
+  anthropicSmart: MODEL_IDS.anthropic.smart,
+  openaiFast: MODEL_IDS.openai.fast,
+  openaiSmart: MODEL_IDS.openai.smart,
   // Strongest model: only used to break a tie when two solves of a math problem disagree.
-  anthropicBest: "claude-opus-5-5",
-  openaiBest: "gpt-6-astra",
+  anthropicBest: MODEL_IDS.anthropic.best,
+  openaiBest: MODEL_IDS.openai.best,
+  // Spend caps in dollars (core/llm/budget.ts); 0 = no cap.
+  capDaily: 1,
+  capMonthly: 25,
   routing: "auto", // "auto" | "fast" | "smart"
   fastEffort: "low",
   smartEffort: "high",
@@ -49,7 +54,7 @@ export type Settings = typeof DEFAULT_SETTINGS;
 export async function migrateSettings(raw: Record<string, any>): Promise<Partial<Settings>> {
   const patch: Partial<Settings> = {};
   if (raw.anthropicModel && !raw.anthropicSmart && !/haiku/.test(raw.anthropicModel)) patch.anthropicSmart = raw.anthropicModel;
-  if (raw.openaiModel && !raw.openaiSmart && raw.openaiModel !== "gpt-4o-mini" && raw.openaiModel !== "gpt-5.6-luna") patch.openaiSmart = raw.openaiModel;
+  if (raw.openaiModel && !raw.openaiSmart && raw.openaiModel !== LEGACY_MODEL_IDS.openaiOld && raw.openaiModel !== MODEL_IDS.openai.fast) patch.openaiSmart = raw.openaiModel;
   if (raw.reasoning && raw.reasoning !== "auto" && !raw.smartEffort) patch.smartEffort = raw.reasoning;
   // A system prompt you wrote yourself becomes custom instructions; built-in ones are dropped.
   const old = String(raw.systemPrompt || "").trim();
@@ -74,14 +79,5 @@ export async function getSettings(): Promise<Settings> {
 }
 
 // The chosen provider, or whichever one actually has a key.
-export function effectiveProvider(s: Settings): Provider {
-  if (s.provider === "anthropic" && !s.anthropicKey && s.openaiKey) return "openai";
-  if (s.provider === "openai" && !s.openaiKey && s.anthropicKey) return "anthropic";
-  return s.provider as Provider;
-}
-
-export function modelFor(s: Settings, tier: Tier): string {
-  const p = effectiveProvider(s);
-  if (tier === "best") return p === "openai" ? s.openaiBest : s.anthropicBest;
-  return p === "openai" ? (tier === "smart" ? s.openaiSmart : s.openaiFast) : tier === "smart" ? s.anthropicSmart : s.anthropicFast;
-}
+export const effectiveProvider = (s: Settings): Provider => providerOf(s);
+export const modelFor = (s: Settings, tier: Tier): string => modelForTier(s, tier);

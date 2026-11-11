@@ -17,6 +17,10 @@ import { callAgentModel, watchModelCalls } from "../../core/llm/call.js";
 import { startTrace, type TraceRecorder } from "../trace/trace.js";
 import { getSettings } from "../../core/llm/settings.js";
 import type { ModelMessage, ToolResult } from "../../core/llm/types.js";
+import type { AutonomyLevel, WorkerTask } from "../../orchestrator/types.js";
+import { ROLES } from "../../core/llm/models.js";
+import { finishWorker, startWorker, workerStep } from "../../orchestrator/workers.js";
+import { updateLocal } from "../../core/storage/update.js";
 
 export const AGENT_MAX_STEPS = 40;
 export const KEEP_FULL_SNAPSHOTS = 2; // older page snapshots are shortened to save tokens
@@ -34,14 +38,24 @@ export const KEEP_FULL_SNAPSHOTS = 2; // older page snapshots are shortened to s
 // opts.files: files the run may upload besides the resume (a cover letter PDF).
 // opts.preApproved: sites where the user approved the work in advance (a batch they reviewed), with
 // autoSubmit as in an approved plan: submits there don't ask again (payments, deleting, posting still do).
-export async function runAgent(goal: string, ui: AgentUI, opts: { history?: string; userMessages?: string[]; maxCost?: number; record?: boolean; tabId?: number; tier?: "fast" | "smart"; files?: Record<string, AgentFile>; preApproved?: { sites: string[]; autoSubmit: boolean } } = {}): Promise<AgentRunResult> {
+// opts.task: this run is a numbered worker (orchestrator/workers): its policy level, approved sites,
+// world slice and files come from the task, and its record is kept up to date for the Powerhouse.
+export async function runAgent(goal: string, ui: AgentUI, opts: { history?: string; userMessages?: string[]; maxCost?: number; record?: boolean; tabId?: number; tier?: "fast" | "smart"; files?: Record<string, AgentFile>; preApproved?: { sites: string[]; autoSubmit: boolean }; task?: WorkerTask; policy?: AutonomyLevel } = {}): Promise<AgentRunResult> {
   const profile = await getProfile();
-  const [tab] = opts.tabId ? [await chrome.tabs.get(opts.tabId)] : await chrome.tabs.query({ active: true, currentWindow: true });
+  const task = opts.task;
+  const tabId = task?.tabId ?? opts.tabId;
+  const [tab] = tabId ? [await chrome.tabs.get(tabId)] : await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) throw new Error("No active tab.");
   const settings = await getSettings();
   const memories = await memoriesFor(goal, { relevant: 10, recent: 3 }).catch(() => []);
-  const state: AgentState = { tabId: tab.id!, elements: {}, steps: [], settings, input: null, actionLog: [], errors: [], answers: [], safeSteps: [], siteTools: {}, shortcuts: {}, goal, visitOk: new Set(), shareOk: new Set() };
-  const system = agentSystemPrompt(profile, { memories, assistantName: settings.assistantName });
+  const policy: AutonomyLevel = task?.policy || opts.policy || (opts.preApproved?.autoSubmit ? "approved-batch" : "ask-final");
+  const approvedSites = new Set([...(task?.approvedSites || []), ...(opts.preApproved?.sites || [])]);
+  const state: AgentState = { tabId: tab.id!, elements: {}, steps: [], settings, input: null, actionLog: [], errors: [], answers: [], safeSteps: [], siteTools: {}, shortcuts: {}, goal, visitOk: new Set(), shareOk: new Set(), policy, approvedSites, frameHosts: new Set(), task };
+  const system = agentSystemPrompt(profile, { memories, assistantName: settings.assistantName, world: task?.context?.text || "" });
+  if (task) {
+    const stepWas = ui.step.bind(ui);
+    ui = { ...ui, step: (text, tool) => { workerStep(task.id, text).catch(() => {}); return stepWas(text, tool); } };
+  }
 
   // Follow tabs the page opens because of the agent's own action (e.g. "Apply" opening a new
   // tab). Tabs you open yourself (Ctrl+T while looking at this page also counts as "opened by"
@@ -74,20 +88,26 @@ export async function runAgent(goal: string, ui: AgentUI, opts: { history?: stri
 
   setAgentSignal(ui.signal);
   state.signal = ui.signal;
-  state.tier = opts.tier;
-  state.files = opts.files;
-  if (opts.preApproved) {
-    state.planApproval = { sites: new Set(opts.preApproved.sites), autoSubmit: opts.preApproved.autoSubmit };
-    for (const s of opts.preApproved.sites) state.visitOk.add(s);
-  }
+  state.tier = task ? (ROLES[task.role].tier === "fast" ? "fast" : "smart") : opts.tier;
+  state.files = task?.files || opts.files;
   state.userContext = opts.userMessages || [];
   // The site you started on is yours to act on; others are checked the first time.
   const startSite = siteOf(tab.url || "");
   state.startSite = startSite;
-  state.visitOk = new Set(startSite ? [startSite] : []);
+  state.visitOk = new Set([...(startSite ? [startSite] : []), ...approvedSites]);
   state.shareOk = new Set(startSite ? [startSite] : []);
   const history = String(opts.history || "").trim();
-  const transcript: ModelMessage[] = [{ role: "user", text: `${history ? `Earlier in this chat (context for the task; the user's newest message is the task):\n${history}\n\n` : ""}Task: ${goal}\n\nCurrent page:\n${await snapshotTab(state)}` }];
+  if (task) await startWorker(task);
+  let firstSnapshot = "";
+  try { firstSnapshot = await snapshotTab(state); }
+  catch (err: any) {
+    // The worker record must never stay "working" when the run dies before its first step.
+    if (task) await finishWorker(task.id, "failed", { error: String(err?.message || err).slice(0, 200) }).catch(() => {});
+    chrome.tabs.onCreated.removeListener(onCreated);
+    chrome.tabs.onActivated?.removeListener(onActivated);
+    throw err;
+  }
+  const transcript: ModelMessage[] = [{ role: "user", text: `${history ? `Earlier in this chat (context for the task; the user's newest message is the task):\n${history}\n\n` : ""}Task: ${goal}\n\nCurrent page:\n${firstSnapshot}` }];
   let summary = null;
   let nudges = 0;
   let outOfSteps = false, overBudget = false;
@@ -166,9 +186,14 @@ export async function runAgent(goal: string, ui: AgentUI, opts: { history?: stri
     }
     const learned = state.finished ? await learnFromRun(state, profile, goal, ui.signal) : null;
     await rec?.finish(overBudget ? "over_budget" : outOfSteps ? "out_of_steps" : "done", summary);
+    if (task) await finishWorker(task.id, state.finished ? "done" : "failed", { step: String(summary || "").slice(0, 160), cost: rec?.trace.totals.cost || 0, traceId: rec?.id });
     return { summary: summary as string | null, steps: state.steps, learned, plan: state.plan, ...(rec && { traceId: rec.id }) };
   } catch (err: any) {
-    await rec?.finish(err?.name === "AbortError" ? "stopped" : "failed", null, err?.name === "AbortError" ? undefined : String(err?.message || err));
+    const stopped = err?.name === "AbortError" || err?.name === "SpendCapError";
+    await rec?.finish(stopped ? "stopped" : "failed", err?.name === "SpendCapError" ? String(err.message) : null, stopped ? undefined : String(err?.message || err));
+    // The spend cap: the whole orchestrator pauses, not just this run.
+    if (err?.name === "SpendCapError") await updateLocal("orchestrator", (o = {}) => ({ ...o, paused: "spend-cap" })).catch(() => {});
+    if (task) await finishWorker(task.id, stopped ? "stopped" : "failed", { error: String(err?.message || err).slice(0, 200), traceId: rec?.id, cost: rec?.trace.totals.cost || 0 });
     throw err;
   } finally {
     unwatch();

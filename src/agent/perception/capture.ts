@@ -23,6 +23,7 @@ export async function captureTab(state: AgentState, opts: SnapshotOptions = {}):
     return cap;
   }
   state.elements = {};
+  state.frameHosts = new Set(results.filter(r => r.frameId !== 0 && r.result).map(r => hostOf(r.result!.url)).filter(Boolean));
   const top = results.find(r => r.frameId === 0)?.result;
   // Embedded frames we can see but couldn't get into (Chrome kept Sidekick out, or they're still
   // loading). These are reported, never silently skipped.

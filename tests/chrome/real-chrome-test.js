@@ -38,6 +38,13 @@ const PAGES = {
     <script>window.log=[];document.getElementById('app').addEventListener('submit',e=>{e.preventDefault();const f=cl.files[0];const r=new FileReader();r.onload=()=>{window.sent={fn:fn.value,em:em.value,clt:clt.value,file:f?{name:f.name,type:f.type,head:String(r.result).slice(0,8)}:null};window.log.push('submitted');};if(f)r.readAsText(f);else{window.sent={fn:fn.value,em:em.value,clt:clt.value,file:null};window.log.push('submitted');}});</script></body></html>`,
   '/apply-login': `<!doctype html><html><head><title>Apply – Bravo</title></head><body><main><h1>Backend Engineer</h1><p>Sign in to continue your application.</p>
     <form><label for="u">Email</label><input id="u"><label for="pw">Password</label><input id="pw" type="password"><button type="submit">Sign in</button></form></main></body></html>`,
+  // The batch's "approved means approved" case (docs/BUGS.md 3): the form is in a frame from another
+  // site, the upload is there, and the button says "Sign and submit".
+  '/apply-frame': `<!doctype html><html><head><title>Apply – Charlie</title></head><body><main><h1>Platform Engineer, New Grad</h1><p>Charlie builds infrastructure.</p>
+    <iframe src="http://public.test:__PORT__/apply-inner" style="width:600px;height:260px;border:0"></iframe></main></body></html>`,
+  '/apply-inner': `<!doctype html><html><head><title>Charlie application</title></head><body><main><form onsubmit="return false">
+    <label for="nm">Full name</label><input id="nm"><label for="cv">Resume</label><input id="cv" type="file">
+    <button type="button" id="sg" onclick="window.signed={name:nm.value,file:(cv.files[0]||{}).name||null}">Sign and submit</button></form></main></body></html>`,
   '/polarframe': `<!doctype html><html><head><title>MyOpenMath</title></head><body><main>
     <p>Set up limits of integration to integrate over each polar region shown.</p>
     <svg width="160" height="90"><path d="M0 80 A80 80 0 0 1 160 80 Z" fill="#88f"/><text x="150" y="88" font-size="6">8</text></svg>
@@ -692,8 +699,9 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   // ---------- 17. the application batch: Jobs page → side panel → one agent run per job, cover letter PDF, human checks set aside ----------
   {
     const jobBase = (id, over) => ({ id, ats: 'greenhouse', board: 'acme', company: 'Acme', title: 'Software Engineer, New Grad', location: 'New York, NY', url: `${BASE}/apply`, applyUrl: `${BASE}/apply`, text: 'Build payments at Acme. We sponsor visas.', ok: true, regions: ['usa'], countries: ['US'], sponsor: 'strong', why: ['Posting offers visa sponsorship'], score: 90, status: 'queued', firstSeen: 1, lastSeen: 1, ...over });
-    await panel.evaluate(jobs => chrome.storage.local.set({ jobs, jobCompanies: [{ name: 'Acme', ats: 'greenhouse', board: 'acme', added: 1, source: 'you' }] }), [jobBase('greenhouse:acme:1', {}), jobBase('greenhouse:bravo:2', { board: 'bravo', company: 'Bravo', title: 'Backend Engineer', url: `${BASE}/apply-login`, applyUrl: `${BASE}/apply-login`, score: 80 })]);
-    await panel.evaluate(() => { globalThis.SK_BATCH_PAUSE_MS = 0; globalThis.SK_ASK_WAIT_MS = 1000; });
+    await panel.evaluate(jobs => chrome.storage.local.set({ jobs, jobCompanies: [{ name: 'Acme', ats: 'greenhouse', board: 'acme', added: 1, source: 'you' }] }), [jobBase('greenhouse:acme:1', {}), jobBase('greenhouse:bravo:2', { board: 'bravo', company: 'Bravo', title: 'Backend Engineer', url: `${BASE}/apply-login`, applyUrl: `${BASE}/apply-login`, score: 80 }), jobBase('greenhouse:charlie:3', { board: 'charlie', company: 'Charlie', title: 'Platform Engineer, New Grad', url: `${BASE}/apply-frame`, applyUrl: `${BASE}/apply-frame`, score: 85 })]);
+    // public.test stands in for an application system (greenhouse.io, workable.com…) framed into the company page.
+    await panel.evaluate(() => { globalThis.SK_BATCH_PAUSE_MS = 0; globalThis.SK_ASK_WAIT_MS = 1000; globalThis.SK_EXTRA_ATS = ['public.test']; });
     const LETTER = 'Hi Acme team,\n\n' + 'I built a small payments dashboard for my college club last spring, and your posting is about payments, so this is the kind of work I want to learn properly. '.repeat(4) + 'I have not used Ruby yet, but I pick up languages quickly and I would rather learn it from people who ship it every day than from a tutorial. '.repeat(2) + '\n\nThanks,\nUlugbek';
     let letterCalls = 0;
     const letterAsks = [];
@@ -704,6 +712,15 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
         const st = b.messages.filter(m => m.role === 'assistant').length;
         const all = JSON.stringify(b.messages);
         const bravo = /Backend Engineer at Bravo/.test(all);
+        const fid = re => (all.match(new RegExp(String.raw`\[(\d+:\d+)\] [a-z:]+ \\"` + re)) || [])[1];
+        if (/Platform Engineer, New Grad at Charlie/.test(all)) {
+          if (st === 0) charlieSystem = b.system;
+          const c = [[['fill_fields', { fields: [{ id: fid('Full name'), value: 'Ulugbek Rivera' }] }], ['upload_file', { id: fid('Resume'), file: 'resume' }]],
+            [['click', { id: fid('Sign and submit'), description: 'Sign and submit the application', final_action: true }]],
+            [['log_application', { company: 'Charlie', role: 'Platform Engineer, New Grad', status: 'submitted' }]],
+            [['done', { summary: 'Applied to Charlie.' }]]][st];
+          return H.anthropicEvents(c.map(([name, input], k) => ({ type: 'tool_use', id: `c${st}_${k}`, name, input })), { stop: 'tool_use' });
+        }
         const calls = bravo
           ? [[['ask_user', { question: 'This application needs you to sign in first. Please sign in, then tell me.' }]], [['done', { summary: 'Signed in?' }]]][st]
           : [[['fill_fields', { fields: [{ id: idIn(all, 'First name'), value: 'Ulugbek' }, { id: idIn(all, 'Email'), value: 'ulugbek@example.edu' }, { id: idIn(all, 'Cover letter \\(PDF\\)'), value: 'cover_letter' }, { id: idIn(all, 'Cover letter text'), value: 'See the attached letter.' }] }]],
@@ -720,9 +737,15 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
     await jobsPage.waitForSelector('#start:not([hidden])', { timeout: 10000 });
     await jobsPage.evaluate(() => { chrome.sidePanel.open = async () => {}; }); // the test's panel tab takes the batch (see 15)
     const hud = await jobsPage.locator('#hud').innerText();
-    check('Real Chrome jobs: the HUD shows the batch waiting for approval', /2\s+today's batch/i.test(hud.replace(/\n/g, ' ')), hud);
+    check('Real Chrome jobs: the HUD shows the batch waiting for approval', /3\s+today's batch/i.test(hud.replace(/\n/g, ' ')), hud);
     // What the Acme form receives (its tab is closed once the application is in).
-    let sent = null;
+    let sent = null, signed = null, charlieSystem = '';
+    const onPage = async pg => {
+      await pg.waitForURL(/\/apply-frame$/, { timeout: 60000 }).catch(() => {});
+      if (!/\/apply-frame$/.test(pg.url())) return;
+      for (let i = 0; i < 300 && !signed; i++) { try { const f = pg.frames().find(x => /apply-inner/.test(x.url())); signed = f ? await f.evaluate(() => window.signed || null) : null; } catch { break; } if (!signed) await new Promise(r => setTimeout(r, 200)); }
+    };
+    ctx.on('page', pg => { onPage(pg).catch(() => {}); });
     const capture = (async () => {
       const pg = await ctx.waitForEvent('page', { timeout: 60000 }).catch(() => null);
       if (!pg) return;
@@ -741,6 +764,15 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
     const acmeEvents = (acmeTrace?.steps || []).flatMap(s => s.events);
     check('Real Chrome jobs: the pre-approved submit and the cover letter upload asked nothing (the run\'s trace has the note, no approvals), on the fast model', acmeTrace && acmeEvents.some(e => e.kind === 'note' && /Submitting without asking/.test(e.text)) && !acmeEvents.some(e => e.kind === 'approve' || e.kind === 'ask') && acmeTrace.config.model === 'claude-haiku-5-5' && acmeTrace.steps[0]?.model?.model === 'claude-haiku-5-5', JSON.stringify({ traceId: acme?.traceId, events: acmeEvents, model: acmeTrace?.config?.model }));
     check('Real Chrome jobs: the application was logged', ((await panel.evaluate(() => chrome.storage.local.get('applications'))).applications || []).some(a => a.company === 'Acme' && a.role === 'Software Engineer, New Grad'));
+    const charlie = final.find(j => j.company === 'Charlie');
+    const charlieTrace = charlie?.traceId && (await panel.evaluate(k => chrome.storage.local.get(k), 'trace:' + charlie.traceId))['trace:' + charlie.traceId];
+    const charlieEvents = (charlieTrace?.steps || []).flatMap(s => s.events);
+    const log = (await panel.evaluate(() => chrome.storage.local.get('actionLog'))).actionLog || [];
+    check('Real Chrome jobs (BUGS 3): an approved batch uploads into a form framed from another site and clicks "Sign and submit" without asking', charlie?.status === 'applied' && signed?.name === 'Ulugbek Rivera' && signed?.file === 'resume.pdf' && !charlieEvents.some(e => e.kind === 'approve' || e.kind === 'ask'), JSON.stringify({ status: charlie?.status, note: charlie?.note, signed, events: charlieEvents }));
+    check('Real Chrome jobs: the action log has the upload on the framed site and the submit, each with its agent number', log.some(e => e.kind === 'upload' && e.site === 'public.test' && e.worker > 0) && log.some(e => e.kind === 'submit' && /Sign and submit/.test(e.what) && e.worker > 0 && e.jobId === 'greenhouse:charlie:3'), JSON.stringify(log.slice(0, 6)));
+    check('Real Chrome jobs (BUGS 4): the applying agent is told what was applied to and what is queued', /Their job search right now/.test(charlieSystem) && /applied to in the last 30 days: Acme/.test(charlieSystem), charlieSystem.slice(-600));
+    const workers = (await panel.evaluate(() => chrome.storage.local.get('orchestrator'))).orchestrator?.workers || [];
+    check('Real Chrome jobs: each application ran as a numbered worker on the fast model, with its final state', workers.length >= 3 && workers.some(w => /Charlie/.test(w.title) && w.status === 'done' && w.n > 0 && w.model === 'claude-haiku-5-5'), JSON.stringify(workers.map(w => [w.n, w.title, w.status, w.model])));
     check('Real Chrome jobs: a sign-in sets the job aside as "needs you" with the question, after waiting; nothing typed into the password field', bravo?.status === 'needs_you' && /Waiting for you: This application needs you to sign in first/.test(bravo.note || ''), JSON.stringify({ status: bravo?.status, note: bravo?.note }));
     const loginTab = (await panel.evaluate(() => chrome.tabs.query({}))).find(t => t.url === `${BASE}/apply-login`);
     check('Real Chrome jobs: the sign-in tab stays open for you', !!loginTab);

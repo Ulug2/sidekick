@@ -5,6 +5,12 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   { ignores: ["dist/", ".test-build/", "node_modules/", "public/", "tests/", "scripts/", "src/content/"] },
   ...tseslint.configs.recommended,
+  // Model IDs live in core/llm/models.ts (and prices.ts, which prices them); nowhere else.
+  {
+    files: ["src/**/*.ts"],
+    ignores: ["src/core/llm/models.ts", "src/core/llm/prices.ts"],
+    rules: { "no-restricted-syntax": ["error", { selector: "Literal[value=/^(claude-|gpt-)[a-z0-9.-]+$/]", message: "Model IDs belong in src/core/llm/models.ts (roles) and prices.ts." }] }
+  },
   {
     files: ["src/**/*.ts"],
     rules: {

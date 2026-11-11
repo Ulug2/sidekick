@@ -5,7 +5,10 @@ import { logApplication, type Profile } from "../../assistant/profile-core.js";
 import { factsFromAnswer } from "../../assistant/session.js";
 import { addMemory } from "../../assistant/memory/memory.js";
 import { describeSafe, describeCall, quote } from "./describe.js";
-import { RISKY_WORDS, siteBlocked, gateShare, inPlan, NEVER_AUTO, gateVisit, CAPTCHA_RE } from "../safety/gates.js";
+import { RISKY_WORDS, siteBlocked, gateShare, gateVisit, CAPTCHA_RE, policyContext, inPlan } from "../safety/gates.js";
+import { decide } from "../../orchestrator/policy.js";
+import { logAction } from "../../orchestrator/log.js";
+import { buildWorld, worldQuery } from "../../orchestrator/world.js";
 import { sleep, waitForTab, hostOf, pageScript } from "../page-calls.js";
 import { snapshotTab, groupRepeats } from "../perception/format.js";
 import { trustedInput, actInPage, viaTrusted, disarmLeavePrompt } from "./input.js";
@@ -124,9 +127,11 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
         if (CAPTCHA_RE.test(`${el.label} ${el.section} ${a.description || ""}`)) return fail("That's a CAPTCHA or a 'verify you are human' check. Sidekick never tries to pass those. Use ask_user so the user does it, then continue.");
         if (everyClick || a.final_action || RISKY_WORDS.test(el.label) || RISKY_WORDS.test(a.description || "")) {
           const site = siteOf(el.host ? "https://" + el.host : (await chrome.tabs.get(state.tabId)).url || "");
-          const preApproved = !everyClick && state.planApproval?.autoSubmit && inPlan(state, site) && !NEVER_AUTO.test(`${el.label} ${a.description || ""}`);
-          if (preApproved) ui.note(`Submitting without asking, as you approved in the plan: ${a.description || el.label}`);
+          const d = decide({ kind: "final-click", site, label: el.label, description: a.description }, await policyContext(state));
+          if (d.verdict === "refuse") return fail(d.reason);
+          if (d.verdict === "run") ui.note(d.note || `Submitting without asking: ${a.description || el.label}`);
           else if (!(await askApproval(`Click ${quote(el.label)} on ${el.host || "this page"}`, a.description || ""))) return declined();
+          if (a.final_action || RISKY_WORDS.test(el.label)) logAction({ worker: state.task?.n, kind: "submit", what: `Clicked “${el.label}” on ${site}`, why: a.description || "", site, jobId: state.task?.jobId, ...(d.verdict === "run" && { why: `${a.description || ""} (pre-approved)` }) }).catch(() => {});
         }
         const input = el.frameId === 0 ? await trustedInput(state) : null;
         if (input) {
@@ -193,7 +198,14 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
           const info = await actInPage(state, { op: "enter_check", id: a.id });
           // A real Enter submits forms, so it counts as a final action in bigger forms.
           if (a.key === "Enter" && info.ok && info.formFields! > 2 && !info.inTextarea) {
-            if (!(await askApproval("Press Enter, which will submit this form", ""))) return declined();
+            const tabNow = await chrome.tabs.get(state.tabId);
+            const site = siteOf(tabNow.url || "");
+            const buttons = Object.values(state.elements).filter(e => /button|submit/.test(e.role)).map(e => e.label).slice(0, 40).join(" ");
+            const d = decide({ kind: "enter-submit", site, context: `${tabNow.title || ""} ${tabNow.url || ""} ${buttons}` }, await policyContext(state));
+            if (d.verdict === "refuse") return fail(d.reason);
+            if (d.verdict === "run") ui.note(d.note || "Pressing Enter to submit, as you approved");
+            else if (!(await askApproval("Press Enter, which will submit this form", ""))) return declined();
+            logAction({ worker: state.task?.n, kind: "submit", what: `Pressed Enter to submit a form on ${site}`, why: d.verdict === "run" ? "pre-approved" : "approved", site, jobId: state.task?.jobId }).catch(() => {});
           }
           if (await viaTrusted(state, () => input.key(a.key))) {
             state.lastActionAt = Date.now();
@@ -279,9 +291,14 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
         // Read-only tools run without asking, unless the arguments carry your personal details:
         // sending your email or phone to a site is never automatic.
         const personal = personalDetailsIn(JSON.stringify(args), profile);
-        if (!t.readOnly || everyClick || personal.length) {
-          const detail = Object.entries(args).map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join("\n").slice(0, 600);
-          if (!(await askApproval(`Use ${host}'s “${t.name}” tool${t.autosubmit ? " (submits the form)" : ""}${personal.length ? ` (sends your ${personal.join(", ")})` : ""}`, detail))) return declined();
+        {
+          const d = decide({ kind: "site-tool", site: siteOf(tab.url || ""), name: t.name, description: t.description || "", readOnly: !!t.readOnly, autosubmit: !!t.autosubmit, personal: personal.length > 0 }, await policyContext(state));
+          if (d.verdict === "refuse") return fail(d.reason);
+          if (d.verdict === "ask" || (everyClick && !t.readOnly)) {
+            const detail = Object.entries(args).map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join("\n").slice(0, 600);
+            if (!(await askApproval(`Use ${host}'s “${t.name}” tool${t.autosubmit ? " (submits the form)" : ""}${personal.length ? ` (sends your ${personal.join(", ")})` : ""}`, detail))) return declined();
+          }
+          if (!t.readOnly) logAction({ worker: state.task?.n, kind: "site_tool", what: `Used ${host}'s “${t.name}” tool${t.autosubmit ? " (submitted)" : ""}`, site: siteOf(tab.url || ""), jobId: state.task?.jobId }).catch(() => {});
         }
         if (t.source === "form") {
           const r = await actInPage(state, { op: "fill_form_tool", id: t.form, values: args, submit: !!t.autosubmit });
@@ -313,10 +330,13 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
           state.uploadOk ||= new Set();
           // A learned shortcut with an upload step means you already approved it on this site.
           const known = (await adaptersFor(where)).some(x => x.steps.some(st => st.tool === "upload_file"));
-          if (!state.uploadOk.has(site) && !known && !inPlan(state, site)) {
-            if (!(await askApproval(`Attach your ${extra ? "cover letter" : "resume"} (${fileName}) on ${site}?`, "Sidekick asks the first time it sends your files to a site."))) return declined();
+          if (!state.uploadOk.has(site) && !known) {
+            const d = decide({ kind: "upload", site, file: extra ? "cover letter" : "resume" }, await policyContext(state));
+            if (d.verdict === "refuse") return fail(d.reason);
+            if (d.verdict === "ask" && !(await askApproval(`Attach your ${extra ? "cover letter" : "resume"} (${fileName}) on ${site}?`, "Sidekick asks the first time it sends your files to a site."))) return declined();
           }
           state.uploadOk.add(site);
+          logAction({ worker: state.task?.n, kind: "upload", what: `Attached ${fileName} on ${site}`, site, jobId: state.task?.jobId }).catch(() => {});
         }
         const file = extra ? extra : (() => { const [, type, base64] = profile.resume!.dataUrl.match(/^data:([^;]*);base64,(.*)$/s)!; return { name: profile.resume!.name, type: type || profile.resume!.type, base64 }; })();
         const r = await actInPage(state, { op: "upload_file", id: a.id, file });
@@ -490,6 +510,11 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
         await logApplication({ company: a.company, role: a.role, status: a.status || "submitted", notes: a.notes || "", url: tab.url });
         step.done(true);
         return { text: "Logged." };
+      }
+      case "world_query": {
+        step.done(true);
+        // Company names and titles come from job boards: fenced like any outside text.
+        return { text: untrusted("Sidekick's job records (names and titles from job boards)", worldQuery(await buildWorld(), String(a.question || ""))) };
       }
       case "done": {
         // Values typed after reading them off a screenshot (a graph, a chart, a scanned table) get

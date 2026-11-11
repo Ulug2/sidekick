@@ -15,6 +15,7 @@ import { addAgentRun, agentRun, runAgentCard, agentHistory, INTERRUPTED } from "
 import { checkBenchPending } from "./bench-run.js";
 import { checkJobBatch } from "./jobs-run.js";
 import type { AgentFile } from "../../agent/types.js";
+import type { WorkerTask } from "../../orchestrator/types.js";
 import { renderMarkdown, renderReview } from "./markdown.js";
 import { notifyIds, clearNotice } from "./notify.js";
 import { $ } from "../shared/dom.js";
@@ -598,7 +599,7 @@ export async function runAction(action: any) {
 }
 
 // opts.maxCost: dollar limit for the run; opts.tabId: the tab to work in (benchmark). Returns what runAgentCard returned.
-export async function sendAgent(goal: any, opts: { maxCost?: number; tabId?: number; tier?: "fast" | "smart"; files?: Record<string, AgentFile>; preApproved?: { sites: string[]; autoSubmit: boolean } } = {}) {
+export async function sendAgent(goal: any, opts: { maxCost?: number; tabId?: number; tier?: "fast" | "smart"; files?: Record<string, AgentFile>; preApproved?: { sites: string[]; autoSubmit: boolean }; task?: WorkerTask } = {}) {
   if (busy) return;
   if (listening) stopDictation();
   const atts = attachments;
@@ -627,7 +628,7 @@ export async function sendAgent(goal: any, opts: { maxCost?: number; tabId?: num
   controller = new AbortController();
   setBusy(true);
   const userMessages = chat.messages.slice(0, -2).filter(m => (m as any).role === "user").slice(-6).map(m => (m as any).display?.prompt ?? (m as any).text ?? "");
-  const result = await runAgentCard(fullGoal, undefined, { history, progress, userMessages, maxCost: opts.maxCost, tabId: opts.tabId, tier: opts.tier, files: opts.files, preApproved: opts.preApproved });
+  const result = await runAgentCard(fullGoal, undefined, { history, progress, userMessages, maxCost: opts.maxCost, tabId: opts.tabId, tier: opts.tier, files: opts.files, preApproved: opts.preApproved, task: opts.task });
   const { summary, steps, state, plan, traceId } = result;
   clearTimeout(saveTimer);
   controller = null;

@@ -208,6 +208,11 @@ export const AGENT_TOOLS: ToolDef[] = [
     }
   },
   {
+    name: "world_query",
+    description: "Ask Sidekick's own records (not the web): which companies the user applied to and when, what's in today's batch, what's waiting for them, assignments due, spend. Use it before applying somewhere that might already be done, or when the task mentions earlier applications.",
+    parameters: { type: "object", properties: { question: { type: "string", description: "e.g. \"Did I apply to Stripe?\" or \"what's in today's batch\"" } }, required: ["question"] }
+  },
+  {
     name: "done",
     description: "Finish the task and report to the user.",
     parameters: {

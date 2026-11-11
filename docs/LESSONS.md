@@ -119,6 +119,12 @@ General rules that came out of these: design for the long version of a task; eve
 - **Rule:** when a run's output can contradict a filter (a letter about eligibility, an answer about authorization), the filter is wrong or missing: fix the code rule, and forbid the output in code too.
 - **Tests:** unit jobs (US person sentences, the letter check, judgeRun skipped), reading 5 (placeholder in the snapshot).
 
+### 18. Centralizing the approval gates quietly loosened four of them (caught in review, 2026-11-11)
+- **What happened:** moving every gate into `orchestrator/policy.ts` (Phase 2) made "approved batch" mean "approved" (BUGS 3), but the first version also let a batch run any non-read-only site tool, press Enter on any covered form, treat *any* frame on an approved page as covered (ads, payment widgets), drop bare "Remove" from the never-automatic words, skip the visit check in read-only tasks, and let unpriced models spend around the cap. A reviewer agent that hadn't written the code found all of it; the tests passed because they only checked the new permissions, not the old refusals.
+- **Fix:** site tools ask unless they are the application form's own submit (and never for pay/delete names); Enter-submit checks the page for checkout/payment words; frame coverage only for known application systems (`ATS_SITES`); `NEVER_AUTO` has "remove" again and catches `pay_*`-style tool names; read-only visits get the safety check; unpriced usage counts at the highest known price.
+- **Rule:** when a change widens what runs without asking, write the refusal tests first (every case that asked before and must still ask), then the new permissions.
+- **Tests:** unit orchestrator (policy matrix incl. the refusals), real-chrome 17 (framed Greenhouse-style form submits without asking).
+
 ## Earlier lessons (v0.7–v0.9)
 - **A double-check must not overrule a right answer without evidence** (v0.7.2 pipeline problem). Replacements need a code check (objective or residuals) under both setups.
 - **Examples in prompts anchor the model.** Use neutral numbers, never the real answer.

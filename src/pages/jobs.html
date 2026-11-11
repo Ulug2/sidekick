@@ -34,7 +34,8 @@
 
     <section class="controls">
       <label>Applications per day <input type="number" id="dailyCap" min="1" max="50" step="1"></label>
-      <label>Monthly API limit <span class="dollar">$<input type="number" id="monthlyCap" min="1" max="200" step="1"></span></label>
+      <label>API limit per day <span class="dollar">$<input type="number" id="capDaily" min="0" max="50" step="0.5"></span></label>
+      <label>per month <span class="dollar">$<input type="number" id="capMonthly" min="0" max="500" step="1"></span></label>
       <label class="check"><input type="checkbox" id="internships"> Include internships</label>
       <span class="spacer"></span>
       <button type="button" id="sponsors">Update sponsor lists</button>
@@ -50,6 +51,7 @@
       <button type="button" role="tab" data-tab="needs">Needs you <span class="n"></span></button>
       <button type="button" role="tab" data-tab="filtered">Filtered out <span class="n"></span></button>
       <button type="button" role="tab" data-tab="companies">Companies <span class="n"></span></button>
+      <button type="button" role="tab" data-tab="activity">Activity <span class="n"></span></button>
     </nav>
     <div class="filters" id="filters">
       <input type="search" id="search" placeholder="Search company, title, place…" spellcheck="false">
@@ -65,6 +67,7 @@
       </form>
       <ol id="companies" class="companies"></ol>
     </section>
+    <ol id="activity" class="companies" hidden></ol>
   </main>
   <script type="module" src="../ui/jobs/jobs.js"></script>
 </body>

@@ -1,3 +1,4 @@
+import { assertUnderCap } from "./budget.js";
 // One model call for Claude and OpenAI: streaming, tool use, a watchdog for silent connections
 // (90 s → retry once), and usage tracking. Persona, routing and tools live in src/assistant.
 import type { ModelCallOptions, ModelResult, StreamResult, StreamArgs, ModelMessage, Tier, ToolDef } from "./types.js";
@@ -19,6 +20,8 @@ export async function modelCall({ tier = "fast", model, effort, system, messages
   const s = await getSettings();
   if (!s.anthropicKey && !s.openaiKey) throw new Error("Add an API key in Settings (Anthropic or OpenAI).");
   const provider = effectiveProvider(s);
+  // The spend cap (docs/COSTS.md): over it, nothing is sent; workers stop at a safe point.
+  await assertUnderCap({ daily: Number(s.capDaily) || 0, monthly: Number(s.capMonthly) || 0 });
   model ||= modelFor(s, tier);
   effort ||= tier === "fast" ? s.fastEffort : s.smartEffort;
   maxTokens ||= tier === "fast" ? 8000 : 32000;

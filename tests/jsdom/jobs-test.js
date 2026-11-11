@@ -61,7 +61,7 @@ const until = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now(
   const { doc, local, session, calls } = p;
   check('Shows the seed companies and that the sponsor lists aren\'t downloaded yet', /SPONSOR LISTS not downloaded/.test(p.text('#sysline')) && /COMPANIES \d{2,}/.test(p.text('#sysline')) && (await local.get('jobCompanies')).jobCompanies.length > 60, p.text('#sysline'));
   check('Empty list says what to do first', /Download the sponsor lists first/.test(p.text('#empty')));
-  check('Settings default to 20 a day and $25 a month', doc.querySelector('#dailyCap').value === '20' && doc.querySelector('#monthlyCap').value === '25');
+  check('Settings default to 20 a day, spend caps $1 a day and $25 a month', doc.querySelector('#dailyCap').value === '20' && doc.querySelector('#capDaily').value === '1' && doc.querySelector('#capMonthly').value === '25');
 
   // ---------- 2. sponsor lists ----------
   click(doc, '#sponsors');
@@ -162,7 +162,7 @@ const until = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now(
   // ---------- 7. the monthly limit ----------
   await local.set({ usage: { [new Date().toLocaleDateString('en-CA')]: { 'claude-sonnet-5-5': { calls: 1, input: 20000000, output: 0, cacheRead: 0, cacheWrite: 0 } } } });
   await until(() => !doc.querySelector('#warning').hidden, 1500);
-  check('Over the monthly API limit: a warning, and the batch won\'t start', !doc.querySelector('#warning').hidden && /reached your limit of \$25/.test(p.text('#warning')), p.text('#warning') + ' | ' + p.text('#sysline') + ' | hidden=' + doc.querySelector('#warning').hidden);
+  check('Over the monthly API limit: a warning, and the batch won\'t start', !doc.querySelector('#warning').hidden && /monthly spend cap \(\$25\.00\) is reached/.test(p.text('#warning')), p.text('#warning') + ' | ' + p.text('#sysline') + ' | hidden=' + doc.querySelector('#warning').hidden);
 
   console.log(results.join('\n'));
   const passed = results.filter(r => r.startsWith('PASS')).length;

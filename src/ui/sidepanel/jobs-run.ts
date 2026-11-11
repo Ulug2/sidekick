@@ -9,9 +9,10 @@ import { addError, showToast } from "./messages.js";
 import { loadTrace } from "../../agent/trace/store.js";
 import { getProfile } from "../../assistant/profile-core.js";
 import { readLocal } from "../../core/storage/schema.js";
-import { siteOf } from "../../core/security/sites.js";
 import { sleepMs } from "../../core/browser/screen.js";
-import { monthSpend } from "../../bench/results.js";
+import { currentSpend, overCap } from "../../core/llm/budget.js";
+import { getSettings } from "../../core/llm/settings.js";
+import { approvedSitesFor, newTask } from "../../orchestrator/workers.js";
 import { DEFAULT_JOB_SETTINGS, getJobs, jobStats, setJobStatus } from "../../jobs/store.js";
 import { letterFileName, writeCoverLetter } from "../../jobs/cover.js";
 import { judgeRun } from "../../jobs/batch.js";
@@ -52,10 +53,10 @@ async function takeBatch(): Promise<boolean> {
 const stopRequested = async () => !!(await chrome.storage.session.get("jobBatchStop")).jobBatchStop;
 
 async function cap(): Promise<string> {
-  const [{ usage = {} }, { jobSettings }] = await Promise.all([readLocal("usage"), readLocal("jobSettings")]);
+  const [{ jobSettings }, settings] = await Promise.all([readLocal("jobSettings"), getSettings()]);
   const s = { ...DEFAULT_JOB_SETTINGS, ...(jobSettings || {}) };
-  const spend = monthSpend(usage);
-  if (spend.cost >= s.monthlyCap) return `this month's API spend ($${spend.cost.toFixed(2)}) reached your $${s.monthlyCap} limit`;
+  const over = overCap(await currentSpend(), { daily: Number(settings.capDaily) || 0, monthly: Number(settings.capMonthly) || 0 });
+  if (over) return over.message;
   if (jobStats(await getJobs()).appliedToday >= s.dailyCap) return `today's ${s.dailyCap} applications are done`;
   return "";
 }
@@ -101,9 +102,11 @@ export async function checkJobBatch(): Promise<void> {
       setAgentMode(true);
       const goal = `Apply for this job using my profile: ${job.title} at ${job.company} (${job.location}). The application form is on this page (open it if there's an "Apply" button). I've already approved submitting this one, so submit it when every required field is filled.
 First read the posting: if it requires US citizenship, permanent residency, a security clearance or "U.S. person" status, or says it can't sponsor a visa, don't apply: call done and say which sentence rules it out.${letter ? `\n\nCover letter (use it exactly). Put it in the cover letter field: a text box, or upload_file with file "cover_letter" where only a file is accepted. If there's no field called cover letter, use the "Additional information", "Anything else you'd like us to know", "Message" or "Notes" box (their placeholder or hint often says a cover letter can go there). Only skip it if the form has none of these.\n\n${letter}` : ""}`;
+      // One numbered worker per application: the approved batch pre-approves this job's own sites.
+      const task = await newTask({ kind: "apply", title: `Apply: ${job.title} at ${job.company}`, goal, policy: "approved-batch", approvedSites: approvedSitesFor([job.applyUrl, job.url]), files, jobId: job.id, tabId: tab.id!, maxCost: MAX_COST_PER_APPLICATION });
       const controller = new AbortController();
       watchForStall(controller.signal);
-      const r = await sendAgent(goal, { tabId: tab.id!, maxCost: MAX_COST_PER_APPLICATION, tier: "fast", files, preApproved: { sites: [...new Set([siteOf(job.applyUrl), siteOf(job.url)])], autoSubmit: true } });
+      const r = await sendAgent(goal, { tabId: tab.id!, maxCost: MAX_COST_PER_APPLICATION, task });
       controller.abort();
       const verdict = judgeRun(r?.traceId ? await loadTrace(r.traceId) : null);
       await setJobStatus(job.id, verdict.status, { note: verdict.note, ...(r?.traceId && { traceId: r.traceId }) });
