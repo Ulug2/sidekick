@@ -183,6 +183,23 @@ General rules that came out of these: design for the long version of a task; eve
   - Recording work for display must never be able to fail the work.
   - Tests: powerhouse (20), unit phase6 (14), real-chrome 9b and 17 (Pause obeyed).
 
+### 23. The 3D Powerhouse's first draft (caught by screenshots and a review agent, 2026-11-11)
+- **What.**
+  - Every frame's pose reset zeroed each alien's own position and rotation. Sidekick sank into the die, and every worker faced the same way.
+  - The arms were too short to reach the pipe.
+  - Crossed arms under big eyes read as a skull and crossbones from afar.
+  - The bloom composer drew without antialiasing, and the shadow map left stripes.
+  - Removed workers never freed their GPU memory.
+  - A GPU that reports WebGL but fails would have left the whole page, list included, empty.
+  - The demo's drawer buttons wrote to real storage.
+- **Rule.**
+  - An animated model's placement lives on a parent group; the pose code owns only the model's own transforms.
+  - Geometry that must touch (hands on a bar) is computed from shared numbers and unit-tested.
+  - Look at real screenshots of every state and close-up before review.
+  - A demo mode must not reach storage.
+  - Any optional renderer falls back to the plain page.
+  - Tests: unit phase6 (grip, layout, zoom levels), powerhouse jsdom (no-WebGL path), real-chrome 9b (WebGL, zoom, fly-to, focus).
+
 ## Earlier lessons (v0.7–v0.9)
 - **A double-check must not overrule a right answer without evidence** (v0.7.2 pipeline problem). Replacements need a code check (objective or residuals) under both setups.
 - **Examples in prompts anchor the model.** Use neutral numbers, never the real answer.

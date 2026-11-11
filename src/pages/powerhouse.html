@@ -20,90 +20,15 @@
   </header>
 
   <main id="powerhouseApp">
+    <div class="ph-demo" id="demoBar" role="group" aria-label="Demo state" hidden></div>
     <div class="stage" id="stage">
-      <svg viewBox="0 0 1600 900" aria-hidden="true" focusable="false" id="scene">
-        <defs>
-          <pattern id="die" width="40" height="40" patternUnits="userSpaceOnUse">
-            <rect width="40" height="40" fill="var(--die)"/>
-            <path d="M40 0H0V40" fill="none" stroke="var(--die-line)" stroke-width="1.5"/>
-          </pattern>
-          <!-- the upper body, hips at 0,0: torso, neck, oval head, two large eyes -->
-          <g id="upper">
-            <line class="limb-o" x1="0" y1="-52" x2="0" y2="-62"/>
-            <rect class="skin" x="-14" y="-56" width="28" height="58" rx="13"/>
-            <path class="skin" d="M0 -122 C31 -122 34 -82 19 -66 C11 -56 -11 -56 -19 -66 C-34 -82 -31 -122 0 -122Z"/>
-            <g class="eyes">
-              <ellipse class="eye" cx="-11" cy="-88" rx="7" ry="12" transform="rotate(-28 -11 -88)"/>
-              <ellipse class="eye" cx="11" cy="-88" rx="7" ry="12" transform="rotate(28 11 -88)"/>
-            </g>
-          </g>
-          <g id="legs"><path class="limb-o" d="M-7 -50 L-9 0 M7 -50 L9 0"/><path class="limb" d="M-7 -50 L-9 0 M7 -50 L9 0"/></g>
-          <g id="p-idle"><use href="#legs"/><use href="#upper" y="-50"/>
-            <path class="limb-o" d="M-13 -92 Q0 -74 14 -88 M13 -92 Q0 -80 -14 -86"/><path class="limb" d="M-13 -92 Q0 -74 14 -88 M13 -92 Q0 -80 -14 -86"/></g>
-          <g id="p-point"><use href="#legs"/><use href="#upper" y="-50"/>
-            <ellipse cx="0" cy="-114" rx="5" ry="4" fill="var(--eye)"/>
-            <path class="limb-o" d="M12 -96 L22 -60 M-12 -96 L-62 -126"/><path class="limb" d="M12 -96 L22 -60 M-12 -96 L-62 -126"/></g>
-          <g id="p-push"><g class="pushup-body"><use href="#legs"/><use href="#upper" y="-50"/>
-            <path class="limb-o" d="M0 -92 L36 -76"/><path class="limb" d="M0 -92 L36 -76"/></g></g>
-          <g id="p-pull">
-            <g class="pull-arms"><path class="limb-o" d="M-30 -230 L-13 -142 M30 -230 L13 -142"/><path class="limb" d="M-30 -230 L-13 -142 M30 -230 L13 -142"/></g>
-            <g class="pull-body"><use href="#legs" y="-36"/><use href="#upper" y="-86"/></g></g>
-          <g id="p-situp"><path class="limb-o" d="M0 -8 L34 -44 L66 0"/><path class="limb" d="M0 -8 L34 -44 L66 0"/>
-            <g transform="translate(0 -8)"><g class="situp-upper"><use href="#upper"/>
-              <path class="limb-o" d="M-6 -40 L14 -66"/><path class="limb" d="M-6 -40 L14 -66"/></g></g></g>
-          <g id="p-sit"><path class="limb-o" d="M0 0 L36 0 L38 60"/><path class="limb" d="M0 0 L36 0 L38 60"/><use href="#upper"/>
-            <path class="limb-o" d="M8 -40 L30 -8"/><path class="limb" d="M8 -40 L30 -8"/></g>
-          <g id="p-raise"><path class="limb-o" d="M0 0 L36 0 L38 60"/><path class="limb" d="M0 0 L36 0 L38 60"/><use href="#upper"/>
-            <g class="hand-wave"><path class="limb-o" d="M12 -46 L48 -116"/><path class="limb" d="M12 -46 L48 -116"/></g></g>
-          <g id="p-slump"><path class="limb-o" d="M0 0 L62 4 M0 0 L56 -6"/><path class="limb" d="M0 0 L62 4 M0 0 L56 -6"/>
-            <g transform="rotate(-16)"><use href="#upper"/></g>
-            <path class="limb-o" d="M-6 -36 L-4 0"/><path class="limb" d="M-6 -36 L-4 0"/></g>
-          <g id="p-floor"><path class="limb-o" d="M0 0 L30 -34 L52 0"/><path class="limb" d="M0 0 L30 -34 L52 0"/><use href="#upper"/>
-            <path class="limb-o" d="M6 -40 L30 -32"/><path class="limb" d="M6 -40 L30 -32"/></g>
-        </defs>
-
-        <!-- the room -->
-        <rect width="1600" height="900" fill="var(--board)"/>
-        <rect width="1600" height="150" fill="url(#die)"/>
-        <rect y="150" width="1600" height="6" fill="var(--die-line)"/>
-        <g stroke="var(--trace)" stroke-opacity="var(--trace-op)" stroke-width="4" fill="none" stroke-linecap="round">
-          <path d="M0 790 H420 L470 740 H1130 L1180 790 H1600"/><path d="M0 840 H300 L340 800 H700 L740 840 H1600"/>
-          <path d="M120 156 V300 L170 350 V540 M1530 156 V280 L1580 330 V540"/><path d="M600 156 V220 L640 260 H960 L1000 220 V156"/><path d="M0 880 H1600"/>
-        </g>
-        <g fill="var(--trace)" fill-opacity="var(--via-op)">
-          <circle cx="420" cy="790" r="7"/><circle cx="1180" cy="790" r="7"/><circle cx="340" cy="800" r="7"/><circle cx="740" cy="840" r="7"/>
-          <circle cx="170" cy="540" r="7"/><circle cx="1580" cy="540" r="7"/><circle cx="640" cy="260" r="7"/><circle cx="960" cy="260" r="7"/>
-        </g>
-        <rect y="760" width="1600" height="3" fill="var(--die-line)"/>
-        <!-- left rack: the pull-up bar (applying) -->
-        <g fill="var(--rack)"><rect x="140" y="548" width="44" height="212" rx="4"/><rect x="560" y="548" width="44" height="212" rx="4"/></g>
-        <g fill="var(--rack-dark)">
-          <rect x="132" y="600" width="60" height="8"/><rect x="132" y="628" width="60" height="8"/><rect x="132" y="656" width="60" height="8"/><rect x="132" y="684" width="60" height="8"/><rect x="132" y="712" width="60" height="8"/><rect x="132" y="740" width="60" height="8"/>
-          <rect x="552" y="600" width="60" height="8"/><rect x="552" y="628" width="60" height="8"/><rect x="552" y="656" width="60" height="8"/><rect x="552" y="684" width="60" height="8"/><rect x="552" y="712" width="60" height="8"/><rect x="552" y="740" width="60" height="8"/>
-        </g>
-        <rect x="150" y="569" width="444" height="14" rx="7" fill="var(--rack-dark)"/>
-        <!-- the mat (reading, writing) -->
-        <rect x="820" y="748" width="410" height="14" rx="7" fill="var(--mat)"/>
-        <!-- right rack: the bench -->
-        <rect x="1240" y="668" width="320" height="22" rx="8" fill="var(--rack)"/>
-        <g fill="var(--rack-dark)"><rect x="1262" y="690" width="16" height="70"/><rect x="1522" y="690" width="16" height="70"/>
-          <rect x="1300" y="690" width="6" height="40"/><rect x="1330" y="690" width="6" height="40"/><rect x="1360" y="690" width="6" height="40"/><rect x="1390" y="690" width="6" height="40"/><rect x="1420" y="690" width="6" height="40"/><rect x="1450" y="690" width="6" height="40"/><rect x="1480" y="690" width="6" height="40"/></g>
-        <g class="zone-label" font-size="24" font-weight="600" text-anchor="middle">
-          <text x="372" y="804">APPLYING</text><text x="1025" y="804">READING · WRITING</text><text x="1400" y="804">BENCH</text>
-        </g>
-
-        <path id="wire" class="wire" d="" hidden/>
-        <g id="figures"></g>
-        <g id="coach" class="sk" transform="translate(800 760)">
-          <g class="coach-pose" data-coach="idle"><use href="#p-idle"/></g>
-          <g class="coach-pose" data-coach="thinking" transform="translate(-110 0)"><use href="#p-push"/></g>
-          <g class="coach-pose" data-coach="shouting"><g id="coachPoint"><use href="#p-point"/></g></g>
-          <g class="coach-pose" data-coach="paused"><use href="#p-floor"/>
-            <g id="coachTagG" transform="translate(-95 -205)"><rect id="coachTagBox" x="0" y="-22" width="190" height="34" rx="17" class="tag-box"/><text id="coachTag" x="95" y="2" text-anchor="middle" font-size="18" font-weight="600" class="tag-warn"></text></g></g>
-        </g>
-        <g id="moreChip" hidden><rect x="1360" y="176" width="210" height="44" rx="22" class="tag-box"/><text id="moreText" x="1465" y="205" text-anchor="middle" font-size="22" font-weight="600" class="tag-text"></text></g>
-      </svg>
-      <div class="bubble" id="bubble" hidden></div>
+      <div class="ph-overlay" id="overlay" aria-hidden="true"></div>
+      <div class="ph-zoom" role="group" aria-label="3D view">
+        <button type="button" id="zoomIn" aria-label="Zoom in">+</button>
+        <button type="button" id="zoomOut" aria-label="Zoom out">−</button>
+        <button type="button" id="zoomReset">Reset view</button>
+      </div>
+      <p class="ph-hint" aria-hidden="true">Drag to turn · scroll or pinch to zoom · click a worker</p>
     </div>
     <p class="ph-thinking small" id="thinking" role="status"></p>
 

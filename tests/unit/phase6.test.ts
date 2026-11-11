@@ -107,3 +107,49 @@ describe("the shout text", () => {
     expect(s).not.toMatch(/sk-ant-api03-A{20}/);
   });
 });
+
+// ---------- the 3D card (gpu-layout.ts): numbers only, no WebGL ----------
+import { SPOTS, ZONE_OF, BOARD, HEATPIPE, BODY, PULL, alienWeight, LOD, clampRadius, clampPolar, clampTarget, CAMERA, orbitPosition, placeFigures, FOCUS_AZIMUTH } from "../../src/ui/powerhouse/gpu-layout.js";
+
+describe("3D card layout", () => {
+  it("every slot of every area has a spot on its part of the card, inside the board", () => {
+    for (const area of Object.keys(SLOTS) as (keyof typeof SLOTS)[]) {
+      const spots = SPOTS[ZONE_OF[area]];
+      expect(spots.length).toBe(SLOTS[area].length);
+      for (const s of spots) { expect(Math.abs(s.x)).toBeLessThanOrEqual(BOARD.w / 2); expect(Math.abs(s.z)).toBeLessThanOrEqual(BOARD.d / 2); }
+    }
+    expect(Object.keys(FOCUS_AZIMUTH).sort()).toEqual(["caps", "heatpipe", "pcie", "sidekick", "vram"]);
+  });
+  it("hanging workers grip the heat pipe: at rest and at the top of the pull-up the hands are on it, and the head clears it", () => {
+    for (const up of [0, 1.6, 3.2]) {
+      const c = ((BODY.reach - PULL.slack) * Math.cos(PULL.forward) - up) / (BODY.reach * Math.cos(PULL.forward));
+      const spread = Math.acos(c);
+      for (const s of SPOTS.heatpipe) {
+        const handY = s.y + up + BODY.hips + BODY.shoulders + BODY.reach * Math.cos(PULL.forward) * Math.cos(spread);
+        const handX = s.x - BODY.reach * Math.sin(PULL.forward); // facing -x: forward is toward the pipe
+        expect(Math.hypot(handY - HEATPIPE.y, handX - HEATPIPE.x)).toBeLessThanOrEqual(HEATPIPE.r + 0.3);
+      }
+    }
+    const headFront = SPOTS.heatpipe[0].x - 1.9; // the head's front (radius 2 · 0.95)
+    expect(headFront).toBeGreaterThan(HEATPIPE.x + HEATPIPE.r - 0.1);
+  });
+  it("placeFigures puts each on-stage figure on its zone's spot for its slot; off-stage ones stay in the list", () => {
+    const s = scene({ workers: [1, 2, 3, 4].map(n => w({ id: `a${n}`, n, startedAt: NOW - 10000 + n })) });
+    const placed = placeFigures(s);
+    expect(placed.map(p => `${p.zone}:${p.spot.z}`)).toEqual(["heatpipe:-22", "heatpipe:0", "heatpipe:22"]);
+  });
+  it("zoom levels: the core far away, the alien close up, a crossfade between", () => {
+    expect(alienWeight(LOD.near - 1)).toBe(1);
+    expect(alienWeight(LOD.far + 1)).toBe(0);
+    expect(alienWeight((LOD.near + LOD.far) / 2)).toBeCloseTo(0.5);
+    expect(alienWeight(CAMERA.home.radius)).toBe(0); // the overview shows cores
+    expect(alienWeight(CAMERA.focus)).toBe(1); // flying to a worker shows the alien
+  });
+  it("the camera stays in range and over the board", () => {
+    expect(clampRadius(1)).toBe(CAMERA.min); expect(clampRadius(1e4)).toBe(CAMERA.max);
+    expect(clampPolar(0)).toBe(CAMERA.polarMin); expect(clampPolar(3)).toBe(CAMERA.polarMax);
+    expect(clampTarget({ x: 500, y: 90, z: -500 })).toEqual({ x: BOARD.w / 2, y: 30, z: -BOARD.d / 2 });
+    const p = orbitPosition({ radius: 100, polar: Math.PI / 2, azimuth: 0, target: { x: 0, y: 0, z: 0 } });
+    expect(p.y).toBeCloseTo(0); expect(p.z).toBeCloseTo(100);
+  });
+});

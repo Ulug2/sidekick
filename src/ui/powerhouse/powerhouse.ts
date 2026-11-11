@@ -1,7 +1,7 @@
-// The Powerhouse page (docs/DESIGN.md §1): draws deriveScene() over the static room in
-// powerhouse.html. Figures are keyed by worker id (one <g> each, updated in place); the worker list
-// is the accessible path and opens the drawer; Pause/Resume sets orchestrator.paused. Everything a
-// worker title or step contains came from the web: text only, never markup.
+// The Powerhouse page (docs/DESIGN.md §1): deriveScene() drawn by the 3D view (gpu3d.ts, loaded
+// only on this page), plus the worker list (the accessible path), the drawer and Pause/Resume.
+// Everything a worker title or step contains came from the web: text only, never markup.
+// powerhouse.html#demo shows every state from made-up records, in memory only (no storage writes).
 import { $ } from "../shared/dom.js";
 import { meterEl } from "../shared/meter.js";
 import { readLocal } from "../../core/storage/schema.js";
@@ -12,18 +12,19 @@ import { DEFAULT_JOB_SETTINGS } from "../../jobs/store.js";
 import { BATCH_TZ, nextAt } from "../../jobs/daily.js";
 import { setPaused } from "../../orchestrator/workers.js";
 import type { BrainCall } from "../../orchestrator/activity.js";
+import type { WorkerRecord } from "../../orchestrator/types.js";
 import type { Job } from "../../jobs/types.js";
-import { COACH, SCALE, deriveScene, describe, type Figure, type Pose, type Scene } from "./scene.js";
+import { deriveScene, type Scene, type SceneInput } from "./scene.js";
+import { createView, type PowerhouseView } from "./gpu3d.js";
 import { speak } from "./voice.js";
+import { MODEL_IDS } from "../../core/llm/models.js";
 
-const SVG = "http://www.w3.org/2000/svg";
-const svg = (tag: string, attrs: Record<string, string | number> = {}) => { const e = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v)); return e; };
-const BADGE: Record<Pose, [number, number]> = { pull: [0, -268], push: [74, -136], situp: [30, -150], sit: [-34, -150], raise: [-38, -150], slump: [-16, -150] };
-const POSE_DX: Partial<Record<Pose, number>> = { situp: 40 };
+const $$ = (sel: string) => [...document.querySelectorAll<HTMLElement>(sel)];
 const etTime = (t: number) => new Date(t).toLocaleString("en-US", { timeZone: BATCH_TZ, hour: "numeric", minute: "2-digit" }) + " ET";
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 let scene: Scene | null = null;
+let view: PowerhouseView | null = null;
 let jobs: Job[] = [];
 let lastShoutKey = "";
 let drawerFor: string | null = null; // a worker id, or "sk"
@@ -34,11 +35,13 @@ let tick: ReturnType<typeof setTimeout> | undefined;
 let pausedNow = false;
 let spendLine = "";
 const logs = new Map<string, string[]>(); // steps seen while this page is open, per worker
-
-const $$ = (sel: string) => [...document.querySelectorAll<HTMLElement>(sel)];
+const demo = location.hash === "#demo";
 
 // ---------- state ----------
-export async function load(now = Date.now()): Promise<Scene> {
+// Reads everything and derives the scene. The page-wide side effects (meters, the Pause button's
+// state) are returned as apply(), run only if this load is still the newest (refresh()).
+async function load(now = Date.now()): Promise<{ scene: Scene; apply: () => void }> {
+  if (demo) { const scene = demoScene(now); return { scene, apply: () => { pausedNow = demoState === "Paused"; $("#meters").replaceChildren(meterEl("Today", 0.31, 1), meterEl("This month", 6.12, 25)); spendLine = "$0.31 today, $6.12 this month (demo)"; } }; }
   const [{ orchestrator = {} }, { usage, capDaily, capMonthly }, { jobSettings }] = await Promise.all([
     readLocal("orchestrator"), readLocal(["usage", "capDaily", "capMonthly"]), readLocal("jobSettings")
   ]);
@@ -48,93 +51,62 @@ export async function load(now = Date.now()): Promise<Scene> {
   const js = { ...DEFAULT_JOB_SETTINGS, ...(jobSettings || {}) };
   const spend = spendFor(usage, new Date(now));
   const caps = { daily: Number(capDaily ?? DEFAULT_CAPS.daily), monthly: Number(capMonthly ?? DEFAULT_CAPS.monthly) };
-  $("#meters").replaceChildren(meterEl("Today", spend.today, caps.daily), meterEl("This month", spend.month, caps.monthly));
-  spendLine = `${formatCost(spend.today)} today, ${formatCost(spend.month)} this month`;
-  pausedNow = orchestrator.paused === "you";
-  return deriveScene({
+  const apply = () => {
+    $("#meters").replaceChildren(meterEl("Today", spend.today, caps.daily), meterEl("This month", spend.month, caps.monthly));
+    spendLine = `${formatCost(spend.today)} today, ${formatCost(spend.month)} this month`;
+    pausedNow = orchestrator.paused === "you";
+  };
+  const scene = deriveScene({
     now, workers: orchestrator.workers || [], needsYou: orchestrator.needsYou, paused: orchestrator.paused, brainCalls,
     ...(orchestrator.lastShout && { lastShout: orchestrator.lastShout }), spend, caps, dismissed: orchestrator.dismissed,
     batchOn: js.dailyBatch !== false, nextBatchAt: js.dailyBatch !== false ? nextAt(now, js.batchHour) : null, formatTime: etTime
   });
+  return { scene, apply };
+}
+
+// ---------- demo (made-up records, never stored) ----------
+const DEMO_STATES = ["Idle", "Thinking", "Dispatch", "Working", "Needs you", "Failed", "Paused", "Busy day"] as const;
+let demoState: (typeof DEMO_STATES)[number] = "Dispatch";
+let demoAt = Date.now();
+function demoScene(now: number): Scene {
+  const W = (o: Partial<WorkerRecord>): WorkerRecord => ({ id: "d1", n: 1, kind: "apply", title: "Apply: Software Engineer, New Grad at Stripe", model: MODEL_IDS.anthropic.fast, status: "working", step: "Page 2: Education", startedAt: demoAt, updatedAt: now, cost: 0, ...o });
+  const crew = [W({}), W({ id: "d2", n: 2, title: "Apply: Backend Engineer at Ramp", startedAt: demoAt + 1 }), W({ id: "d3", n: 3, kind: "write", title: "Cover letter: Plaid", step: "Writing", startedAt: demoAt + 2 }), W({ id: "d4", n: 4, kind: "read", title: "Read: Datadog careers page", step: "Reading the posting", startedAt: demoAt + 3 })];
+  const input: SceneInput = { now, workers: [], spend: { today: 0.31, month: 6.12, unpriced: [] }, caps: { daily: 1, monthly: 25 }, batchOn: true, nextBatchAt: nextAt(now, 8), formatTime: etTime };
+  switch (demoState) {
+    case "Idle": break;
+    case "Thinking": input.workers = crew.slice(0, 1); input.brainCalls = [{ id: "b", what: "Pick the best 18 to apply to today", startedAt: now }]; break;
+    case "Dispatch": input.workers = crew; input.lastShout = { text: "Agent 1! Apply: Software Engineer, New Grad at Stripe", at: now - 500, workerId: "d1" }; break;
+    case "Working": input.workers = crew; break;
+    case "Needs you": input.workers = [...crew.slice(1), W({ status: "needs_you", step: "Waiting for you" })]; break;
+    case "Failed": input.workers = [...crew.slice(0, 2), W({ id: "d5", n: 5, status: "failed", error: "The form wants an account and a password.", title: "Apply: SRE at Delta" }), W({ id: "d6", n: 6, status: "done", step: "Submitted", title: "Apply: Platform Engineer at Bravo" })]; break;
+    case "Paused": input.workers = crew.slice(0, 2); input.paused = "you"; break;
+    case "Busy day": input.workers = [...crew, ...[5, 6, 7, 8].map(n => W({ id: `d${n}`, n, title: `Apply: Engineer at Company ${n}`, startedAt: demoAt + n })), W({ id: "d9", n: 9, status: "needs_you" }), W({ id: "d10", n: 10, status: "failed", error: "Blocked by a CAPTCHA." })]; break;
+  }
+  return deriveScene(input);
+}
+function demoBar(): void {
+  const bar = $("#demoBar");
+  bar.hidden = false;
+  const label = document.createElement("span"); label.className = "small muted"; label.textContent = "Demo (made-up workers, nothing is stored):";
+  bar.append(label, ...DEMO_STATES.map(s => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "small"; b.textContent = s;
+    b.setAttribute("aria-pressed", String(s === demoState));
+    b.onclick = () => { demoState = s; demoAt = Date.now(); for (const x of bar.querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b)); refresh(); };
+    return b;
+  }));
 }
 
 // ---------- drawing ----------
-function figureEl(f: Figure): SVGGElement {
-  const g = svg("g", { class: "wk", "data-id": f.id }) as SVGGElement;
-  g.style.setProperty("--d", `${-((f.n * 0.37) % 1.2).toFixed(2)}s`); // out of step with each other
-  g.addEventListener("click", () => openDrawer(f.id));
-  return g;
-}
-function drawFigure(g: SVGGElement, f: Figure): void {
-  const key = [f.pose, f.x, f.y, f.tag, f.animate, f.n, f.label].join("|");
-  g.classList.toggle("anim", f.animate);
-  g.classList.toggle("wave", f.pose === "raise");
-  const title = describe(f);
-  if (g.dataset.key === key) { g.querySelector("title")!.textContent = title; return; }
-  g.dataset.key = key;
-  g.setAttribute("transform", `translate(${f.x + (POSE_DX[f.pose] || 0)} ${f.y}) scale(${SCALE})`);
-  const [bx, by] = BADGE[f.pose];
-  const badge = svg("g", { class: "badge", transform: `translate(${bx} ${by})` });
-  const num = svg("text", { y: 7, "text-anchor": "middle", "font-size": 20, "font-weight": 700 }); num.textContent = String(f.n);
-  badge.append(svg("circle", { r: 19 }), num);
-  const parts: Element[] = [svg("title"), svg("use", { href: `#p-${f.pose}` }), badge];
-  parts[0].textContent = title;
-  if (f.tag === "?" || f.tag === "!") {
-    const t = svg("g", { class: f.tag === "?" ? "tag-q" : "tag-err", transform: f.tag === "?" ? "translate(-6 -205)" : "translate(44 -150)" });
-    const tx = svg("text", { y: 9, "text-anchor": "middle", "font-size": 28, "font-weight": 800 }); tx.textContent = f.tag;
-    t.append(svg("rect", { x: -20, y: -22, width: 40, height: 40, rx: 10 }), tx);
-    parts.push(t);
-  } else if (f.tag) {
-    const w = 16 + f.tag.length * 13;
-    const t = svg("g", { class: "tag-word", transform: `translate(${bx} ${by - 40})` });
-    const tx = svg("text", { y: 6, "text-anchor": "middle", "font-size": 18, "font-weight": 600 }); tx.textContent = f.tag;
-    t.append(svg("rect", { x: -w / 2, y: -16, width: w, height: 30, rx: 15 }), tx);
-    parts.push(t);
-  }
-  g.replaceChildren(...parts);
-}
-
 export function render(s: Scene): void {
   scene = s;
   const chip = $("#chip");
   chip.textContent = s.chip.text; chip.dataset.tone = s.chip.tone;
   $("#pause").textContent = pausedNow ? "Resume" : "Pause";
   $("#pause").setAttribute("aria-pressed", String(pausedNow));
-  // Sidekick
-  const coach = $("#coach");
-  coach.dataset.coach = s.coach;
-  $("#coachPoint").setAttribute("transform", s.shout?.facing === "right" ? "scale(-1 1)" : "");
-  $("#coachTag").textContent = s.coachTag || "";
-  $("#coachTagBox").setAttribute("width", String(28 + (s.coachTag || "").length * 10));
-  $("#coachTag").setAttribute("x", String((28 + (s.coachTag || "").length * 10) / 2));
-  $("#coachTagG").setAttribute("transform", `translate(${-(28 + (s.coachTag || "").length * 10) / 2} -205)`);
-  $("#thinking").textContent = s.coach === "thinking" ? `Sidekick is thinking: ${s.thinkingAbout || "a decision"}.` : "";
-  // the shout and its trace
-  const wire = $("#wire"), bubble = $("#bubble");
-  if (s.shout) {
-    const { from, to } = s.shout;
-    wire.setAttribute("d", `M${from.x} ${from.y} V740 H${to.x} V${to.y}`);
-    wire.removeAttribute("hidden"); // SVG elements have no .hidden property
-    bubble.textContent = s.shout.text;
-    bubble.style.left = `${(COACH.x / 1600) * 100}%`;
-    bubble.style.top = `${((COACH.y - 200) / 900) * 100}%`;
-    bubble.hidden = false;
-    const key = s.shout.workerId + s.shout.text;
-    if (lastShoutKey !== key) { lastShoutKey = key; speak(s.shout.text); }
-  } else { wire.setAttribute("hidden", ""); wire.setAttribute("d", ""); bubble.hidden = true; }
-  // figures, keyed by worker id
-  const layer = $("#figures");
-  const keep = new Set<string>();
-  for (const f of s.figures.filter(x => x.onStage)) {
-    keep.add(f.id);
-    let g = ([...layer.children] as SVGGElement[]).find(x => x.dataset.id === f.id) || null;
-    if (!g) { g = figureEl(f); layer.append(g); }
-    drawFigure(g, f);
-  }
-  for (const g of [...layer.children] as SVGGElement[]) if (!keep.has(g.dataset.id!)) g.remove();
-  $("#moreChip").toggleAttribute("hidden", !s.hiddenCount);
-  $("#moreText").textContent = `+${s.hiddenCount} more below`;
-  // step logs
+  $("#thinking").textContent = s.coach === "thinking" ? `Sidekick is thinking: ${s.thinkingAbout || "a decision"}.` : s.hiddenCount ? `${s.hiddenCount} more worker${s.hiddenCount > 1 ? "s" : ""} than there is room for on the card: all are in the list below.` : "";
+  $("#overlay").dataset.coach = s.coach;
+  if (s.shout) { const key = s.shout.workerId + s.shout.text; if (lastShoutKey !== key) { lastShoutKey = key; speak(s.shout.text); } }
+  view?.update(s);
   for (const f of s.figures) {
     const log = logs.get(f.id) || [];
     if (f.step && log.at(-1) !== f.step) { log.push(f.step); logs.set(f.id, log.slice(-60)); }
@@ -144,7 +116,7 @@ export function render(s: Scene): void {
   if (drawerFor) fillDrawer();
   // time alone changes the scene (a shout ends, a worker leaves): one timer, only when needed
   clearTimeout(tick);
-  if (s.nextChange !== null) tick = setTimeout(refresh, Math.min(s.nextChange + 50, 60000));
+  if (s.nextChange !== null && !demo) tick = setTimeout(refresh, Math.min(s.nextChange + 50, 60000));
 }
 
 function renderList(s: Scene): void {
@@ -178,9 +150,9 @@ function renderList(s: Scene): void {
 }
 
 // ---------- the drawer ----------
-async function openDrawer(id: string): Promise<void> {
+async function openDrawer(id: string, from: "list" | "canvas" = "list"): Promise<void> {
   drawerFor = id;
-  openerId = id;
+  openerId = from === "canvas" ? "canvas" : id;
   actionsKey = "";
   const d = $("#drawer");
   d.inert = false;
@@ -190,11 +162,15 @@ async function openDrawer(id: string): Promise<void> {
   $("#closeDrawer").focus();
 }
 function closeDrawer(): void {
+  const lastDrawer = drawerFor;
   const d = $("#drawer");
   d.classList.remove("open");
   d.inert = true;
   drawerFor = null;
-  ($$("#workerList button").find(b => b.dataset.open === openerId) || $("#workerList button"))?.focus?.();
+  const canvas = document.querySelector<HTMLElement>(".ph-canvas");
+  if (openerId === "canvas" && canvas) { canvas.focus({ preventScroll: true }); return; }
+  // without the 3D canvas (no WebGL), a pick from a label returns to that worker's row
+  ($$("#workerList button").find(b => b.dataset.open === (openerId === "canvas" ? lastDrawer : openerId)) || $("#workerList button"))?.focus?.();
 }
 const p = (text: string) => { const e = document.createElement("p"); e.textContent = text; return e; };
 const btn = (label: string, fn: () => void) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.onclick = fn; return b; };
@@ -232,6 +208,7 @@ function fillDrawer(): void {
   if (atBottom) log.scrollTop = log.scrollHeight;
   const acts: HTMLElement[] = [];
   if (f.tabId && f.status === "working") acts.push(btn("Open its tab", async () => { const t = await chrome.tabs.update(f.tabId!, { active: true }).catch(() => null); if (t?.windowId !== undefined) chrome.windows.update(t.windowId, { focused: true }).catch(() => {}); }));
+  if (demo) { setActions("demo", () => [p("Demo: actions are off here; nothing is stored.")]); return; }
   if (f.status === "working" && f.pose === "pull") acts.push(btn("Stop the batch after this job", async () => { await chrome.storage.session.set({ jobBatchStop: true }); $("#drawerMeta").textContent += " · the batch stops after this job"; }));
   if (f.pose === "raise" && f.jobId) acts.push(link("Answer on the Jobs page", "jobs.html"));
   if (f.status === "failed") acts.push(btn("Dismiss", async () => { await updateLocal("orchestrator", (o = {}) => ({ ...o, dismissed: [...(o.dismissed || []), f.id].slice(-100) })); closeDrawer(); }));
@@ -249,21 +226,32 @@ function setActions(key: string, make: () => HTMLElement[]): void {
 // Loads can overlap (a storage change and the timer): only the newest one is drawn.
 export async function refresh(): Promise<void> {
   const seq = ++loadSeq;
-  const s = await load();
-  if (seq === loadSeq) render(s);
+  const r = await load();
+  if (seq !== loadSeq) return; // a newer load has drawn already
+  r.apply();
+  render(r.scene);
 }
 
 if ($("#powerhouseApp")) {
-  // Timers are throttled in background tabs: catch up when the tab is seen again.
-  const setLive = () => { const on = document.visibilityState === "visible"; $("#stage").classList.toggle("live", on); if (on) refresh(); };
-  $("#stage").classList.toggle("live", document.visibilityState === "visible");
+  const reducedMotion = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  view = createView($("#stage"), $("#overlay"), { reducedMotion });
+  // A pick on the card returns focus to the card when the drawer closes (not to a list row
+  // further down the page, which would scroll it).
+  view.onPick(id => { view?.focus(id); openDrawer(id, "canvas"); });
+  $("#zoomIn").onclick = () => view?.zoom(0.75);
+  $("#zoomOut").onclick = () => view?.zoom(1.33);
+  $("#zoomReset").onclick = () => view?.reset();
+  // Timers are throttled in background tabs: catch up when the tab is seen again; draw nothing while hidden.
+  const setLive = () => { const on = document.visibilityState === "visible"; view?.setLive(on); if (on) refresh(); };
+  view.setLive(document.visibilityState === "visible");
   document.addEventListener("visibilitychange", setLive);
-  $("#pause").onclick = async () => { await setPaused(!pausedNow); await refresh(); };
+  $("#pause").onclick = async () => { if (demo) { demoState = demoState === "Paused" ? "Working" : "Paused"; return refresh(); } await setPaused(!pausedNow); await refresh(); };
   $("#closeDrawer").onclick = closeDrawer;
   document.addEventListener("keydown", e => { if (e.key === "Escape" && drawerFor) { e.preventDefault(); closeDrawer(); } });
+  if (demo) demoBar();
   let queued = false;
   const soon = () => { if (queued) return; queued = true; setTimeout(() => { queued = false; refresh(); }, 150); };
-  chrome.storage.onChanged.addListener((c, area) => {
+  if (!demo) chrome.storage.onChanged.addListener((c, area) => {
     if (area === "local" && (c.orchestrator || c.usage || c.capDaily || c.capMonthly || c.jobSettings || (c.jobs && drawerFor === "sk"))) soon();
     if (area === "session" && c.brainCalls) soon();
   });

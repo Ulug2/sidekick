@@ -1,21 +1,6 @@
-/* The Powerhouse (docs/DESIGN.md §1): a live status view drawn as a gym inside the CPU. The scene is
-   decoration over real state; the worker list below it is the accessible path and the whole story
-   at narrow widths. Animations run only on working figures and only while the tab is visible. */
-:root {
-  --board: #e7ece8; --die: #d5dcd7; --die-line: #c6cec9; --trace: #b9814f; --trace-op: .32; --via-op: .45;
-  --rack: #9aa39e; --rack-dark: #7d8681; --mat: #cfd8d2; --zone: #4f5753;
-  --sk-body: #fcfcfa; --sk-line: #b4bab6; --w-body: #b3b9b5; --w-line: #8c938f; --eye: #161816;
-  --glow: #b07a35; --tag-q: #f2c14e; --tag-q-text: #2a2000; --tag-err: #b42318;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --board: #1b1e1d; --die: #262a29; --die-line: #303534; --trace: #4fc3d9; --trace-op: .28; --via-op: .4;
-    --rack: #5b625f; --rack-dark: #474d4a; --mat: #2b302e; --zone: #a9b0ac;
-    --sk-body: #f1f1ec; --sk-line: #8a908c; --w-body: #8b928e; --w-line: #646b67; --eye: #0e0f0e;
-    --glow: #5fd4ea; --tag-err: #e5534b;
-  }
-}
-
+/* The Powerhouse (docs/DESIGN.md §1): a dark graphics card in 3D (gpu3d.ts) in both system themes;
+   the page around it (top bar, list, drawer) follows light and dark. Labels over the canvas are
+   positioned by the view each frame; the worker list below is the accessible path. */
 .ph-top { gap: 14px; flex-wrap: wrap; justify-content: flex-start; }
 .ph-top .links { margin-left: auto; display: flex; gap: 14px; }
 .ph-top .links a { color: var(--muted); text-decoration: none; }
@@ -28,60 +13,51 @@
 .ph-meters .meter { width: 190px; font-size: 12px; gap: 3px; }
 .ph-meters .meter-top span { white-space: nowrap; }
 
-#powerhouseApp { max-width: 1140px; margin: 0 auto; padding: 18px 20px 60px; }
-.stage { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden; border: 1px solid var(--border); background: var(--board); }
-/* page.css gives every svg an icon stroke; the scene sets its own strokes per shape */
-.stage > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; fill: #000; stroke: none; stroke-width: 0; }
-.zone-label { fill: var(--zone); }
-.bubble {
-  position: absolute; max-width: 36%; padding: 8px 12px; border-radius: 14px; background: var(--bg); border: 1px solid var(--border);
-  box-shadow: 0 6px 20px rgba(0,0,0,.08); font-size: clamp(11px, 1.3vw, 14px); line-height: 1.4; font-weight: 500;
+#powerhouseApp { max-width: 1240px; margin: 0 auto; padding: 18px 20px 60px; }
+.ph-demo { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 10px; }
+.ph-demo button[aria-pressed=true] { background: var(--beige); color: var(--beige-text); border-color: transparent; }
+
+/* the stage: always the dark card */
+.stage {
+  --ink: #e9eef0; --ink-muted: #9fb0b6; --glass: rgba(12, 16, 19, .72); --glass-line: rgba(140, 200, 215, .22);
+  --q: #f2b33d; --err-tag: #e5534b; --cyan: #5fd4ea;
+  position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden; background: #06080a;
+  border: 1px solid #1a2226; box-shadow: 0 18px 50px rgba(0, 0, 0, .25), inset 0 0 0 1px rgba(95, 212, 234, .05);
+  color: var(--ink); touch-action: none;
+}
+.ph-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; outline: none; }
+.ph-canvas:active { cursor: grabbing; }
+.ph-canvas:focus-visible { box-shadow: inset 0 0 0 3px rgba(95, 212, 234, .55); }
+.ph-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.ph-label {
+  position: absolute; left: 0; top: 0; display: flex; gap: 4px; align-items: center; pointer-events: auto; cursor: pointer;
+  margin-left: -14px; margin-top: -14px; user-select: none;
+}
+.ph-n {
+  min-width: 26px; height: 26px; padding: 0 6px; border-radius: 13px; display: grid; place-items: center; font-weight: 700; font-size: 13px;
+  background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink); backdrop-filter: blur(6px);
+}
+.ph-tag { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 9px; line-height: 1.4; white-space: nowrap; }
+.ph-tag-q { background: var(--q); color: #261b00; }
+.ph-tag-err { background: var(--err-tag); color: #fff; }
+.ph-tag-word { background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink-muted); font-weight: 600; }
+.ph-label[data-state=needs] .ph-n { border-color: var(--q); }
+.ph-label[data-state=failed] .ph-n { border-color: var(--err-tag); }
+.ph-label[data-state=working] .ph-n { border-color: rgba(95, 212, 234, .7); }
+.stage .bubble {
+  position: absolute; left: 0; top: 0; max-width: min(38%, 360px); padding: 8px 12px; border-radius: 14px; pointer-events: none;
+  background: rgba(14, 19, 22, .86); border: 1px solid rgba(95, 212, 234, .45); color: var(--ink); box-shadow: 0 0 24px rgba(95, 212, 234, .18);
+  font-size: clamp(11px, 1.25vw, 14px); line-height: 1.4; font-weight: 500;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; transform: translate(-50%, -100%);
 }
-.bubble[hidden] { display: none; }
+.stage .bubble[hidden] { display: none; }
+.ph-zoom { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 6px; }
+.ph-zoom button { background: var(--glass); color: var(--ink); border: 1px solid var(--glass-line); backdrop-filter: blur(6px); min-width: 34px; padding: 5px 12px; font-size: 14px; }
+.ph-zoom button:hover { background: rgba(30, 40, 45, .85); }
+.ph-zoom button:focus-visible { box-shadow: 0 0 0 3px rgba(95, 212, 234, .45); }
+.ph-hint { position: absolute; left: 14px; bottom: 12px; margin: 0; font-size: 12px; color: var(--ink-muted); pointer-events: none; }
+.nogl { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; margin: 0; color: var(--ink-muted); font-size: 14px; }
 .ph-thinking { min-height: 1.5em; margin: 8px 2px 0; color: var(--muted); }
-
-/* characters: colours inherit into <use> through custom properties */
-.sk { --body: var(--sk-body); --line: var(--sk-line); }
-.wk { --body: var(--w-body); --line: var(--w-line); cursor: pointer; }
-.limb { stroke: var(--body); stroke-width: 9; stroke-linecap: round; fill: none; }
-.limb-o { stroke: var(--line); stroke-width: 11; stroke-linecap: round; fill: none; }
-.skin { fill: var(--body); stroke: var(--line); stroke-width: 2; }
-.eye { fill: var(--eye); }
-.badge circle { fill: var(--bg); stroke: var(--line); stroke-width: 3; }
-.badge text, .tag-text { fill: var(--text); }
-.tag-box { fill: var(--bg); stroke: var(--line, var(--border)); stroke-width: 2; }
-.tag-warn { fill: var(--warn); }
-.tag-q rect { fill: var(--tag-q); } .tag-q text { fill: var(--tag-q-text); }
-.tag-err rect { fill: var(--tag-err); } .tag-err text { fill: #fff; }
-.tag-word rect { fill: var(--bg); stroke: var(--line); stroke-width: 2; } .tag-word text { fill: var(--muted); }
-.coach-pose { display: none; }
-#coach[data-coach=idle] [data-coach=idle], #coach[data-coach=thinking] [data-coach=thinking],
-#coach[data-coach=shouting] [data-coach=shouting], #coach[data-coach=paused] [data-coach=paused] { display: inline; }
-
-/* motion: only figures marked .anim move, only while the tab is visible (.live) */
-.eyes { transform-box: fill-box; transform-origin: center; }
-.pushup-body { transform-box: view-box; transform: rotate(66deg); }
-.situp-upper { transform: rotate(-50deg); }
-.live .anim .eyes, .live #coach .eyes { animation: blink 6s infinite; }
-.live .anim .pushup-body, .live #coach[data-coach=thinking] .pushup-body { animation: pushup 1.2s ease-in-out infinite; animation-delay: var(--d, 0s); }
-.live .anim .pull-body { animation: pull 1.6s ease-in-out infinite; animation-delay: var(--d, 0s); }
-.pull-arms { transform-box: fill-box; transform-origin: top; }
-.live .anim .pull-arms { animation: pullarm 1.6s ease-in-out infinite; animation-delay: var(--d, 0s); }
-.live .anim .situp-upper { animation: situp 1.5s ease-in-out infinite; animation-delay: var(--d, 0s); }
-.hand-wave { transform-box: fill-box; transform-origin: bottom; }
-.live .wave .hand-wave { animation: wave 1.4s ease-in-out infinite; }
-@keyframes blink { 0%, 95%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.12); } }
-@keyframes pushup { 0%, 100% { transform: rotate(62deg); } 50% { transform: rotate(70deg); } }
-@keyframes pull { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-38px); } }
-@keyframes pullarm { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.6); } }
-@keyframes situp { 0%, 100% { transform: rotate(-82deg); } 50% { transform: rotate(-22deg); } }
-@keyframes wave { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(8deg); } }
-/* the trace to the worker Sidekick is addressing: a wide faint stroke under a dashed bright one */
-.wire { fill: none; stroke: var(--glow); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 16 12; }
-.live .wire { animation: flow .8s linear infinite; }
-@keyframes flow { to { stroke-dashoffset: -28; } }
-.wk:hover .skin { stroke: var(--text); }
 
 /* the list: the real controls */
 .ph-list { margin-top: 18px; }
@@ -119,8 +95,7 @@
   #powerhouseApp { padding: 14px 12px 40px; }
   .ph-meters { order: 5; width: 100%; }
   .ph-meters .meter { flex: 1; width: auto; }
+  .stage { aspect-ratio: 4 / 3; }
 }
-@media (max-width: 560px) { .zone-label, #moreChip { display: none; } .ph-top .links { display: none; } }
-@media (prefers-reduced-motion: reduce) {
-  .stage *, .drawer { animation: none !important; transition: none !important; }
-}
+@media (max-width: 560px) { .ph-hint, .ph-top .links { display: none; } .ph-n { min-width: 22px; height: 22px; font-size: 12px; } .ph-tag { font-size: 11px; } }
+@media (prefers-reduced-motion: reduce) { .drawer { transition: none !important; } }

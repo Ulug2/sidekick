@@ -44,6 +44,23 @@ A live status view drawn as a gym inside the CPU. Every animation maps to real o
 
 **Scope.** The page shows state and has Pause/Resume and Stop; it does not yet host the orchestrator loop or reopen itself (Phase 9). The voice hook stays a no-op stub.
 
+**3D (redesign, 2026-11-11, his choices: aliens up close and cores far away, Three.js, a dark card in both themes).** The 2D gym is replaced by a graphics card in WebGL (`gpu3d.ts`; placement in `gpu-layout.ts`, pure and unit-tested; the aliens and their poses in `alien.ts`). The contract above is unchanged; only the drawing moved:
+
+| Area (scene.ts) | Part of the card | Close up (alien) | Far away (core) |
+|---|---|---|---|
+| Sidekick | the GPU die, centre | stands, push-ups while a brain call runs, points and shouts, sits when paused | always the alien (1.35×); the die glows brighter while thinking, dims when paused |
+| bar (applying) | the copper heat pipe | pull-ups, hands on the pipe | cyan pulsing core under the pipe |
+| mat (reading, writing) | VRAM chips | push-ups / sit-ups | cyan pulsing core |
+| bench (needs you, done, stopped, no news) | sitting on the PCIe edge | hand up and waving / sitting | amber pulsing core / grey core |
+| floor (failed) | by the capacitors | slumped | red core |
+
+- The level of detail is per worker by camera distance (alien under 70 units, core over 95, crossfade between); the overview shows cores, flying to a worker shows the alien.
+- Controls: drag to turn, right-drag or shift-drag to pan, wheel or pinch to zoom, + / − / Reset buttons, arrow keys, + − 0 on the focused canvas; click a worker (or its label) to fly to it, from the side it faces, and open its drawer; Escape returns focus to the canvas without scrolling.
+- The trace from the die to the addressed worker is a glowing tube with moving dashes (6 s with the shout). The fan spins while anything works.
+- Cost of looking: render only while something moves and the tab is visible, otherwise once per change; pixel ratio ≤ 2, one 1024 shadow map, bloom at half resolution. Reduced motion: still poses, camera jumps instead of flying.
+- Without WebGL the stage says so and the worker list carries everything.
+- `powerhouse.html#demo` shows every state from made-up records, in memory only (nothing stored).
+
 
 ## 2. The Jobs dashboard (restyled)
 

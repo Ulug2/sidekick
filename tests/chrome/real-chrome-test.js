@@ -75,7 +75,7 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const BASE = `http://127.0.0.1:${server.address().port}`;
   const userDir = fs.mkdtempSync(require('path').join(require('os').tmpdir(), 'sidekick-prof-'));
-  const ctx = await chromium.launchPersistentContext(userDir, { headless: true, channel: 'chromium', viewport: { width: 420, height: 860 }, args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--host-resolver-rules=MAP public.test 127.0.0.1'] });
+  const ctx = await chromium.launchPersistentContext(userDir, { headless: true, channel: 'chromium', viewport: { width: 420, height: 860 }, args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--host-resolver-rules=MAP public.test 127.0.0.1', '--enable-unsafe-swiftshader', '--use-angle=swiftshader'] });
   await ctx.route('https://api.anthropic.com/**', async route => {
     const body = route.request().postDataJSON();
     apiBodies.push(body);
@@ -433,9 +433,28 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
       await chrome.storage.local.set({ orchestrator: { workers, needsYou: [{ workerId: 'w4', jobId: 'j4', since: t, stoppedAt: '', questions: [] }], lastShout: { text: 'Agent 1! Apply: Software Engineer, New Grad at Stripe', at: Date.now(), workerId: 'w1' } } });
     }, [t, [W({ id: 'w1' }), W({ id: 'w2', n: 2, title: 'Apply: Backend Engineer at Ramp', startedAt: t + 1 }), W({ id: 'w3', n: 3, kind: 'write', title: 'Cover letter: Plaid', step: 'Writing', startedAt: t + 2 }), W({ id: 'w4', n: 4, status: 'needs_you', title: 'Apply: Platform Engineer at Bravo', startedAt: t + 3 }), W({ id: 'w5', n: 5, kind: 'read', title: 'Read: Datadog careers page', startedAt: t + 4 }), W({ id: 'w6', n: 6, status: 'failed', error: 'The form wants an account and a password.', title: 'Apply: SRE at Delta', startedAt: t + 5 })]]);
     await ph.waitForTimeout(500);
-    const figs = await ph.evaluate(() => [...document.querySelectorAll('#figures > g')].map(g => `${g.dataset.id}:${g.querySelector('use').getAttribute('href')}`).sort().join(','));
-    check('Real Chrome Powerhouse: each worker drawn with its pose (pull-ups, sit-ups, push-ups, hand up, slumped), Sidekick shouting at Agent 1', figs === 'w1:#p-pull,w2:#p-pull,w3:#p-situp,w4:#p-raise,w5:#p-push,w6:#p-slump' && await ph.getAttribute('#coach', 'data-coach') === 'shouting' && await ph.isVisible('#bubble') && await ph.isVisible('#wire') && (await ph.textContent('#chip')) === 'Running · 4 working · 1 needs you', figs + ' | ' + await ph.textContent('#chip'));
-    check('Real Chrome Powerhouse: animations run while the tab is visible, only on working figures', await ph.evaluate(() => document.getElementById('stage').classList.contains('live') && document.querySelector('[data-id=w1]').classList.contains('anim') && !document.querySelector('[data-id=w4]').classList.contains('anim')));
+    const figs = await ph.evaluate(() => [...document.querySelectorAll('#overlay .ph-label')].map(g => `${g.dataset.id}:${g.dataset.pose}@${g.dataset.zone}`).sort().join(','));
+    check('Real Chrome Powerhouse (3D): WebGL draws the card; each worker on its part with its pose (pull-ups on the heat pipe, sit-ups and push-ups on VRAM, hand up on the PCIe edge, slumped by the capacitors); Sidekick shouting at Agent 1', await ph.locator('.ph-canvas').count() === 1 && await ph.locator('.nogl').count() === 0 && figs === 'w1:pull@heatpipe,w2:pull@heatpipe,w3:situp@vram,w4:raise@pcie,w5:push@vram,w6:slump@caps' && await ph.getAttribute('#overlay', 'data-coach') === 'shouting' && await ph.isVisible('.stage .bubble') && (await ph.textContent('#chip')) === 'Running · 4 working · 1 needs you', figs + ' | ' + await ph.textContent('#chip'));
+    check('Real Chrome Powerhouse (3D): only working workers move', await ph.evaluate(() => document.querySelector('.ph-label[data-id=w1]').dataset.animate === 'true' && document.querySelector('.ph-label[data-id=w4]').dataset.animate === 'false'));
+    // zoom: buttons, wheel, the keyboard on the canvas, Reset; clicking a worker flies to it
+    const radius = () => ph.evaluate(() => Number(document.getElementById('stage').dataset.radius));
+    const home = await radius();
+    for (let i = 0; i < 3; i++) await ph.click('#zoomIn');
+    await ph.waitForTimeout(200);
+    const zoomedIn = await radius();
+    await ph.hover('.ph-canvas'); await ph.mouse.wheel(0, 600); await ph.waitForTimeout(200);
+    const wheeled = await radius();
+    await ph.focus('.ph-canvas'); await ph.keyboard.press('0'); await ph.waitForTimeout(1000);
+    const reset = await radius();
+    await shot(ph, '09b-powerhouse-3d-overview');
+    await ph.click('.ph-label[data-id=w3]'); await ph.waitForTimeout(1100);
+    const focused = await radius();
+    const drawerW3 = await ph.evaluate(() => document.getElementById('drawer').classList.contains('open') && /Agent 3/.test(document.getElementById('drawerTitle').textContent));
+    await shot(ph, '09b-powerhouse-3d-closeup');
+    await ph.keyboard.press('Escape'); await ph.waitForTimeout(300);
+    const backToCanvas = await ph.evaluate(() => document.activeElement?.classList.contains('ph-canvas') && window.scrollY === 0);
+    check('Real Chrome Powerhouse (3D): zoom in with the buttons, out with the wheel, 0 resets; clicking a worker flies close (the alien shows) and opens its drawer; Escape returns focus to the card without scrolling', home === 215 && zoomedIn < 95 && wheeled > zoomedIn && reset === 215 && focused === 48 && drawerW3 && backToCanvas, JSON.stringify({ home, zoomedIn, wheeled, reset, focused, drawerW3, backToCanvas }));
+    await ph.click('#zoomReset'); await ph.waitForTimeout(900);
     for (const [w, name] of [[760, 'half'], [1280, 'wide'], [420, 'narrow']]) {
       await ph.setViewportSize({ width: w, height: 900 });
       await ph.waitForTimeout(150);
@@ -458,7 +477,7 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
     check('Real Chrome Powerhouse: Tab reaches a worker in the list, Enter opens its drawer (focus inside), Escape closes it and focus returns', reached === 'w4' && opened.open && !opened.inert && opened.focus === 'closeDrawer' && /Agent 4 · Apply: Platform Engineer at Bravo/.test(opened.title) && back.focus === 'w4' && back.inert, JSON.stringify({ reached, opened, back }));
     await ph.click('#pause');
     await ph.waitForTimeout(300);
-    check('Real Chrome Powerhouse: Pause stores the pause and Sidekick sits down', (await ph.evaluate(() => chrome.storage.local.get('orchestrator'))).orchestrator.paused === 'you' && await ph.getAttribute('#coach', 'data-coach') === 'paused');
+    check('Real Chrome Powerhouse: Pause stores the pause and Sidekick sits down', (await ph.evaluate(() => chrome.storage.local.get('orchestrator'))).orchestrator.paused === 'you' && await ph.getAttribute('#overlay', 'data-coach') === 'paused');
     await shot(ph, '09b-powerhouse-paused');
     await ph.click('#pause');
     await ph.evaluate(() => chrome.storage.local.set({ orchestrator: {} }));
