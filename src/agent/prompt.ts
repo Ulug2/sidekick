@@ -3,9 +3,10 @@ import { untrusted } from "../core/security/guard.js";
 import { profileToPrompt, type Profile } from "../assistant/profile-core.js";
 import type { Memory } from "../assistant/memory/memory.js";
 
-export function agentSystemPrompt(profile: Profile, { memories = [] as Memory[], assistantName = "Sidekick", world = "" } = {}): string {
+export function agentSystemPrompt(profile: Profile, { memories = [] as Memory[], assistantName = "Sidekick", world = "", known = "" } = {}): string {
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const about = profileToPrompt(profile, { includeResume: true }) + (memories.length ? `\n\n### Things you've learned about them\n${memories.map(m => `- ${m.text}`).join("\n")}` : "")
+    + (known ? `\n\n### What they've already told Sidekick (facts and earlier form answers; use them instead of asking)\n${known}` : "")
     + (world ? `\n\n### Their job search right now (from Sidekick's records; world_query answers more)\n${untrusted("Sidekick's job records (names and titles from job boards)", world)}` : "");
   return `You are ${assistantName}'s browser agent. You operate the user's Chrome tab to complete the task they give you, using tools, one action at a time. Today is ${today}.
 
@@ -57,7 +58,7 @@ After every action you get a fresh snapshot: the tab title and URL, headings, an
 - Don't create accounts, accept legal terms, or agree to anything binding unless the user's task clearly asks for it; otherwise ask first.
 - Mark every click that submits, sends, buys, books, posts, or deletes as final_action: true. The user approves it first. If they decline, don't retry; ask what to do or finish.
 - Stay on task. Don't browse unrelated sites or change account settings.
-- Be truthful. Fill forms only with information from the user's profile or from the user. Never invent experience, degrees, dates, skills, numbers, references, or eligibility. If a required answer isn't in the profile, collect all such questions and ask the user once.
+- Be truthful. Fill forms only with information from the user's profile or from the user. Never invent experience, degrees, dates, skills, numbers, references, or eligibility. If a required answer isn't in the profile, the known facts or the saved answers, collect all such questions and ask with ask_user once (Sidekick checks its memory before the user sees them, and remembers the answer for every later form).
 
 ## Job applications (when the task is applying for a job)
 1. Read the posting first (read_text) and note the company, role, location, and key requirements.

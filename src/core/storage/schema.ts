@@ -15,6 +15,8 @@ import type { BenchPending, BenchRun } from "../../bench/results.js";
 import type { Company, Job } from "../../jobs/types.js";
 import type { ActionLogEntry, NeedsYouItem, WorkerRecord } from "../../orchestrator/types.js";
 import type { Scheduled } from "../../orchestrator/scheduler.js";
+import type { StoredFact } from "../../memory/facts.js";
+import type { SavedAnswer } from "../../memory/answers.js";
 import type { SponsorLists } from "../../jobs/sponsors.js";
 
 // ---------- chats (ui/sidepanel) ----------
@@ -82,6 +84,8 @@ export interface LocalSchema extends Settings {
   actionLog: ActionLogEntry[]; // orchestrator/log: every irreversible action, newest first
   scheduled: Scheduled[]; // orchestrator/scheduler: alarms to recreate after a restart
   firedAlarms: { name: string; at: number }[]; // orchestrator/scheduler: fired by the service worker, drained by the orchestrator page
+  facts: Record<string, StoredFact>; // memory/facts: facts the profile has no field for (high school, graduation…)
+  answers: SavedAnswer[]; // memory/answers: every form question answered once, matched by meaning
   assignments: { id: string; course: string; title: string; due: number; status: string; weight?: number; url?: string }[]; // school (Phase 7)
   reminders: { id: string; text: string; at: number; source?: string }[]; // school/email (Phases 7–8)
   [chat: `chat:${string}`]: Chat;

@@ -27,6 +27,8 @@ npm run test:chrome                      # builds dist/, then real Chromium with
 |---|---|
 | bench | the Benchmark page: tasks, settings, Run hands the task to the panel, grading, score per version, results as text only, Run off for unpriced models |
 | jobs | the Jobs page: sponsor lists (GOV.UK API + the two CSVs, faked), scanning two boards, eligible vs filtered with reasons, text-only titles, Keep anyway / Skip, Build today's batch (one per company), Approve & start (hand-off), Stop, statuses, CSV, add a company by link, the monthly limit |
+| memory-answers | BUGS 1 regression: high school asked once, then answered from memory in other wordings (no UI), exact repeats matched in code, sign-in always asked; the Memory page edits facts and answers, refuses secrets |
+| orchestrator | spend cap stops calls before sending, caps of 0, action log under concurrent writes, world state from storage |
 | reading | pages inside a frame from another site (Moodle + MyOpenMath, copied from the 2026-11-09 run): read_text reads every frame and names the ones it can't, an empty page says so, identical buttons are grouped but not interchangeable |
 | storage | writes don't lose each other: two pages saving memories, applications, skills, site notes, shortcuts, usage, benchmark runs and documents at once through the shared lock; the queue without Web Locks; a timed-out lock still saves; an error inside the lock runs once |
 | traces | run traces: every step saved as it happens (prompt, reply, actions, approvals while waiting, screenshots, cost), stopped/failed/interrupted runs, last 30 kept, export masks secrets, import keeps only images, the Agent runs page shows everything as text (v0.9.6) |

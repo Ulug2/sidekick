@@ -40,7 +40,7 @@ export async function getProfile(): Promise<Profile> {
 }
 
 export async function saveProfile(profile: Partial<Profile>): Promise<void> {
-  await chrome.storage.local.set({ profile: { ...DEFAULT_PROFILE, ...profile } });
+  await updateLocal("profile", () => ({ ...DEFAULT_PROFILE, ...profile }) as Profile);
 }
 
 export function profileIsEmpty(p: Profile): boolean {

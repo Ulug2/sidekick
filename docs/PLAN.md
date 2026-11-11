@@ -8,6 +8,9 @@ Baseline at the start: v0.9.6, commit `9c6c657`; 685 jsdom checks, 46 unit tests
 
 Delivered: `BUGS.md` (four root causes with file:line), this plan, `ARCHITECTURE.md` v1 section, `DESIGN.md`, `COSTS.md`. Decisions for Ulugbek are listed at the end.
 
+## Status
+- Phase 1: done (2026-11-10). Phase 2: done (2026-11-11, `41708aa`). Phase 3: done (2026-11-11).
+
 ## Phase 2: orchestrator core
 
 Goal: one brain, numbered workers, one model config, a world state every part can read, logging, a hard spend cap. No new user-facing features yet except the cap and the usage meter.

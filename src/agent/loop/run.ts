@@ -19,6 +19,7 @@ import { getSettings } from "../../core/llm/settings.js";
 import type { ModelMessage, ToolResult } from "../../core/llm/types.js";
 import type { AutonomyLevel, WorkerTask } from "../../orchestrator/types.js";
 import { ROLES } from "../../core/llm/models.js";
+import { memoryForForms } from "../../memory/answers.js";
 import { finishWorker, startWorker, workerStep } from "../../orchestrator/workers.js";
 import { updateLocal } from "../../core/storage/update.js";
 
@@ -51,7 +52,8 @@ export async function runAgent(goal: string, ui: AgentUI, opts: { history?: stri
   const policy: AutonomyLevel = task?.policy || opts.policy || (opts.preApproved?.autoSubmit ? "approved-batch" : "ask-final");
   const approvedSites = new Set([...(task?.approvedSites || []), ...(opts.preApproved?.sites || [])]);
   const state: AgentState = { tabId: tab.id!, elements: {}, steps: [], settings, input: null, actionLog: [], errors: [], answers: [], safeSteps: [], siteTools: {}, shortcuts: {}, goal, visitOk: new Set(), shareOk: new Set(), policy, approvedSites, frameHosts: new Set(), task };
-  const system = agentSystemPrompt(profile, { memories, assistantName: settings.assistantName, world: task?.context?.text || "" });
+  const known = await memoryForForms().catch(() => "");
+  const system = agentSystemPrompt(profile, { memories, assistantName: settings.assistantName, world: task?.context?.text || "", known });
   if (task) {
     const stepWas = ui.step.bind(ui);
     ui = { ...ui, step: (text, tool) => { workerStep(task.id, text).catch(() => {}); return stepWas(text, tool); } };

@@ -2,8 +2,8 @@
 import type { AgentState, AgentUI, PageActionResult, ToolOutcome } from "../types.js";
 import { skPageAct } from "../../page/act.js";
 import { logApplication, type Profile } from "../../assistant/profile-core.js";
-import { factsFromAnswer } from "../../assistant/session.js";
-import { addMemory } from "../../assistant/memory/memory.js";
+import { learnFromAnswer, resolveQuestion, type Resolution } from "../../memory/answers.js";
+import { askModel } from "../../orchestrator/brain.js";
 import { describeSafe, describeCall, quote } from "./describe.js";
 import { RISKY_WORDS, siteBlocked, gateShare, gateVisit, CAPTCHA_RE, policyContext, inPlan } from "../safety/gates.js";
 import { decide } from "../../orchestrator/policy.js";
@@ -493,17 +493,34 @@ export async function runToolInner(call: ToolCall, state: AgentState, ui: AgentU
         return withSnapshot();
       }
       case "ask_user": {
+        // Memory first (docs/BUGS.md 1): anything already answered once (the answer bank) or known
+        // (the fact store) is answered here, in code, and never reaches the user again.
+        const question = String(a.question || "");
+        const humanStep = /\b(sign ?in|log ?in|password|captcha|verify (that )?you|are you (a )?human|you'?re (a )?human|two-factor|2fa|code we sent|let me know when you'?ve|tell me when you'?(re|ve)? done)\b/i.test(question);
+        let toAsk = question, fromMemory: Resolution["answered"] = [];
+        if (!humanStep) {
+          const r = await resolveQuestion(question, askModel, state.signal).catch(() => ({ answered: [], remaining: [question] }) as Resolution);
+          fromMemory = r.answered;
+          if (fromMemory.length) ui.note(`Answered from memory: ${fromMemory.map(x => `${x.question} → ${x.answer}`).join("; ").slice(0, 300)}`);
+          if (fromMemory.length && !r.remaining.length) {
+            step.done(true, "Answered from memory");
+            return withSnapshot(`Answered from Sidekick's memory (the user already gave these; use them exactly):\n${fromMemory.map(x => `- ${x.question}: ${x.answer}`).join("\n")}\n\nCurrent page:\n`);
+          }
+          if (fromMemory.length) toAsk = r.remaining.join("\n");
+        }
         step.waiting();
-        const answer = await ui.ask(a.question || "");
-        state.answers.push(String(a.question || "").slice(0, 160));
+        const answer = await ui.ask(toAsk);
+        state.answers.push(toAsk.slice(0, 160));
         step.done(true);
-        // A lasting fact in the answer ("I can start June 2027") is remembered for the next form; in the background, never blocking the run.
-        if (state.settings.memoryAuto) {
-          factsFromAnswer({ question: String(a.question || ""), answer: String(answer || ""), userName: profile.preferredName || profile.fullName?.split(/\s+/)[0] || "the user", signal: state.signal })
-            .then(async facts => { for (const f of facts) { const r = await addMemory(f.text, "application", f.kind).catch(() => null); if (r && !r.updated) ui.note(`Remembered for next time: ${f.text}`); } })
+        // Kept for every later form: split into question/answer pairs and facts (one cheap call, in the background).
+        if (state.settings.memoryAuto && !humanStep) {
+          const site = siteOf((await chrome.tabs.get(state.tabId).catch(() => null))?.url || "");
+          learnFromAnswer(toAsk, String(answer || ""), askModel, { site, signal: state.signal })
+            .then(r => { if (r.answers.length) ui.note(`Saved for next time: ${r.answers.map(x => x.question).join("; ").slice(0, 200)}`); })
             .catch(() => {});
         }
-        return withSnapshot(`The user answered: ${answer}\n\nCurrent page:\n`);
+        const known = fromMemory.length ? `From Sidekick's memory:\n${fromMemory.map(x => `- ${x.question}: ${x.answer}`).join("\n")}\n` : "";
+        return withSnapshot(`${known}The user answered: ${answer}\n\nCurrent page:\n`);
       }
       case "log_application": {
         const tab = await chrome.tabs.get(state.tabId);

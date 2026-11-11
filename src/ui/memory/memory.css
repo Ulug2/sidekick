@@ -1,0 +1,14 @@
+/* The Memory page: facts and saved answers, in the shared Sidekick look. */
+h3.sub { font-size: 13.5px; font-weight: 600; margin: 22px 0 6px; }
+.facts { display: grid; grid-template-columns: minmax(140px, 260px) 1fr; gap: 6px 16px; margin: 0; font-size: 13.5px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.fact-meta { display: block; margin-top: 3px; font-size: 11.5px; color: var(--faint); }
+.answers { list-style: none; margin: 10px 0 0; padding: 0; }
+.answers li { border-top: 1px solid var(--border); padding: 10px 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: start; }
+.answers .q { font-weight: 500; }
+.answers .meta { font-size: 11.5px; color: var(--faint); }
+.answers textarea { grid-column: 1 / -1; min-height: 44px; }
+.answers .acts { display: flex; gap: 6px; }
+a.link { color: inherit; }
+@media (max-width: 560px) { .facts { grid-template-columns: 1fr; } .facts dd { margin-bottom: 6px; } }

@@ -93,7 +93,7 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   };
 
   // ---------- 1. every page loads clean under the real CSP ----------
-  for (const p of ['sidepanel.html', 'profile.html', 'options.html', 'evals.html', 'mic.html', 'runs.html', 'bench.html', 'jobs.html']) {
+  for (const p of ['sidepanel.html', 'profile.html', 'options.html', 'evals.html', 'mic.html', 'runs.html', 'bench.html', 'jobs.html', 'memory.html']) {
     const page = await ctx.newPage();
     watch(page, p);
     const csp = [];
@@ -369,7 +369,7 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
   // ---------- 9. options: new settings round-trip ----------
   const opt = await ctx.newPage();
   await opt.goto(url('options.html'));
-  check('Real Chrome settings: seven sections in a menu, model names folded away', (await opt.locator('.toc a').count()) === 7 && (await opt.locator('#sec-connect #anthropicKey').count()) === 1 && !(await opt.locator('details.advanced').evaluate(d => d.open)) && (await opt.locator('#sec-pages .pages a').count()) === 5);
+  check('Real Chrome settings: seven sections in a menu, model names folded away', (await opt.locator('.toc a').count()) === 7 && (await opt.locator('#sec-connect #anthropicKey').count()) === 1 && !(await opt.locator('details.advanced').evaluate(d => d.open)) && (await opt.locator('#sec-pages .pages a').count()) === 6);
   await opt.waitForTimeout(300);
   check('Real Chrome options: tie-break models and learning switch shown with defaults', await opt.inputValue('#anthropicBest') === 'claude-opus-5-5' && await opt.inputValue('#openaiBest') === 'gpt-6-astra' && await opt.isChecked('#learnSites'));
   await opt.uncheck('#learnSites');

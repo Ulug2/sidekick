@@ -125,6 +125,12 @@ General rules that came out of these: design for the long version of a task; eve
 - **Rule:** when a change widens what runs without asking, write the refusal tests first (every case that asked before and must still ask), then the new permissions.
 - **Tests:** unit orchestrator (policy matrix incl. the refusals), real-chrome 17 (framed Greenhouse-style form submits without asking).
 
+### 19. "Answer once" almost answered the wrong question (caught in review, 2026-11-11)
+- **What happened:** the first answer bank matched questions in code by word overlap (≥ 85%). A reviewer showed real pairs it would have answered silently with the other's saved answer: "authorized to work in the United States" vs "…United Kingdom", "require sponsorship" vs "not require sponsorship", relatives at Stripe vs at Plaid, full-time vs part-time. Saving used the same rule at 90%, so one answer would also have overwritten another.
+- **Fix:** code matches only identical normalized wording (negations, names, numbers kept); everything else goes to the classifier, whose answer is accepted only if it is a value Sidekick actually has (no paraphrase, no guess). The question is fenced as untrusted in the classifier prompt, saved questions are fenced in the agent prompt, `Object.hasOwn` guards fact keys, and SSN/passport/password/account questions and 12+-digit values are never stored.
+- **Rule:** a shortcut that skips asking the user must fail toward asking: exact matches only in code, and verify any model-chosen value against stored data.
+- **Tests:** unit memory (the reviewer's pairs, secrets), memory-answers (made-up classifier value is thrown away).
+
 ## Earlier lessons (v0.7–v0.9)
 - **A double-check must not overrule a right answer without evidence** (v0.7.2 pipeline problem). Replacements need a code check (objective or residuals) under both setups.
 - **Examples in prompts anchor the model.** Use neutral numbers, never the real answer.
