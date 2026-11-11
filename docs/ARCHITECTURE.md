@@ -1,136 +1,189 @@
 # Sidekick architecture
 
-Status: v0.9.6, TypeScript (2026-10-29; v0.9.6 2026-10-31: read_url checks each redirect). This document has four parts: how it works today, what's wrong with it, the target architecture, and the migration (done; see §4).
+Updated 2026-11-10 for the v1 "Powerhouse" plan (`PLAN.md`). §1 is what runs today (v0.9.6), §2 what's wrong with it, §3 the v1 design and the reasons for each choice, §4 the decisions log.
 
----
-
-## 1. How it works today
+## 1. How it works today (v0.9.6)
 
 ### Runtime contexts (Chrome MV3)
 
 | Context | Files | What runs there |
 |---|---|---|
-| Service worker | `src/background/background.ts` → `dist/background.js` | Opens the side panel on toolbar click; context menus ("Rewrite with Sidekick", "Ask Sidekick"); first-install onboarding. Nothing else (no alarms yet). |
-| Side panel page | `src/pages/sidepanel.html` → `src/ui/sidepanel/sidepanel.ts` (imports everything else) | **All runtime logic**: chat, model calls, math pipeline, browser agent, memory, learning. The agent only runs while the panel is open. |
-| Injected into web pages | `src/page/*` via `chrome.scripting.executeScript({ func })` | Snapshots of interactive elements, actions (click, type, select, pick_date, upload), page text, area picking. ISOLATED world; WebMCP calls and the leave-prompt disarm in MAIN world. |
-| Content script, MAIN world, `document_start` | `src/content/webmcp-capture.js` (copied as is) | Captures tools a site registers with `navigator.modelContext` (WebMCP). Inert on pages without WebMCP. |
-| Debugger (CDP) | `src/core/browser/cdp.ts` | Real (trusted) mouse/keyboard input, screenshots, layout metrics. 4 s timeout per command. |
-| Other pages | `src/pages/{profile,options,evals,mic}.html` → `src/ui/<page>/` | Profile/resume/memories/skills/site skills editor; settings; eval runner; microphone permission. |
+| Service worker | `src/background/background.ts` → `dist/background.js` | Opens the side panel on toolbar click; context menus; first-install onboarding. Nothing long-lived. |
+| Side panel page | `src/pages/sidepanel.html` → `src/ui/sidepanel/` | All runtime logic: chat, model calls, math pipeline, the browser agent, memory, learning, the benchmark and job-batch runners. Dies when the panel closes. |
+| Injected into web pages | `src/page/*` via `chrome.scripting.executeScript({ func })` | Snapshots of interactive elements (all frames), actions (click, type, select, pick_date, upload), page text, area picking. Self-contained functions (ADR-005). |
+| Content script, MAIN world | `src/content/webmcp-capture.js` | Captures tools a site registers with `navigator.modelContext` (WebMCP). Inert elsewhere. |
+| Debugger (CDP) | `src/core/browser/cdp.ts` | Real mouse/keyboard input, screenshots, clipped zoom captures. 4 s timeout per command. |
+| Other pages | `profile`, `options`, `evals`, `runs`, `bench`, `jobs`, `mic` | Editors and dashboards; each a separate page with its own module. |
 
-ES modules, bundled by Vite into `dist/` (ADR-002). One typed storage schema: `src/core/storage/schema.ts`.
+ES modules, bundled by Vite into `dist/` (ADR-002); one typed storage schema (`src/core/storage/schema.ts`); every read-modify-write under a Web Lock (`core/storage/update.ts`).
 
-### Modules (lines at v0.9.5)
+### Modules
 
 | Folder | What's there |
 |---|---|
-| `core/llm` (≈600) | `settings` (defaults, model IDs, provider/model choice), `call` (`modelCall` with the stall watchdog; `watchModelCalls` for traces), `anthropic` (Messages API, adaptive thinking, caching), `openai` (Responses API, store:false), `sse`, `usage`, `prices` (dollars per call), `types` |
-| `core/security` (≈220) | `guard` (redaction, `untrusted()` fence, injection scan, `stripWrappers`), `sites` (`siteOf`: Public Suffix List via `tldts` + shared hosting list), `personal-data` (`personalDetailsIn`, profile values) |
-| `core/browser`, `core/web`, `core/docs`, `core/calc` | page reads and captures with time limits, `TrustedInput`; `read_url` (SSRF-guarded) and keyless search; PDF/DOCX text; the calculator (math.js + nerdamer, `scanCurve`) |
-| `core/storage/schema.ts`, `update.ts` | every chrome.storage key and its type; `readLocal()`; `updateLocal()` / `withStorageLock()`: read-modify-write under a Web Lock per key |
-| `assistant` (≈1,700) | `turn` (one chat turn, tool loop), `routing`, `prompt`, `tools` (chat tools), `review/` (math double-check: `parse`, `check`, `review`), `memory/` (memories, documents, Markdown export/import), `skills`, `session` (pinned notes, end-of-chat reflection), `profile-core` |
-| `agent` (≈1,900) | `loop/run` (the loop, budgets, nudges), `loop/plan`, `loop/tab-group`, `perception/capture` + `format` (full or change-only snapshots), `actions/run-tool` (gates then action), `actions/input` (page events or debugger), `actions/describe`, `actions/replay`, `safety/gates`, `skills/shortcuts` + `site-notes`, `trace/trace` + `trace/store` (run traces), `tools` (tool schemas), `prompt`, `page-calls`, `types` |
-| `page` (≈850) | `snapshot`, `act`, `webmcp`, `read`, `region`, `replace-selection`, `leave-prompt`: self-contained, checked by `scripts/check-build.mjs` |
-| `bench` | the real-site benchmark: `tasks` (ten tasks: start page, goal, settings, automatic checks), `results` (run records, scoring per version, month spend, CSV) |
-| `jobs` | the job pipeline (ADR-010): `sources` (job-board APIs → postings), `sponsors` (UK register + USCIS H-1B → name lookup), `eligibility` (where, level, sponsorship, priority), `store` (the job list, batch picking, CSV), `scan`, `cover` (student-voice letters, checked in code), `pdf` (hand-made PDF), `batch` (what an application run did), `seed` (81 companies) |
-| `ui` (≈2,700) | `sidepanel/` (entry + state, `markdown`, `messages`, `chats`, `agent-card`, `notify`, `icons`), `profile/`, `options/`, `evals/`, `runs/` (Agent runs: replay, export, import), `bench/` (Benchmark page; the panel side is `sidepanel/bench-run`), `mic/`, `shared/` |
+| `core/llm` | `settings` (defaults, model IDs, provider), `call` (`modelCall` with the stall watchdog, `watchModelCalls` for traces), Claude Messages and OpenAI Responses streaming, `usage` (tokens per model per day), `prices` (dollars) |
+| `core/security` | `guard` (redaction, `untrusted()` fence, injection scan, `stripWrappers`), `sites` (`siteOf`: Public Suffix List + shared hosts), `personal-data` |
+| `core/browser`, `core/web`, `core/docs`, `core/calc` | captures and page reads with time limits, `TrustedInput`; `read_url` (SSRF-guarded, redirects checked per hop) and keyless search; PDF/DOCX text; calculator |
+| `core/storage` | `schema.ts` (every key and type, `readLocal`), `update.ts` (`updateLocal`, `withStorageLock`) |
+| `assistant` | `turn` (one chat turn), `routing`, `prompt`, `tools`, `review/` (math double-check), `memory/` (memories, documents, BM25 recall, import/export), `skills`, `session` (pinned notes, learning from each message and from answers to the agent, end-of-chat reflection), `profile-core` |
+| `agent` | `loop/run` (the loop, budgets, nudges), `loop/plan`, `loop/tab-group`, `perception/` (full or change-only snapshots), `actions/` (`run-tool`: every tool and gate; `input`, `describe`, `replay`), `safety/gates`, `skills/` (shortcuts, site notes), `trace/` (run recorder and store), `tools`, `prompt` |
+| `jobs` | `sources` (job-board APIs), `sponsors` (UK register, USCIS H-1B), `eligibility` (rules in code), `store` (job list, batch picking, CSV), `scan`, `cover` (student-voice letters checked in code), `pdf`, `batch` (judging a run), `seed` |
+| `bench` | the ten-task real-site benchmark |
+| `page` | injected functions, checked by `scripts/check-build.mjs` |
+| `ui` | `sidepanel/` (entry + state, `agent-card`, `bench-run`, `jobs-run`, `chats`, `messages`, `notify`), `profile/`, `options/`, `evals/`, `runs/`, `bench/`, `jobs/`, `shared/` |
 
 ### Main flows
 
-**Chat turn:** `ui/sidepanel` `send()` → `assistant/turn` `runTurn()` builds system prompt + context block (date, tab, pinned notes, relevant memories, matched skill) → routes to a tier (`assistant/routing`) → `core/llm` `modelCall()` streams text and summarized thinking → tool calls (calculate, web_search, read_url, read_page, remember, use_skill, operate_browser) → for math: `reviewAnswer()` (independent checker; code compares objective/residuals; completeness check; tie-break on the strongest model) → render, save, refresh pinned notes.
+**Chat turn:** `send()` → `runTurn()` builds the system prompt and the context block (date, tab, pinned notes, relevant memories, skills) → model with chat tools (calculate, read_url, read_page, remember/recall, use_skill, operate_browser) → math double-check when routed → reply rendered as sanitized Markdown → pinned notes refreshed and lasting facts saved (one fast call).
 
-**Agent run:** `ui/sidepanel` `sendAgent()` passes the chat history (fenced) → `ui/sidepanel/agent-card` `runAgentCard()` → `agent/loop/run` `runAgent()`:
-1. Snapshot (`captureTab`, all frames) → `formatSnapshot` (full, or only changes since the last full one; repeated buttons grouped; site tools, shortcuts and notes; blocked frames; hidden traps).
-2. Model (smart tier, parallel tool calls allowed) → tool calls.
-3. `runTool` → gates in order: never-act sites → site re-check (tab moved?) → personal-data sharing check (fast model) → per-tool approvals (final actions, uploads, risky URLs, off-plan sites) → action via CDP (trusted) or page events (fallback) → snapshot.
-4. Plan/checklist with approval; nudges when the model stops early; step budget 40 + 30 per extra task.
-5. At the end: learn a shortcut and site notes (value-free).
-6. Throughout: the run's trace (`agent/trace`) records each step before the model call (page, screenshot, prompt), the model's reply and every model call made with the run's Stop signal (cost from `core/llm/prices`), each action and result, and approvals while they wait. Saved after every change; replayed on `runs.html`.
+**Agent run:** `sendAgent()` → `runAgentCard()` → `runAgent(goal, ui, opts)`: snapshot (all frames; a full view, then only changes) → model (smart tier, or fast for batches) → `runTool` with its gates (never-act sites → site re-check → personal-data check → final-action approval → CAPTCHA refusal) → plan/checklist → learn a shortcut and notes at the end. The trace records every step, call and approval as it goes.
 
-**Application batch:** Jobs page `Build` picks one eligible job per company (`pickBatch`) → `Approve & start` writes `jobBatch` to session storage → `ui/sidepanel/jobs-run` takes it under a Web Lock, then per queued job: `writeCoverLetter` (smart model; `voiceProblems` sends a bad draft back once) → `textPdf` → a new tab on the apply link → `sendAgent(goal, { tier: "fast", files: { cover_letter }, preApproved: { sites: [the job's site], autoSubmit: true }, maxCost: 0.6 })` → `judgeRun(trace)` sets applied / needs_you → 2–4 minutes pause. Caps: `jobSettings.dailyCap` (default 20) and `monthlyCap` (default $25, from the usage log); an unanswered question stops the run after 8 minutes.
-
-**Learning:** end-of-chat reflection writes memories and skills (never from web content); agent runs compile shortcuts.
+**Application batch:** Jobs page `Build` → `Approve & start` writes `jobBatch` (session storage) → `jobs-run` opens its own window and, per queued job: cover letter → PDF → `sendAgent` with `tier: "fast"`, `files`, `preApproved` → `judgeRun(trace)` → applied / needs_you / skipped → 2–4 min pause.
 
 ### Storage (`chrome.storage.local`)
-All keys and their types: `src/core/storage/schema.ts`. Settings fields (`DEFAULT_SETTINGS`), `profile`, `applications`, `memories`, `docIndex` + `doc:<id>`, `skills`, `userModel`, `adapters` (shortcuts), `siteNotes`, `chatIndex` + `chat:<id>`, `usage`, `evalRuns`, `traceIndex` + `trace:<id>` + `traceShot:<id>:<n>` (run traces, last 30), `benchRuns`, `benchParams`, `benchMaxCost`, `jobs`, `jobCompanies`, `sponsorLists`, `jobSettings`. Session storage: `pending` (context-menu hand-off), `benchPending` (Benchmark page → panel, taken under a Web Lock so only one panel runs it), `jobBatch` + `jobBatchStop` (Jobs page → panel). Every read-modify-write (lists like `memories`, `skills`, `adapters`, `siteNotes`, `applications`, `usage`, `traceIndex`, `benchRuns`, and chats and documents with their index) goes through `core/storage/update.ts`: one Web Lock per key, shared by all Sidekick pages and the service worker, so two pages saving at once can't drop a change; without Web Locks it falls back to a queue per page, and a lock wait over 10 s saves anyway with a warning.
+
+Settings fields, `profile`, `applications`, `memories`, `docIndex` + `doc:<id>`, `skills`, `userModel`, `adapters`, `siteNotes`, `chatIndex` + `chat:<id>`, `usage`, `evalRuns`, `traceIndex` + `trace:<id>` + `traceShot:<id>:<n>`, `benchRuns`, `benchParams`, `benchMaxCost`, `jobs`, `jobCompanies`, `sponsorLists`, `jobSettings`. Session: `pending`, `benchPending`, `jobBatch`, `jobBatchStop`.
 
 ### Tests
-- `tests/jsdom/*-test.js`: jsdom suites that load test bundles of the same modules into a fake window with fake `chrome.*` and fake model streams (about 580 checks; ADR-006). `prompts-test` pins every prompt and tool definition.
-- `tests/unit/*.test.ts`: Vitest unit tests on the TypeScript modules.
-- `tests/chrome/real-chrome-test.js`: Playwright launches Chromium with the built extension (`dist/`), serves local test pages, fakes the model API at the network layer, and checks real CSP, real debugger input, tab groups, the fixed extension ID, and so on (about 56 checks). It asserts nothing reaches outside servers.
-- Fixtures reproduce real sites (`fixtures/airline.html` = turkishairlines.com booking form).
-- Missing: a benchmark on **real** sites with a **real** model (Phase F item 4; run traces now record what such runs do).
 
----
+jsdom suites (685 checks), Vitest unit tests (46), real Chromium with the built extension (87 checks). `npm run check` runs all of it.
 
-## 2. What's wrong with it (honest)
+## 2. What's wrong with it
 
-1. **The agent can't reliably find and use controls on real sites.** Evidence: the Turkish Airlines runs (LESSONS 11 and the 2026-10-29 run): 60 steps, repeated guessed coordinates outside the viewport, stuck behind a pop-up, a wrong click on "Award ticket - Buy a ticket with Miles".
-   - Perception is home-grown: CSS selectors plus heuristics decide what's interactive, what its name is, and whether it's visible. It misses things Chrome itself knows (computed accessibility names, what's actually on top, popovers, cross-origin frames).
-   - The model sees two representations that don't line up: a numbered text list and an unmarked screenshot. When the list is unclear, it falls back to guessing pixel coordinates, the least reliable thing it does.
-   - Rules ("use ids", "deal with the pop-up first", "don't repeat a failing action") live in the prompt, and the model ignores them under pressure.
-2. **No observability.** A failed real run leaves only a list of step titles. Debugging is guesswork.
-3. **Tests prove the fixtures, not reality.** Every version passed its suites and still failed on real sites.
-4. **Codebase shape** (fixed by the migration: modules, strict TypeScript, files split by concern; UI code is still loosely typed, ADR-008).
-5. **The agent lives in the panel.** Close the panel and the run dies; nothing can run on a schedule (Phase 4 needs the service worker or an offscreen document).
-6. **Cost.** Long runs with screenshots on the smart model can cost $0.50 to $2; at $10/month that's few runs.
+1. **No brain.** Every feature is a separate runner in the side panel (`bench-run`, `jobs-run`, chat); nothing plans across them, nothing knows the whole state (BUGS 4).
+2. **Nothing runs when the panel is closed.** The agent and the batch live in the side panel page (BUGS: "overnight").
+3. **Memory is free text, retrieved by keyword against the wrong query** (BUGS 1): no structured facts, no answer bank, no question matching.
+4. **Autonomy is a pile of gates** in `run-tool.ts` and `gates.ts`; "pre-approved" covers some of them (BUGS 3).
+5. **Model strings live in `DEFAULT_SETTINGS` and tier names in callers**; no per-role assignment.
+6. **Perception** is home-grown (CSS heuristics); real sites still cost many steps (ADR-003 stays open; v1 keeps the current perception and spends on reliability through policy, memory and retries).
+7. **No spend cap**, only a per-run limit for batches and benchmarks.
 
----
+## 3. v1 target architecture
 
-## 3. Target architecture
+### 3.1 The brain and the workers
 
-```
-src/
-  core/
-    llm/          provider adapters (Claude, OpenAI), streaming, stall watchdog, cost meter, prompt caching
-    storage/      typed schema + migrations for chrome.storage
-    messaging/    typed messages between panel, service worker, offscreen doc, page scripts
-  assistant/      chat brain: routing, tools, math pipeline (verify/arbitrate/confirm), memory, skills, session notes
-  agent/
-    perception/   page model from Chrome: CDP Accessibility.getFullAXTree + DOMSnapshot (boxes, paint order,
-                  visibility, occlusion), all frames incl. cross-origin (Target.setAutoAttach), stable ids per run
-                  (backendNodeId), set-of-marks screenshot (numbered boxes matching the ids), viewport-first ordering,
-                  pop-ups/dialogs on top, change-only diffs
-    actions/      deterministic, no AI: click/type/select/pick_date/upload/scroll/keys by id. Preconditions
-                  (visible, enabled, not covered, in viewport; scroll if needed), trusted input via CDP, then
-                  verify an effect (value changed, dialog opened, navigation) and return a typed result
-    loop/         planner (smart model, few calls) + executor (cheap model, per step), task state machine
-                  (subgoals), budgets, loop detection in code (same failure twice → replan), pop-up handling
-                  policy, plan approval, checklist, nudges
-    safety/       gates (approvals, never-act, sharing check, off-plan), injection scan, secret refusal
-    skills/       site skills: recorded flows (record-a-workflow) and learned shortcuts, replayed without AI
-  trace/          per-run recorder: observation, screenshot, model call, action, result, timing, cost;
-                  export as a zip; replay viewer page; a failed trace becomes a regression fixture
-  background/     service worker: alarms, notifications, reminders, morning brief (Phase 4); runs that outlive the panel
-  ui/
-    sidepanel/ profile/ options/   (TypeScript first; React later only if it pays off)
-  page/           self-contained scripts injected into pages (bundled separately, injected with files: [])
-tests/
-  unit/           Vitest (jsdom) per module
-  e2e/            Playwright with the built extension, local fixtures, faked model
-  bench/          real-site, real-model benchmark (run manually on the Mac; scores tracked over time)
+```mermaid
+flowchart LR
+  U[Ulugbek<br/>side panel · Jobs page · Powerhouse · notifications] <--> B
+  subgraph Orchestrator["Orchestrator (extension, Powerhouse page)"]
+    B[Brain<br/>claude-fable-5-1<br/>plan · rank · review · decide]
+    S[Scheduler<br/>chrome.alarms]
+    P[Policy<br/>autonomy levels]
+    W[World state]
+    L[Action log]
+    $[Spend cap]
+  end
+  B --> W
+  S --> B
+  B -->|WorkerTask| A1[Agent 1<br/>browser worker<br/>sonnet-5-5 / haiku-5-5]
+  B -->|WorkerTask| A2[Agent 2<br/>writer<br/>sonnet-5-5]
+  B -->|WorkerTask| A3[Agent 3<br/>classifier<br/>haiku-5-5]
+  A1 -->|WorkerResult + log| B
+  A2 --> B
+  A3 --> B
+  A1 --> P
+  A1 --> L
+  M[(Memory<br/>facts · answers · episodic)] --> B
+  M --> A1
+  A1 -->|learnAnswer| M
+  W --> A1
 ```
 
-### Agent v2 in one paragraph
-Each step, perception produces one observation: the visible part of the page as a list of elements with stable ids, names from Chrome's accessibility tree, state, and position, with dialogs and pop-ups first, plus a screenshot with the same ids drawn on it. The executor model answers with actions on ids only. The action layer checks preconditions, performs the action with real input, waits for the page to settle, and reports what changed. Code, not the prompt, enforces policies: a pop-up blocking the target is handled first; the same failing action twice triggers a replan by the planner model; coordinate clicks are allowed only on a zoomed crop and only after id-based actions fail. Every step is written to the trace.
+- **Brain** (`src/orchestrator/brain.ts`): a handful of typed calls, never a loop: `rankBatch(candidates, world)`, `reviewRun(trace summary)`, `triageNeedsYou(items)`, `rankAssignments()`, `answerUser(question, world)`. Each gets the compact world summary (stable prefix, cached) and returns typed JSON (structured outputs). Model: `models.brain`.
+- **Workers** (`src/orchestrator/workers.ts`): `WorkerTask { id, n, kind: "apply" | "read" | "write" | "classify", model, goal, context: WorldSlice, memory: MemorySlice, files?, policy: AutonomyLevel, resumeFrom? }` → `WorkerResult { status, output, log, cost, traceId?, needsYou? }`. Kinds map to engines: `apply`/`read` → `runAgent` (the existing loop, taking the task), `write`/`classify` → one model call with a schema. Numbered 1..n as they start; the Powerhouse shows them.
+- **Model config** (`src/core/llm/models.ts`): `MODELS = { brain, browser, browserCheap, writer, classifier, tieBreak }` per provider, with max tokens and effort per role; `DEFAULT_SETTINGS` keeps provider and keys only. A lint rule (`no-restricted-syntax` on `/claude-|gpt-/` string literals outside `models.ts`/`prices.ts`) keeps strings out of code.
+- **World state** (`src/orchestrator/world.ts`): `WorldState { jobs: { queued, applying, applied(30d), needsYou }, assignments, reminders, workers, spend: { today, month, caps }, lastBatchAt, now }` built from storage on demand, plus `summarize(world)` (≤2K tokens) for prompts and `slice(world, kind)` per worker. Workers also get a `world_query` tool answered from storage (no model).
+- **Policy** (`src/orchestrator/policy.ts`): `AutonomyLevel = "ask-final" | "approved-batch" | "read-only" | "every-click"`; `allowed(action, ctx): "run" | "ask" | "needs-you" | "refuse"` is the single function every gate calls. `approved-batch` runs submits, Enter-submits, uploads and typing on the job's ATS site, the company's site and any frame host of the form; refuses payments/deleting/posting; sends CAPTCHA, login, SSN/ID/bank fields and unsure legal attestations to Needs You; `read-only` (school) refuses every final action.
+- **Scheduler** (`src/orchestrator/scheduler.ts`): named `chrome.alarms` (`batch-8am`, `apply:<jobId>`, `remind:<id>`, `watchdog`), all created from storage so a Chrome restart recreates them; application times drawn uniformly over the next 20 h with a 15-min minimum gap and one company per day.
+- **Action log** (`src/orchestrator/log.ts`): `{ at, worker, kind: submit|send|trash|upload|visit, what, why, undo? }` in `actionLog` storage, shown on the Powerhouse and the Jobs page; email trash entries carry the undo.
+- **Spend cap** (`src/core/llm/budget.ts`): `modelCall` asks `budget.allow(cost estimate)` first; over the daily or monthly cap it throws `SpendCapError`; workers catch it at step boundaries and finish at a safe point; the orchestrator sets `paused: "spend-cap"`.
 
-### Decisions (docs/adr/)
-- **ADR-001 (open): build our own agent core, or fork Nanobrowser** (Apache-2.0 Chrome extension agent: TypeScript, chrome.debugger, planner/navigator, multi-provider). Run the same 10 benchmark tasks on both; adopt their core if clearly better, and put Sidekick's personal layer (profile, memory, homework, deadlines, applications) on top.
-- **ADR-002: build tooling.** Decided: plain Vite with a hand-written manifest (not WXT).
-- **ADR-003 (open): perception source.** CDP accessibility tree + DOMSnapshot (needs the debugger attached; shows Chrome's yellow "debugging" bar) vs. an improved in-page walker (no bar, but no cross-origin frames). Likely CDP with the in-page walker as fallback.
-- **ADR-004: UI.** Decided: keep vanilla TS DOM code for now.
-- **ADR-005 to 008** (migration): page functions stay `func`-injected and checked; test bundles; fixed extension key; strictness rules.
+### 3.2 Where it runs: extension-hosted orchestrator, daemon later if needed (ADR-011)
 
----
+Evaluated:
 
-## 4. Migration (done, 2026-10-29)
+| | (a) Extension only | (b) Local daemon (Node, launchd) + extension as hands |
+|---|---|---|
+| Runs while Chrome is open and the Mac is awake | yes, if an extension page stays open: the Powerhouse page hosts the loop; `chrome.alarms` wake the service worker to reopen it if closed | yes; the daemon also runs with Chrome closed, but only API work (email, ranking, scans): applications need Chrome anyway |
+| Survives Chrome quit | alarms persist and fire on the next launch; state is in storage | daemon keeps going; the browser part waits |
+| Mac asleep | nothing runs in either; `OVERNIGHT.md` keeps it awake |
+| Secure token storage | WebCrypto non-extractable AES key in IndexedDB; tokens encrypted at rest in `chrome.storage` (protects against reading the storage file, not against code running in this Chrome profile) | macOS Keychain through the daemon: the real thing |
+| Install and moving parts | none new | a native-messaging host manifest, a launchd plist, a Node runtime, an update path |
+| Path to Electron + Swift | the orchestrator is pure TS with a `Host` interface (`alarms`, `storage`, `notify`, `browser`); Electron implements the same interface | same core; the daemon *is* an early Electron main process |
 
-The same extension, organized and typed, with all tests green after every step (details and deviations: `docs/MIGRATION_PLAN.md`, decisions: `docs/adr/`).
+Decision: **(a) now**, with the orchestrator written against a `Host` interface so it can move. The trigger for (b) is concrete: when Phase 8 needs tokens the extension cannot protect well enough for him, or when email work should run with Chrome closed. Recommended, not decided: the brief leaves this to him (PLAN decision 3).
 
-1. ES modules + Vite build to `dist/`, test bundles for the jsdom suites, fixed extension ID.
-2. Folders (`src/`, `public/`, `tests/jsdom|chrome|unit`).
-3. Injected functions moved to `src/page/`, checked on every build.
-4. TypeScript, `strict`, types for storage, model calls, tool calls, page snapshots and actions, agent state, chat turns.
-5. Big files split by concern (agent, brain, side panel, adapters, model layer); prompts pinned by `prompts-test`.
-6. Lint (typescript-eslint + restricted globals), Vitest, `npm run check`.
+How (a) stays alive: the Powerhouse page is opened as a pinned tab in its own window by the service worker on startup (`chrome.runtime.onStartup`) and by the `watchdog` alarm every minute if it is missing; the page runs the orchestrator tick (what is due, what is running, what to dispatch); the service worker only owns alarms and the panel. If the page is closed on purpose (Pause), the alarm does not reopen it until Resume.
 
-Next (separate project): trace recorder → real-site benchmark → agent v2 (ADR-001 decides build vs. fork).
+### 3.3 Memory (ADR-012)
+
+```mermaid
+flowchart TB
+  Q[ask_user question] --> F{fact store<br/>field match}
+  F -- hit --> A[answer, log "from memory"]
+  F -- miss --> K{answer bank<br/>BM25 prefilter → Haiku "same question?"}
+  K -- hit --> A
+  K -- miss --> N[notify, wait, Needs You card]
+  N -->|Save & resume| LEARN[learnAnswer: question, normalized key, answer, type, options]
+  A --> LEARN
+  LEARN --> BANK[(answers)]
+  CHAT[messages, reflections] --> EP[(episodic memories<br/>BM25 + optional embeddings)]
+  EP --> BRAIN[brain context]
+  FACTS[(facts<br/>typed, versioned)] --> BRAIN
+  FACTS --> WORKER[worker context]
+  BANK --> WORKER
+```
+
+- **Facts** (`src/memory/facts.ts`): `Record<FactKey, { value: string; updatedAt: number; source: "profile" | "resume" | "chat" | "application" | "you" }>`; keys are an enum (`fullName`, `email`, `phone`, `address.*`, `school`, `degree`, `major`, `gradMonth`, `highSchool`, `highSchoolYear`, `citizenship`, `visaStatus`, `workAuthorizedUS`, `needsSponsorship`, `eeo.*`, `salary`, `relocation`, `startDate`, `links.*`, …). The profile page edits them; the old `profile` object migrates on first run and stays as a view.
+- **Answer bank** (`src/memory/answers.ts`): `{ id, question, normalized, answer, fieldType: text|select|radio|checkbox|file|date, options?, site, askedAt: number[], updatedAt }`. `normalize()` lowercases, strips punctuation and stop words, maps synonyms (secondary school → high school, grad → graduation). `findAnswer(q, opts)`: BM25 over normalized questions → top 3 → one Haiku call "do these ask the same thing? which option matches?" → threshold → the answer (or an option from the form's list). Every hit and miss is logged in the trace.
+- **Episodic** (`src/memory/episodic.ts`): today's `memories` with `recall(query)` by BM25; an `embedding` field filled by OpenAI `text-embedding-3-small` when that key exists (hybrid 70/30 as OpenClaw), else BM25 only. Anthropic has no embeddings API; this stays optional.
+- **Storage:** local (`chrome.storage.local`, the existing locked writes); IndexedDB only if the bank outgrows a few MB. Supabase + pgvector rejected for v1: it moves his most personal data off the machine for a multi-device benefit he doesn't need yet (PLAN decision 4).
+- **Memory page** (`memory.html`): facts, answers, episodic, export/import.
+
+### 3.4 Data flow of one day
+
+```mermaid
+sequenceDiagram
+  participant S as Scheduler (alarms)
+  participant B as Brain (Fable)
+  participant W as World state
+  participant A as Agent n (browser worker)
+  participant M as Memory
+  participant U as Ulugbek
+  S->>W: 08:00 ET: eligible jobs with sponsorship evidence
+  B->>W: rankBatch(candidates, summary) → 15–20 jobs
+  B-->>U: notification: today's batch is ready
+  U->>W: Approve
+  S->>S: random times over 20 h, one per company
+  loop each scheduled job
+    S->>A: WorkerTask(apply, policy approved-batch, memory slice)
+    A->>M: findAnswer(question) on every ask
+    alt answered
+      A->>A: fill, continue
+    else not answered
+      A-->>U: notification, wait N min
+      A->>W: Needs You card (questions, types, options)
+    end
+    A->>W: applied + answers + confirmation screenshot
+    A->>B: result; brain reviews only failures
+  end
+  U->>W: Save & resume (answers → M) → new WorkerTask(resumeFrom)
+```
+
+### 3.5 Security
+
+- Keys and OAuth tokens: encrypted at rest with a non-extractable WebCrypto AES-GCM key (IndexedDB) and stored in `chrome.storage.local` as ciphertext; the Settings page shows only "set". Limits stated in SECURITY.md; Keychain only with the daemon.
+- All page, frame, email and job-posting text stays inside `untrusted()`; the brain never receives raw page text, only worker summaries; an email or page that carries instructions for the agent is flagged in the log and the Powerhouse.
+- Irreversible actions (submit, send, trash, upload) go through `policy.allowed()` and the action log; nothing leaves the machine except model-provider and connected-service calls.
+- Honesty in code: work-authorization and sponsorship answers come only from the fact store; the trace records the source of every typed value; a value with no source fails the run's review.
+
+### 3.6 Storage additions (v1)
+
+`facts`, `answers`, `actionLog`, `assignments`, `reminders`, `emailAccounts` (ciphertext), `emailLog`, `orchestrator` (`{ paused, lastTick, workers, scheduled }`), `jobSettings` grows (`batchSize`, `batchTime`, `countries`, `needsYouWaitMinutes`, `onePerCompanyDays`), `spendCaps`, `notifications`. Every key typed in `schema.ts`; every read-modify-write under the lock.
+
+## 4. Decisions (docs/adr/)
+
+- ADR-001 (open): build vs. fork the agent core; the benchmark decides. v1 keeps the current core.
+- ADR-002: Vite with a hand-written manifest. ADR-004: vanilla TS DOM code. ADR-005–008: page scripts, test bundles, fixed key, strictness. ADR-009: run traces. ADR-010: the job pipeline (company boards, government sponsor lists, approval per batch, human pace).
+- ADR-011 (proposed, §3.2): extension-hosted orchestrator behind a `Host` interface; daemon when tokens or Chrome-closed work require it.
+- ADR-012 (proposed, §3.3): memory as a typed fact store + answer bank + episodic list, local storage, BM25 + Haiku matching, embeddings optional.
