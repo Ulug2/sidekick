@@ -23,46 +23,44 @@ const results = []; const check = (n, ok, x = '') => results.push(`${ok ? 'PASS'
   const now = () => Date.now();
   const rec = (o) => ({ n: 1, kind: 'apply', title: 'Apply: Software Engineer at Stripe', model: 'm', status: 'working', step: 'Starting', startedAt: now(), updatedAt: now(), cost: 0, ...o });
   const set = async (orchestrator, brainCalls = []) => { await local.set({ orchestrator }); await session.set({ brainCalls }); await w.refresh(); await sleep(20); };
-  const fig = id => $$('#overlay .ph-label').find(g => g.dataset.id === id);
-  const coach = () => $('#overlay').dataset.coach;
-  const bubble = () => $('.stage .bubble');
+  const mode = () => $('#overlay').dataset.mode;
+  const line = () => $('#thinking').textContent;
   const listText = () => $$('#workerList li').map(li => li.textContent.replace(/\s+/g, ' ').trim());
   await sleep(80);
 
-  // ---- no WebGL: the page still works and says why there is no picture ----
-  check('Without WebGL the stage says so, and the list carries everything', !!$('.stage .nogl') && /needs WebGL/.test($('.stage .nogl').textContent) && !$('.ph-canvas'));
+  // ---- no WebGL (jsdom): the stage says so in one line; everything below still works ----
+  check('Without WebGL the stage says so in one line, no canvas, and the list carries everything', !!$('.stage .nogl') && /3D view is off because WebGL is not available/.test($('.stage .nogl').textContent) && !$('.ph-canvas'));
 
   // ---- idle ----
   await set({});
-  check('Idle: everyone is asleep (Sidekick sleeps on the roof), no workers, the list says why it is empty, the chip says when the next batch is', $('#overlay').dataset.mode === 'sleep' && /^Everyone is asleep\. The next batch is built at/.test($('#thinking').textContent) && /Sleeping on the HQ roof/.test(listText()[0]) && coach() === 'idle' && !$$('#overlay .ph-label').length && !$('#emptyList').hidden && /^Sleeping until \d{1,2}:00 (AM|PM) ET$/.test($('#chip').textContent) && bubble().hidden && listText().length === 1, $('#chip').textContent);
+  check('Idle: everyone is asleep (Sidekick sleeps on the roof), no workers, the list says why it is empty, the chip says when the next batch is', mode() === 'sleep' && /^Everyone is asleep\. The next batch is built at/.test(line()) && /Sleeping on the HQ roof/.test(listText()[0]) && !$('#emptyList').hidden && /^Sleeping until \d{1,2}:00 (AM|PM) ET$/.test($('#chip').textContent) && listText().length === 1, $('#chip').textContent);
 
-  // ---- dispatch: a worker starts; Sidekick shouts its real title ----
+  // ---- dispatch: a worker starts; Sidekick names its real title ----
   await set({ workers: [rec({ id: 'w1' })], lastShout: { text: 'Agent 1! Apply: Software Engineer at Stripe', at: now(), workerId: 'w1' } });
-  check('Dispatch: Sidekick shouts the task\'s real title in the bubble; the voice hook gets the same text', coach() === 'shouting' && !bubble().hidden && bubble().textContent === 'Agent 1! Apply: Software Engineer at Stripe' && spoken.join('|') === 'Agent 1! Apply: Software Engineer at Stripe', JSON.stringify({ coach: coach(), spoken }));
-  check('Agent 1 does pull-ups on the heat pipe (it is applying), moving, numbered', fig('w1')?.dataset.pose === 'pull' && fig('w1').dataset.zone === 'heatpipe' && fig('w1').dataset.animate === 'true' && fig('w1').dataset.state === 'working' && fig('w1').querySelector('.ph-n').textContent === '1' && $('#chip').textContent === 'Running · 1 working');
+  check('Dispatch: Sidekick whistles, the status line names the worker and its real title, the voice hook gets it, the worker is "starting"', mode() === 'whistle' && line() === 'Sidekick started worker 1: Apply: Software Engineer at Stripe' && spoken.join('|') === 'Agent 1! Apply: Software Engineer at Stripe' && /starting/.test(listText()[1]) && $('#chip').textContent === 'Running · 1 working', JSON.stringify({ mode: mode(), line: line(), spoken }));
 
-  // ---- a brain call in flight: push-ups win over the shout ----
+  // ---- a brain call in flight ----
   await set({ workers: [rec({ id: 'w1' })], lastShout: { text: 'Agent 1! x', at: now(), workerId: 'w1' } }, [{ id: 'b1', what: 'Pick the best 18 to apply to today', startedAt: now() }]);
-  check('A brain call and a fresh dispatch at once: the status line names the dispatch (city contract: dispatch beats lifting)', /^Sidekick started worker 1: Apply: Software Engineer at Stripe$/.test($('#thinking').textContent) && $('#overlay').dataset.mode === 'whistle', $('#thinking').textContent);
+  check('A brain call and a fresh dispatch at once: the dispatch wins (it explains the new robot)', mode() === 'whistle' && /^Sidekick started worker 1:/.test(line()), line());
   await set({ workers: [rec({ id: 'w1' })] }, [{ id: 'b1', what: 'Pick the best 18 to apply to today', startedAt: now() }]);
-  check('Brain call in flight: Sidekick lifts and the page says what he is thinking about', $('#overlay').dataset.mode === 'lift' && /^Sidekick is thinking: Pick the best 18/.test($('#thinking').textContent) && /lifting on the HQ roof/.test(listText()[0]), $('#thinking').textContent);
+  check('Brain call in flight: Sidekick lifts and the page says what he is thinking about', mode() === 'lift' && /^Sidekick is thinking: Pick the best 18/.test(line()) && /lifting on the HQ roof/.test(listText()[0]), line());
   await set({ workers: [rec({ id: 'w1' })] }, [{ id: 'b1', what: 'old', startedAt: now() - 4 * 60000 }]);
-  check('A brain call older than 3 minutes (page closed mid-call) no longer counts: Sidekick coaches', $('#overlay').dataset.mode === 'coach' && /^Sidekick is coaching: 1 worker is on the job\.$/.test($('#thinking').textContent), $('#thinking').textContent);
+  check('A brain call older than 3 minutes (page closed mid-call) no longer counts: Sidekick coaches', mode() === 'coach' && /^Sidekick is coaching: 1 worker is on the job\.$/.test(line()), line());
 
-  // ---- working: the shout is over; a writer joins ----
+  // ---- working: the 6-second dispatch is over; a writer joins ----
   await set({ workers: [rec({ id: 'w1', step: 'Page 2: Education' }), rec({ id: 'w2', n: 2, kind: 'write', title: 'Cover letter: Stripe', step: 'Writing', startedAt: now() + 1 })], lastShout: { text: 'Agent 1! x', at: now() - 7000, workerId: 'w1' } });
-  check('Working: the 6-second shout is over; Agent 2 (writing) does sit-ups on a VRAM chip', coach() === 'idle' && bubble().hidden && fig('w2')?.dataset.pose === 'situp' && fig('w2').dataset.zone === 'vram' && fig('w2').dataset.animate === 'true' && $('#chip').textContent === 'Running · 2 working');
+  check('Working: the dispatch is over; Agent 1 applying, Agent 2 writing', mode() === 'coach' && /applying/.test(listText()[1]) && /writing/.test(listText()[2]) && $('#chip').textContent === 'Running · 2 working');
   check('The list is the accessible path: Sidekick first, then each agent with what it is doing; the 3D layer is hidden from screen readers', listText().length === 3 && /^S\s*Sidekick/.test(listText()[0]) && /Apply: Software Engineer at Stripe.*Page 2: Education.*applying/.test(listText()[1]) && /Cover letter: Stripe.*writing/.test(listText()[2]) && $$('#workerList button').every(b => b.getAttribute('aria-label')) && $('#overlay').getAttribute('aria-hidden') === 'true', JSON.stringify(listText()));
 
   // ---- needs you ----
   await set({ workers: [rec({ id: 'w1', status: 'needs_you', step: 'Waiting for you' }), rec({ id: 'w2', n: 2, kind: 'write', title: 'Cover letter: Stripe', startedAt: now() + 1 })], needsYou: [{ workerId: 'w1', jobId: 'j1', since: now(), stoppedAt: '', questions: [] }] });
-  check('Needs you: Agent 1 sits on the PCIe edge with a hand up and a "?"; the chip counts it', fig('w1')?.dataset.pose === 'raise' && fig('w1').dataset.zone === 'pcie' && fig('w1').dataset.state === 'needs' && fig('w1').querySelector('.ph-tag-q') && $('#chip').textContent === 'Running · 1 working · 1 needs you' && /needs you/.test(listText()[1]));
+  check('Needs you: Agent 1 needs you (amber pill); the chip counts it', $$('#workerList .wl-state')[1].textContent === 'needs you' && $$('#workerList .wl-state')[1].dataset.tone === 'amber' && $('#chip').textContent === 'Running · 1 working · 1 needs you');
 
   // ---- done and failed ----
   await set({ workers: [rec({ id: 'w1', status: 'done', step: 'Submitted', updatedAt: now() }), rec({ id: 'w2', n: 2, kind: 'write', status: 'failed', error: 'Spend cap reached <b>x</b>', startedAt: now() + 1 })] });
-  check('Done: Agent 1 sits on the PCIe edge with "done"; failed: Agent 2 slumps by the capacitors with a "!" and the error in the list', fig('w1')?.dataset.pose === 'sit' && /done/.test(fig('w1').textContent) && fig('w2')?.dataset.pose === 'slump' && fig('w2').dataset.zone === 'caps' && fig('w2').querySelector('.ph-tag-err') && /Error: Spend cap reached <b>x<\/b>/.test(listText()[2]) && !$('#workerList b'), JSON.stringify(listText()));
+  check('Done (grey) and failed (red, the error as plain text in the list)', /done/.test(listText()[1]) && $$('#workerList .wl-state')[2].dataset.tone === 'red' && /Error: Spend cap reached <b>x<\/b>/.test(listText()[2]) && !$('#workerList b'), JSON.stringify(listText()));
   await set({ workers: [rec({ id: 'w1', status: 'done', updatedAt: now() - 31000 }), rec({ id: 'w2', n: 2, kind: 'write', title: 'Cover letter: Stripe', status: 'failed', error: 'x', updatedAt: now() - 31000, startedAt: now() + 1 })] });
-  check('30 seconds after it finished, a done worker leaves; a failed one stays until dismissed', !fig('w1') && fig('w2') && listText().length === 2);
+  check('30 seconds after it finished, a done worker leaves; a failed one stays until dismissed', listText().length === 2 && /Cover letter: Stripe/.test(listText()[1]));
 
   // ---- keyboard focus survives a refresh (rows are rebuilt on every storage change) ----
   $$('#workerList button').find(b => b.dataset.open === 'w2').focus();
@@ -75,42 +73,30 @@ const results = []; const check = (n, ok, x = '') => results.push(`${ok ? 'PASS'
   check('Drawer: opens for Agent 2 with its error, takes focus, is no longer inert', $('#drawer').classList.contains('open') && !$('#drawer').inert && w.document.activeElement === $('#closeDrawer') && /Agent 2 · Cover letter: Stripe/.test($('#drawerTitle').textContent) && /Error: x/.test($('#drawerBody').textContent));
   w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await sleep(20);
   check('Escape closes it, makes it inert again and returns focus to the list item', !$('#drawer').classList.contains('open') && $('#drawer').inert && w.document.activeElement?.dataset.open === 'w2');
-  fig('w2').click(); await sleep(20);
-  check('Clicking a worker\'s label on the card opens its drawer too', $('#drawer').classList.contains('open') && /Agent 2/.test($('#drawerTitle').textContent));
+  $$('#workerList button').find(b => b.dataset.open === 'w2').click(); await sleep(20);
   [...$('#drawerActions').querySelectorAll('button')].find(b => b.textContent === 'Dismiss').click(); await sleep(50); await w.refresh(); await sleep(20);
-  check('Dismiss clears a failed worker from the card (stored, so it stays cleared)', local.data().orchestrator.dismissed.includes('w2') && !fig('w2'));
+  check('Dismiss clears a failed worker (stored, so it stays cleared)', local.data().orchestrator.dismissed.includes('w2') && listText().length === 1);
 
   // ---- paused by him ----
   await set({ workers: [rec({ id: 'w3', n: 3 })], paused: 'you' });
-  check('Paused by you: Sidekick sits; a running worker stops moving and says it is finishing this one; the button says Resume', coach() === 'paused' && $('#overlay').dataset.mode === 'rest' && /Paused by you/.test(listText()[0]) && /finishing/.test(listText()[1]) && fig('w3').dataset.animate === 'false' && fig('w3').dataset.state === 'finishing' && /finishing/.test(fig('w3').textContent) && $('#pause').textContent === 'Resume' && $('#chip').textContent === 'Paused by you · 1 finishing');
+  check('Paused by you: Sidekick rests; a running worker is finishing this one (gold); the button says Resume', mode() === 'rest' && /Paused by you/.test(listText()[0]) && /finishing/.test(listText()[1]) && $$('#workerList .wl-state')[1].dataset.tone === 'gold' && $('#pause').textContent === 'Resume' && $('#chip').textContent === 'Paused by you · 1 finishing' && line() === 'Paused. Workers finish the job they are on; nothing new starts.');
   $('#pause').click(); await sleep(60);
   check('Resume clears the pause in storage', local.data().orchestrator.paused === null && $('#pause').textContent === 'Pause');
   await set({ workers: [], paused: 'spend-cap' });
-  check('The old sticky "spend-cap" value is not a pause (the cap is read live)', coach() === 'idle');
+  check('The old sticky "spend-cap" value is not a pause (the cap is read live)', mode() === 'sleep');
 
   // ---- spend cap, live ----
   await local.set({ capDaily: 1, usage: { [new Date().toLocaleDateString('en-CA')]: { 'claude-sonnet-5-5': { calls: 9, input: 400000, output: 30000, cacheRead: 0, cacheWrite: 0 } } } });
   await set({ workers: [] });
-  check('Spend over the daily cap: Sidekick sits, the chip says so, the meter shows it', coach() === 'paused' && /Paused: spend cap/.test(listText()[0]) && /^Spend cap reached\./.test($('#thinking').textContent) && $('#chip').textContent === 'Spend cap reached (daily)' && $('#chip').dataset.tone === 'warn' && $$('#meters .meter.over').length === 1);
+  check('Spend over the daily cap: Sidekick rests, the chip says so, the meter shows it', mode() === 'rest' && /Paused: spend cap/.test(listText()[0]) && /^Spend cap reached\./.test(line()) && $('#chip').textContent === 'Spend cap reached (daily)' && $('#chip').dataset.tone === 'warn' && $$('#meters .meter.over').length === 1);
   await local.set({ usage: {} });
 
   // ---- web text is text; overflow goes to the list ----
   const evil = 'Apply: <img src=x onerror="window.pwned=1"> at Evil';
   await set({ workers: [1, 2, 3, 4, 5].map(n => rec({ id: `a${n}`, n, title: n === 1 ? evil : `Apply: Job ${n}`, startedAt: now() + n })), lastShout: { text: `Agent 1! ${evil}`, at: now(), workerId: 'a1' } });
-  check('Titles from job boards render as text (no element, no script)', !w.document.querySelector('#workerList img, .stage img, #drawer img') && bubble().textContent.includes('<img') && !w.pwned);
+  check('Titles from job boards render as text (no element, no script) in the list and the status line', !w.document.querySelector('#workerList img, .stage img, #drawer img, #thinking img') && line().includes('<img') && listText()[1].includes('<img') && !w.pwned);
   await set({ workers: [1, 2, 3, 4, 5, 6].map(n => rec({ id: `a${n}`, n, title: `Apply: Job ${n}`, startedAt: now() + n })) });
-  check('More workers than slots: the old view shows 3 on the heat pipe; the city has room for 4 couriers, so 2 more are only in the list, and all 6 are listed', $$('#overlay .ph-label').length === 3 && /^2 more workers than there is room for on the card/.test($('#thinking').textContent) && listText().length === 7, $('#thinking').textContent);
-
-  // ---- Silicon City (?city=1, M2): without WebGL the stage says so; the list still works ----
-  {
-    const w2 = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true, url: 'chrome-extension://abc/powerhouse.html?city=1' }).window;
-    w2.chrome = { storage: { local: makeStore({ orchestrator: { workers: [rec({ id: 'c1' })] } }), session: makeStore(), onChanged: { addListener() {} } }, runtime: { getURL: p => p }, tabs: { update: async () => ({}) }, windows: { update: async () => {} } };
-    w2.ResizeObserver = class { observe() {} };
-    loadScripts(w2, ['ui/powerhouse/powerhouse.js'], ['refresh']);
-    await w2.refresh(); await sleep(30);
-    const note = w2.document.querySelector('.stage .nogl');
-    check('City view without WebGL: one line in the stage, no canvas, and the list still shows the worker', !!note && /3D view is off because WebGL is not available/.test(note.textContent) && !w2.document.querySelector('.ph-canvas') && /Apply: Software Engineer at Stripe/.test(w2.document.querySelector('#workerList').textContent), note?.textContent);
-  }
+  check('More couriers than the lane holds (4): 2 more are only in the list, and all 6 are listed', /^2 more workers than there is room for on the card/.test(line()) && listText().length === 7, line());
 
   console.log(results.join('\n'));
   const passed = results.filter(x => x.startsWith('PASS')).length;

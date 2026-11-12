@@ -200,6 +200,19 @@ General rules that came out of these: design for the long version of a task; eve
   - Any optional renderer falls back to the plain page.
   - Tests: unit phase6 (grip, layout, zoom levels), powerhouse jsdom (no-WebGL path), real-chrome 9b (WebGL, zoom, fly-to, focus).
 
+### 24. The Silicon City build (caught by screenshots, the render meter and draw counts, 2026-11-12)
+- **What.**
+  - When the render loop stopped (a scene went still), the last moving frame stayed on screen: a robot mid-step, a pulse half way.
+  - The first city build drew 305 to 464 calls a frame with robots (one mesh per window block, fin and trace), over the 250 budget.
+  - The HQ roof light, placed as the handoff said, blew Sidekick's face white up close.
+  - The handoff named `PCFSoftShadowMap`, which three 0.186 no longer has.
+- **Rule.**
+  - A loop that renders only while something moves draws one final frame when it stops.
+  - Count draws per state (`renderer.info`, `autoReset` off) and keep a budget in the tests; merge static meshes per material and bake static shadow casters into one proxy.
+  - Check every light at the closest zoom, not only at home.
+  - Check a design doc's API names against the installed library version before building on them.
+  - Tests: unit scene (contract tables), powerhouse jsdom (no WebGL), real-chrome 9b (robots per zone, plain-text titles, zoom, fly-to, focus), 9c (demo states, draws), 9d (hidden tab and reduced motion stop drawing).
+
 ## Earlier lessons (v0.7–v0.9)
 - **A double-check must not overrule a right answer without evidence** (v0.7.2 pipeline problem). Replacements need a code check (objective or residuals) under both setups.
 - **Examples in prompts anchor the model.** Use neutral numbers, never the real answer.

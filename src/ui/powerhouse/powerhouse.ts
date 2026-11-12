@@ -1,7 +1,6 @@
-// The Powerhouse page. One load of the real state gives a CityInput; deriveScene() (scene.ts, pure)
-// turns it into the Scene the list, the status chip and line, the drawer and the timer use (the
-// Silicon City contract, docs/powerhouse-redesign/04). Until the city view replaces it (M6), the 3D
-// gym view (gpu3d.ts) still draws from scene-gym.ts, derived from the same load.
+// The Powerhouse page (the Silicon City, docs/powerhouse-redesign/). One load of the real state gives
+// a CityInput; deriveScene() (scene.ts, pure) turns it into the Scene that the 3D city (city-view.ts),
+// the list, the status chip and line, the drawer and the timer all use.
 // Everything a worker title or step contains came from the web: text only, never markup.
 // powerhouse.html#demo shows every state from made-up records, in memory only (no storage writes).
 import { $ } from "../shared/dom.js";
@@ -17,8 +16,6 @@ import type { BrainCall } from "../../orchestrator/activity.js";
 import type { NeedsYouItem, WorkerRecord } from "../../orchestrator/types.js";
 import type { Job } from "../../jobs/types.js";
 import { deriveScene, nextDeadline, type CityInput, type Scene, type SceneWorker } from "./scene.js";
-import { deriveScene as deriveGym, type Scene as GymScene } from "./scene-gym.js";
-import { createView, type PowerhouseView } from "./gpu3d.js";
 import { createCityView, type CityView, type DrawInfo } from "./city-view.js";
 import { speak } from "./voice.js";
 import { MODEL_IDS } from "../../core/llm/models.js";
@@ -28,7 +25,6 @@ const etTime = (t: number) => new Date(t).toLocaleString("en-US", { timeZone: BA
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 let scene: Scene | null = null;
-let view: PowerhouseView | null = null;
 let jobs: Job[] = [];
 let lastBubbleKey = "";
 let drawerFor: string | null = null; // a worker id, or "sk"
@@ -40,8 +36,6 @@ let pausedNow = false;
 let spendLine = "";
 const logs = new Map<string, string[]>(); // steps seen while this page is open, per worker
 const demo = location.hash === "#demo";
-// The Silicon City view is behind ?city=1 until it replaces the gym (docs/powerhouse-redesign/06, M6).
-const cityMode = new URLSearchParams(location.search).get("city") === "1";
 let cityView: CityView | null = null;
 
 // ---------- state ----------
@@ -60,10 +54,6 @@ export function cityInput(r: Raw): CityInput {
     sleepingUntil: r.nextBatchAt
   };
 }
-const gymScene = (r: Raw): GymScene => deriveGym({
-  now: r.now, workers: r.workers, needsYou: r.needsYou, paused: r.pausedFlag, brainCalls: r.brainCalls, ...(r.lastShout && { lastShout: r.lastShout }),
-  spend: r.spend, caps: r.caps, dismissed: r.dismissed, batchOn: r.nextBatchAt !== null, nextBatchAt: r.nextBatchAt, formatTime: etTime
-});
 
 // Reads everything. The page-wide side effects (meters, the Pause button's state) are returned as
 // apply(), run only if this load is still the newest (refresh()).
@@ -133,7 +123,7 @@ function demoBar(): void {
 }
 
 // ---------- drawing ----------
-export function render(s: Scene, gym: GymScene, input: CityInput): void {
+export function render(s: Scene, input: CityInput): void {
   scene = s;
   const chip = $("#chip");
   chip.textContent = s.chip.text; chip.dataset.tone = s.chip.tone;
@@ -141,10 +131,9 @@ export function render(s: Scene, gym: GymScene, input: CityInput): void {
   $("#pause").setAttribute("aria-pressed", String(pausedNow));
   const lead = document.createElement("b"); lead.textContent = s.line[0];
   $("#thinking").replaceChildren(lead, ` ${s.line[1]}`);
-  $("#overlay").dataset.coach = gym.coach; // the gym view (until M6)
   $("#overlay").dataset.mode = s.sidekick.mode;
   if (s.sidekick.bubble) { const key = `${s.sidekick.dispatchTo}:${s.sidekick.bubble}`; if (lastBubbleKey !== key) { lastBubbleKey = key; speak(`Agent ${s.workers.find(w => w.id === s.sidekick.dispatchTo)?.n ?? ""}! ${s.sidekick.bubble}`); } }
-  if (cityMode) cityView?.apply(s); else view?.update(gym);
+  cityView?.apply(s);
   const everyone = [...s.workers, ...s.overflow];
   for (const w of everyone) {
     const log = logs.get(w.id) || [];
@@ -271,7 +260,7 @@ export async function refresh(): Promise<void> {
   if (seq !== loadSeq) return; // a newer load has drawn already
   r.apply();
   const input = cityInput(r.raw);
-  render(deriveScene(input), gymScene(r.raw), input);
+  render(deriveScene(input), input);
 }
 
 // The demo page's render meter: live fps, or stopped with the total frame count (05 › Page).
@@ -284,25 +273,17 @@ function showMeter(info: DrawInfo): void {
 
 if ($("#powerhouseApp")) {
   const reducedMotion = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  if (cityMode) {
-    cityView = createCityView($("#stage"), { onPick: id => openDrawer(id, "canvas"), reducedMotion, overlay: $("#overlay"), ...(demo && { onDraw: showMeter }) });
-    const hint = document.querySelector(".ph-hint"); if (hint) hint.textContent = "Drag to turn · scroll or pinch to zoom · click a robot";
-    if (!cityView) { const n = document.createElement("p"); n.className = "nogl"; n.textContent = "3D view is off because WebGL is not available. The worker list below shows everything."; $("#stage").append(n); }
-    addEventListener("pagehide", () => cityView?.dispose());
-  } else {
-    view = createView($("#stage"), $("#overlay"), { reducedMotion });
-    // A pick on the card returns focus to the card when the drawer closes (not to a list row
-    // further down the page, which would scroll it).
-    view.onPick(id => { view?.focus(id); openDrawer(id, "canvas"); });
-  }
-  $("#zoomIn").onclick = () => cityMode ? cityView?.zoom(0.75) : view?.zoom(0.75);
-  $("#zoomOut").onclick = () => cityMode ? cityView?.zoom(1.33) : view?.zoom(1.33);
-  $("#zoomReset").onclick = () => cityMode ? cityView?.resetView() : view?.reset();
-  // Timers are throttled in background tabs: catch up when the tab is seen again; draw nothing while
-  // hidden (the city view stops its own loop when the tab is hidden).
-  const setLive = () => { const on = document.visibilityState === "visible"; view?.setLive(on); if (on) refresh(); };
-  view?.setLive(document.visibilityState === "visible");
-  document.addEventListener("visibilitychange", setLive);
+  // A pick on the card (robot or badge) opens the drawer; closing it returns focus to the card, not to
+  // a list row further down the page (which would scroll it).
+  cityView = createCityView($("#stage"), { onPick: id => openDrawer(id, "canvas"), reducedMotion, overlay: $("#overlay"), ...(demo && { onDraw: showMeter }) });
+  if (!cityView) { const n = document.createElement("p"); n.className = "nogl"; n.textContent = "3D view is off because WebGL is not available. The worker list below shows everything."; $("#stage").append(n); }
+  addEventListener("pagehide", () => cityView?.dispose());
+  $("#zoomIn").onclick = () => cityView?.zoom(0.75);
+  $("#zoomOut").onclick = () => cityView?.zoom(1.33);
+  $("#zoomReset").onclick = () => cityView?.resetView();
+  // Timers are throttled in background tabs: catch up when the tab is seen again (the view stops its
+  // own loop while the tab is hidden).
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
   $("#pause").onclick = async () => { if (demo) { demoState = demoState === "Paused" ? "Working" : "Paused"; return refresh(); } await setPaused(!pausedNow); await refresh(); };
   $("#closeDrawer").onclick = closeDrawer;
   document.addEventListener("keydown", e => { if (e.key === "Escape" && drawerFor) { e.preventDefault(); closeDrawer(); } });

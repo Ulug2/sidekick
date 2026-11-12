@@ -463,48 +463,54 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
     await cp.close();
   }
 
-  // ---------- 9b. v1 Phase 6: the Powerhouse with real-shaped state ----------
+  // ---------- 9b. The Powerhouse (Silicon City, the default view) with real-shaped state ----------
   {
     const ph = await ctx.newPage();
     watch(ph, 'powerhouse.html');
     await ph.goto(url('powerhouse.html'));
     const t = Date.now();
-    const W = (o) => ({ n: 1, kind: 'apply', title: 'Apply: Software Engineer, New Grad at Stripe', model: 'claude-haiku-5-5', status: 'working', step: 'Page 2: Education', startedAt: t, updatedAt: t, cost: 0.03, ...o });
+    const evil = 'Apply: <img src=x onerror="window.pwned=1"> at Evil';
+    const W = (o) => ({ n: 1, kind: 'apply', title: 'Apply: Software Engineer, New Grad at Stripe', model: 'claude-haiku-5-5', status: 'working', step: 'Page 2: Education', startedAt: t, updatedAt: t, cost: 0.03, steps: 2, ...o });
     await ph.evaluate(async ([t, workers]) => {
-      await chrome.storage.local.set({ orchestrator: { workers, needsYou: [{ workerId: 'w4', jobId: 'j4', since: t, stoppedAt: '', questions: [] }], lastShout: { text: 'Agent 1! Apply: Software Engineer, New Grad at Stripe', at: Date.now(), workerId: 'w1' } } });
-    }, [t, [W({ id: 'w1' }), W({ id: 'w2', n: 2, title: 'Apply: Backend Engineer at Ramp', startedAt: t + 1 }), W({ id: 'w3', n: 3, kind: 'write', title: 'Cover letter: Plaid', step: 'Writing', startedAt: t + 2 }), W({ id: 'w4', n: 4, status: 'needs_you', title: 'Apply: Platform Engineer at Bravo', startedAt: t + 3 }), W({ id: 'w5', n: 5, kind: 'read', title: 'Read: Datadog careers page', startedAt: t + 4 }), W({ id: 'w6', n: 6, status: 'failed', error: 'The form wants an account and a password.', title: 'Apply: SRE at Delta', startedAt: t + 5 })]]);
-    await ph.waitForTimeout(500);
-    const figs = await ph.evaluate(() => [...document.querySelectorAll('#overlay .ph-label')].map(g => `${g.dataset.id}:${g.dataset.pose}@${g.dataset.zone}`).sort().join(','));
-    check('Real Chrome Powerhouse (3D): WebGL draws the card; each worker on its part with its pose (pull-ups on the heat pipe, sit-ups and push-ups on VRAM, hand up on the PCIe edge, slumped by the capacitors); Sidekick shouting at Agent 1', await ph.locator('.ph-canvas').count() === 1 && await ph.locator('.nogl').count() === 0 && figs === 'w1:pull@heatpipe,w2:pull@heatpipe,w3:situp@vram,w4:raise@pcie,w5:push@vram,w6:slump@caps' && await ph.getAttribute('#overlay', 'data-coach') === 'shouting' && await ph.isVisible('.stage .bubble') && (await ph.textContent('#chip')) === 'Running · 4 working · 1 needs you', figs + ' | ' + await ph.textContent('#chip'));
-    check('Real Chrome Powerhouse (3D): only working workers move', await ph.evaluate(() => document.querySelector('.ph-label[data-id=w1]').dataset.animate === 'true' && document.querySelector('.ph-label[data-id=w4]').dataset.animate === 'false'));
-    // zoom: buttons, wheel, the keyboard on the canvas, Reset; clicking a worker flies to it
-    const radius = () => ph.evaluate(() => Number(document.getElementById('stage').dataset.radius));
-    const home = await radius();
-    for (let i = 0; i < 3; i++) await ph.click('#zoomIn');
-    await ph.waitForTimeout(200);
-    const zoomedIn = await radius();
-    await ph.hover('.ph-canvas'); await ph.mouse.wheel(0, 600); await ph.waitForTimeout(200);
-    const wheeled = await radius();
-    await ph.focus('.ph-canvas'); await ph.keyboard.press('0'); await ph.waitForTimeout(1000);
-    const reset = await radius();
-    await shot(ph, '09b-powerhouse-3d-overview');
-    await ph.click('.ph-label[data-id=w3]'); await ph.waitForTimeout(1100);
-    const focused = await radius();
-    const drawerW3 = await ph.evaluate(() => document.getElementById('drawer').classList.contains('open') && /Agent 3/.test(document.getElementById('drawerTitle').textContent));
-    await shot(ph, '09b-powerhouse-3d-closeup');
-    await ph.keyboard.press('Escape'); await ph.waitForTimeout(300);
-    const backToCanvas = await ph.evaluate(() => document.activeElement?.classList.contains('ph-canvas') && window.scrollY === 0);
-    check('Real Chrome Powerhouse (3D): zoom in with the buttons, out with the wheel, 0 resets; clicking a worker flies close (the alien shows) and opens its drawer; Escape returns focus to the card without scrolling', home === 215 && zoomedIn < 95 && wheeled > zoomedIn && reset === 215 && focused === 48 && drawerW3 && backToCanvas, JSON.stringify({ home, zoomedIn, wheeled, reset, focused, drawerW3, backToCanvas }));
-    await ph.click('#zoomReset'); await ph.waitForTimeout(900);
+      await chrome.storage.local.set({ orchestrator: { workers, needsYou: [{ workerId: 'w4', jobId: 'j4', since: t, stoppedAt: '', questions: [] }], lastShout: { text: 'Agent 1! x', at: Date.now(), workerId: 'w1' } } });
+    }, [t, [W({ id: 'w1', title: evil }), W({ id: 'w2', n: 2, title: 'Apply: Backend Engineer at Ramp', startedAt: t + 1 }), W({ id: 'w3', n: 3, kind: 'write', title: 'Cover letter: Plaid', step: 'Writing', startedAt: t + 2 }), W({ id: 'w4', n: 4, status: 'needs_you', title: 'Apply: Platform Engineer at Bravo', startedAt: t + 3 }), W({ id: 'w5', n: 5, kind: 'read', title: 'Read: Datadog careers page', startedAt: t + 4 }), W({ id: 'w6', n: 6, status: 'failed', error: 'The form wants an account and a password.', title: 'Apply: SRE at Delta', startedAt: t + 5 })]]);
+    await ph.waitForSelector('#overlay .ph-label', { timeout: 15000 });
+    await ph.waitForTimeout(600);
+    const robots = await ph.evaluate(() => [...document.querySelectorAll('#overlay .ph-label')].map(b => `${b.dataset.id}:${b.dataset.activity}@${b.dataset.zone}`).sort().join(' '));
+    const bubble = await ph.evaluate(() => document.querySelector('#overlay .bubble')?.textContent || '');
+    check('Real Chrome Powerhouse (city): each worker is a robot where its work is (starting at the archive entrance, a courier on the lane, a writer at a terminal, needs-you on the bench, a reader at the rack, failed by the silos); Sidekick whistles', await ph.locator('.ph-canvas').count() === 1 && await ph.locator('.nogl').count() === 0 && robots === 'w1:start@entrance w2:apply@lane w3:write@terminal w4:ask@bench w5:read@rack w6:fail@silos' && await ph.getAttribute('#overlay', 'data-mode') === 'whistle' && (await ph.textContent('#chip')) === 'Running · 4 working · 1 needs you', robots + ' | ' + await ph.textContent('#chip'));
+    check('Real Chrome Powerhouse (city): a title with HTML is text in the bubble, the status line and the list (no element, no script)', bubble === `Sidekick${evil}` && (await ph.textContent('#thinking')).includes('<img') && (await ph.locator('#workerList').innerText()).includes('<img') && await ph.locator('.stage img, #workerList img, #thinking img').count() === 0 && !(await ph.evaluate(() => window.pwned)), bubble);
     for (const [w, name] of [[760, 'half'], [1280, 'wide'], [420, 'narrow']]) {
       await ph.setViewportSize({ width: w, height: 900 });
-      await ph.waitForTimeout(150);
+      await ph.waitForTimeout(250);
       const ov = await ph.evaluate(() => document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth);
       check(`Real Chrome Powerhouse: fits at ${w}px`, ov <= 1, `overflow ${ov}px`);
       await shot(ph, `09b-powerhouse-${name}`);
     }
-    // the keyboard path: Tab into the list, Enter opens the drawer, Escape closes it and focus returns
+    // zoom: buttons, wheel, 0 resets; a badge click flies in and opens the drawer; Escape returns focus to the card
     await ph.setViewportSize({ width: 1280, height: 900 });
+    const radius = () => ph.evaluate(() => Number(document.getElementById('stage').dataset.radius));
+    // stage.dataset.radius is written when a frame is drawn; software GL with moving robots draws about
+    // 3 frames a second, so wait (up to 4 s) for the drawn frame to show the camera's new distance
+    const drawn = (op, a) => ph.waitForFunction(([op, a]) => { const r = Number(document.getElementById('stage').dataset.radius); return op === '<' ? r < a : op === '>' ? r > a : r === a; }, [op, a], { timeout: 4000 }).catch(() => {});
+    await ph.waitForTimeout(300);
+    const home = await radius();
+    for (let i = 0; i < 3; i++) await ph.click('#zoomIn');
+    await drawn('<', 95);
+    const zoomedIn = await radius();
+    await ph.hover('.ph-canvas'); await ph.mouse.wheel(0, 600); await drawn('>', zoomedIn);
+    const wheeled = await radius();
+    await ph.focus('.ph-canvas'); await ph.keyboard.press('0'); await drawn('=', 205);
+    const reset = await radius();
+    await ph.evaluate(() => document.querySelector('#overlay .ph-label[data-id="w3"]').click()); await drawn('=', 32);
+    const focused = await radius();
+    const drawerW3 = await ph.evaluate(() => document.getElementById('drawer').classList.contains('open') && /Agent 3/.test(document.getElementById('drawerTitle').textContent));
+    await shot(ph, '09b-powerhouse-closeup');
+    await ph.keyboard.press('Escape'); await ph.waitForTimeout(300);
+    const backToCanvas = await ph.evaluate(() => document.activeElement?.classList.contains('ph-canvas') && window.scrollY === 0);
+    check('Real Chrome Powerhouse (city): zoom in with the buttons, out with the wheel, 0 flies home; clicking a robot\'s badge flies close and opens its drawer; Escape returns focus to the card without scrolling', home === 205 && zoomedIn < 95 && wheeled > zoomedIn && reset === 205 && focused === 32 && drawerW3 && backToCanvas, JSON.stringify({ home, zoomedIn, wheeled, reset, focused, drawerW3, backToCanvas }));
+    await ph.click('#zoomReset'); await ph.waitForTimeout(1300);
+    // the keyboard path: Tab into the list, Enter opens the drawer, Escape closes it and focus returns
     await ph.evaluate(() => document.activeElement?.blur());
     let reached = '';
     for (let i = 0; i < 20 && reached !== 'w4'; i++) { await ph.keyboard.press('Tab'); reached = await ph.evaluate(() => document.activeElement?.dataset?.open || ''); }
@@ -517,12 +523,42 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
     const back = await ph.evaluate(() => ({ focus: document.activeElement?.dataset?.open, inert: document.getElementById('drawer').inert }));
     check('Real Chrome Powerhouse: Tab reaches a worker in the list, Enter opens its drawer (focus inside), Escape closes it and focus returns', reached === 'w4' && opened.open && !opened.inert && opened.focus === 'closeDrawer' && /Agent 4 · Apply: Platform Engineer at Bravo/.test(opened.title) && back.focus === 'w4' && back.inert, JSON.stringify({ reached, opened, back }));
     await ph.click('#pause');
-    await ph.waitForTimeout(300);
-    check('Real Chrome Powerhouse: Pause stores the pause and Sidekick sits down', (await ph.evaluate(() => chrome.storage.local.get('orchestrator'))).orchestrator.paused === 'you' && await ph.getAttribute('#overlay', 'data-coach') === 'paused');
+    await ph.waitForTimeout(400);
+    check('Real Chrome Powerhouse: Pause stores the pause and Sidekick rests', (await ph.evaluate(() => chrome.storage.local.get('orchestrator'))).orchestrator.paused === 'you' && await ph.getAttribute('#overlay', 'data-mode') === 'rest');
     await shot(ph, '09b-powerhouse-paused');
     await ph.click('#pause');
     await ph.evaluate(() => chrome.storage.local.set({ orchestrator: {} }));
     await ph.close();
+  }
+  // ---------- 9d. The render loop's cost rules (docs/powerhouse-redesign/05 › Tests) ----------
+  {
+    const rp = await ctx.newPage();
+    watch(rp, 'powerhouse.html#demo');
+    await rp.goto(url('powerhouse.html#demo'));
+    await rp.waitForSelector('#renderMeter', { timeout: 15000 });
+    const meter = () => rp.evaluate(() => { const m = document.getElementById('renderMeter'); return { running: m.dataset.running, frames: +m.dataset.frames }; });
+    await rp.click('#demoBar button[data-state="Busy day"]'); await rp.waitForTimeout(1200);
+    const a = await meter(); await rp.waitForTimeout(800); const b = await meter();
+    // hide the tab: the loop exits on its next frame and nothing renders until it is visible again
+    await rp.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); });
+    await rp.waitForTimeout(500); const c = await meter(); await rp.waitForTimeout(1000); const d = await meter();
+    await rp.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' }); document.dispatchEvent(new Event('visibilitychange')); });
+    await rp.waitForTimeout(800); const e = await meter();
+    check('Real Chrome Powerhouse (cost): busy draws; a hidden tab stops drawing; visible again, it draws again', a.running === 'true' && b.frames > a.frames && c.running === 'false' && d.frames === c.frames && e.running === 'true' && e.frames > d.frames, JSON.stringify({ a, b, c, d, e }));
+    await rp.close();
+    // reduced motion: nothing moves (busy draws one frame), a badge click jumps instead of flying
+    const rm = await ctx.newPage();
+    await rm.emulateMedia({ reducedMotion: 'reduce' });
+    watch(rm, 'powerhouse.html#demo (reduced motion)');
+    await rm.goto(url('powerhouse.html#demo'));
+    await rm.waitForSelector('#renderMeter', { timeout: 15000 });
+    await rm.click('#demoBar button[data-state="Busy day"]'); await rm.waitForTimeout(1200);
+    const r1 = await rm.evaluate(() => ({ running: document.getElementById('renderMeter').dataset.running, frames: +document.getElementById('renderMeter').dataset.frames })); await rm.waitForTimeout(1000);
+    const r2 = await rm.evaluate(() => +document.getElementById('renderMeter').dataset.frames);
+    await rm.evaluate(() => document.querySelector('#overlay .ph-label[data-id="d4"]').click()); await rm.waitForTimeout(120);
+    const jumped = await rm.evaluate(() => Number(document.getElementById('stage').dataset.radius));
+    check('Real Chrome Powerhouse (reduced motion): busy shows still poses and stops drawing; a badge click jumps straight to the robot', r1.running === 'false' && r2 === r1.frames && jumped === 32, JSON.stringify({ r1, r2, jumped }));
+    await rm.close();
   }
   await opt.waitForTimeout(300);
   check('Real Chrome options: tie-break models and learning switch shown with defaults', await opt.inputValue('#anthropicBest') === 'claude-opus-5-5' && await opt.inputValue('#openaiBest') === 'gpt-6-astra' && await opt.isChecked('#learnSites'));

@@ -2,65 +2,46 @@
 
 Written 2026-11-10 for the v1 plan. Everything uses the Sidekick look already in `src/ui/shared/page.css`: Inter, the beige accent, light and dark from the system, cards separated by hairlines, 14.5 px text. The dark "control room" style of the Jobs page is removed (brief §6.5). Every page works at 760 px (half of a 1512 px MacBook screen) and 420 px (the side panel), light and dark, and the static mockups below go through a design review by a second agent before Phase 6 starts.
 
-## 1. The Powerhouse (`powerhouse.html`)
+## 1. The Powerhouse (`powerhouse.html`): the Silicon City
 
-A live status view drawn as a gym inside the CPU. Every animation maps to real orchestrator state; nothing moves without a reason.
+The full spec is `docs/powerhouse-redesign/` (his design handoff, 2026-11-11: README, 01 architecture, 02 world, 03 robots, 04 state mapping, 05 rendering, 06 build plan, and the prototype `reference/powerhouse-city.html`). This section says what was built and where it differs.
 
-**Scene.** A 16:9 stage (max 1100 px wide, scales down to 420 px) built from inline SVG: a circuit-board floor (thin copper traces in the accent colour at 20% opacity, vias as dots), chip-die walls (dark tiles with faint grid), two heat-sink racks drawn as fin stacks that serve as the pull-up bar (left) and the bench (right), a glowing trace that runs from Sidekick to whichever worker it is addressing. In light mode the board is pale green-grey with copper traces; in dark mode charcoal with cyan traces. `prefers-reduced-motion`: no loops; states shown by pose and label only.
+**What it is.** A live status view of Sidekick and its workers, drawn in Three.js (bundled into this page only). The graphics card is a night city: the board's traces are roads, the GPU die is the HQ tower, the VRAM chips are the archive and the data halls, the fin stack is the power plant with its turbine fan, the capacitors are silos, the display bracket is the city wall, the PCIe fingers are the docks. The card floats inside a PC case (motherboard, RAM towers, CPU cooler, back-wall fans, cables). The card is dark in both themes; the page around it follows light/dark.
 
-**Sidekick, the coach.** A white humanoid alien (SVG, ~120 px): oval head, two large dark eyes, a slim body. Poses: `idle` (standing, arms crossed, slow blink every 6 s), `thinking` (push-ups: a 1.2 s loop, runs exactly while a brain model call is in flight), `shouting` (stands, one arm pointed at the worker, a speech bubble with the real dispatch text, e.g. "Agent 3! Finish the Stripe app, form's on page 2!" for 6 s or until the next event), `paused` (sitting on the floor, a small "spend cap" or "stopped" tag).
+**Who is where (the contract).** `scene.ts` `deriveScene(CityInput)` is pure and the only place that maps real state to the city; the 3D view (`city-view.ts`) only draws the Scene. Tables in `docs/powerhouse-redesign/04-state-mapping.md`; tests in `tests/unit/scene.test.ts`.
 
-**Workers.** Numbered badges (1–6) on grey humanoids 80% Sidekick's size. Pose by state: `working` with task type → pull-ups (applications), push-ups (reading/extraction), sit-ups (writing); `idle` → sitting on the bench; `needs_you` → sitting with a raised hand and a yellow "?" tag; `failed` → slumped against the rack with a red tag; hover shows the error. A worker appears when its task starts and leaves the stage 30 s after it finishes (fades to the bench, then out).
-
-**Click any character.** A right drawer (360 px; full width under 760 px) with: the task title, the worker number and model, a live step log (the same step lines as the agent card, newest at the bottom, auto-scroll), tokens and dollars so far, buttons Stop / Open its tab. Clicking Sidekick shows the current plan (today's batch, what's scheduled next, the last brain decision with its reason) and the spend meter.
-
-**Top bar.** "Powerhouse" + status chip (Running / Paused: spend cap / Paused by you / Sleeping until 8:00), the daily and monthly meters as two thin bars with dollars, and Pause/Resume.
-
-**Voice hook.** `src/ui/powerhouse/voice.ts` exports `speak(text: string): void` (no-op) and a `VoiceProvider` interface; the shout bubble calls it. Nothing else now.
-
-**Mockup.** `docs/design/powerhouse-mockup.html` (static, no script beyond a state toggle) is produced in Phase 6 before the real page. Reviewed 2026-11-11 by a second agent (approved with required changes, all taken; summary below).
-
-**The contract (after the review).** Every visual has exactly one real source; `src/ui/powerhouse/scene.ts` `deriveScene()` is the only place that maps state to poses, and the jsdom test drives it.
-
-| Visual | Real source | Notes |
+| Real state | Robot | Where |
 |---|---|---|
-| Sidekick push-ups | a brain model call in flight: `brainCalls` in session storage (`orchestrator/activity.ts trackBrain`, wrapped around every `role: "brain"` call) | entries older than 3 min don't count (a page closed mid-call) |
-| Sidekick shouting + bubble + glowing trace | `orchestrator.lastShout { text, at, workerId }`, written when a worker starts (`startWorker`, `runAsWorker`) | shown while `now - at < 6 s` and the worker is on stage; text is the task's real title (redacted, plain text), clamped to 3 lines; never replayed after a reload |
-| Sidekick sitting + tag | `orchestrator.paused === "you"` → "paused by you"; spend over a cap (live, `overCap`) → "spend cap: daily/monthly" | the old sticky `"spend-cap"` value is ignored; running workers freeze with a "stopping" tag |
-| Sidekick standing, arms crossed | none of the above | |
-| Pull-ups | worker `kind: apply`, `status: working` | |
-| Push-ups (worker) | `kind: read` or `classify`, `status: working` | |
-| Sit-ups | `kind: write`, `status: working` (cover letters: `runAsWorker`) | |
-| Hand up + "?" | `status: needs_you` (or a `needsYou` item for that worker) | stays until handled; never leaves on a timer |
-| Slumped + "!" | `status: failed`; the error in the list and drawer | stays until he dismisses it (drawer) or 24 h |
-| On the bench, "done" / "stopped" | `status: done` / `stopped`, for 30 s after `updatedAt` | then off stage; no worker is ever drawn without a record |
-| Top chip | working count; else "Sleeping until <next batch time>" from `jobSettings.batchHour` (or "Idle" when the daily batch is off); "Paused" / "Spend cap" | |
+| reading / classifying | scans the data rack (face "scan", a cyan beam) | the rack, 3 spots |
+| writing (cover letter) | types at a terminal (the screen scrolls) | 2 terminals |
+| applying | carries an APPLY crate down the lane to the docks and walks back | the lane, 4 couriers |
+| started in the last 6 s | hops and waves at the archive entrance | 2 spots |
+| needs you | sits on the dock bench, waves, "?" | bench (5 seats, needs-you first) |
+| done / stopped (30 s) | sits on the bench, "✓" / "■ ■" | bench |
+| no news for 15 min / waiting | sits asleep, "z z" | bench |
+| failed (until dismissed or 24 h) | slumped by the silos, "!", sparks | silos, 3 spots |
+| paused while running | its pose frozen, amber antenna, "finishing" | where it was |
 
-**Layout.** Slots per area: bar 3, mat 2, bench 3, floor (failed) 2; extra workers go into the HTML list only, with a "+N more" chip on the stage. Below 560 px the in-scene labels are hidden and the list carries everything.
+Sidekick (the cream foreman, coral headband, 1.7×) is on the HQ roof: **lift** (barbell press) while a brain model call is in flight, **whistle** (points at the new worker, a speech bubble with its real title, a dashed glowing trace to it) for 6 s after starting one, **coach** while workers run, **rest** when paused by you or the spend cap, **sleep** when nothing runs. More robots than spots go to the list only ("N more workers than there is room for on the card").
 
-**Accessibility.** The scene is `aria-hidden`; an HTML list of workers (one `<button>` each: "Agent 3, applying: Stripe, step: Page 2, needs you") is the keyboard and screen-reader path and opens the drawer. The drawer is `inert` when closed, takes focus on open, returns it on close, closes on Escape; its step log is `aria-live="polite"`. Reduced motion: no animation, static poses, every status also in text.
+**Traffic.** Packets on the roads summarise real activity (never when nothing runs); each logged step sends one bright pulse from HQ to the worker's district (worker records count `steps`).
 
-**Cost of looking.** Animations run only while the tab is visible and only on figures that are working; the trace has no filter; workers are desynchronised (`--i` delays). The page re-renders from `chrome.storage.onChanged` with keyed figures (one `<g>` per worker id), and a 1 s ticker runs only while something is leaving or a shout is fresh.
+**Mood.** Live: windows lit, fan spinning. Paused: windows 80%, fan ring dim, nothing moves. Asleep (nothing runs): windows 50%, the board glow dims, one frame is drawn and the renderer stops.
 
-**Scope.** The page shows state and has Pause/Resume and Stop; it does not yet host the orchestrator loop or reopen itself (Phase 9). The voice hook stays a no-op stub.
+**Cost.** Frames only while something moves and the tab is visible, at most 30 a second, pixel ratio ≤ 1.5; otherwise one frame per change (and one final frame when the loop stops). Static city and case meshes are merged per material, static shadow casters baked into one proxy, robots are 9 draws each: 4 robots ≈ 185 draws, 7 robots ≈ 228 (budget 250). Rigs unused for 60 s are disposed.
 
-**3D (redesign, 2026-11-11, his choices: aliens up close and cores far away, Three.js, a dark card in both themes).** The 2D gym is replaced by a graphics card in WebGL (`gpu3d.ts`; placement in `gpu-layout.ts`, pure and unit-tested; the aliens and their poses in `alien.ts`). The contract above is unchanged; only the drawing moved:
+**Interaction and accessibility.** Drag to turn, scroll or pinch to zoom, + / − / Reset view, + − 0 on the focused canvas; clicking a robot, its badge or its row in the list flies the camera to it and opens its drawer (Escape returns focus to where it came from). The canvas and badges are `aria-hidden`; the worker list is the keyboard and screen-reader path. Reduced motion: still poses, no flights, no traffic. Without WebGL (or after the context is lost): one line in the stage, the list carries everything.
 
-| Area (scene.ts) | Part of the card | Close up (alien) | Far away (core) |
-|---|---|---|---|
-| Sidekick | the GPU die, centre | stands, push-ups while a brain call runs, points and shouts, sits when paused | always the alien (1.35×); the die glows brighter while thinking, dims when paused |
-| bar (applying) | the copper heat pipe | pull-ups, hands on the pipe | cyan pulsing core under the pipe |
-| mat (reading, writing) | VRAM chips | push-ups / sit-ups | cyan pulsing core |
-| bench (needs you, done, stopped, no news) | sitting on the PCIe edge | hand up and waving / sitting | amber pulsing core / grey core |
-| floor (failed) | by the capacitors | slumped | red core |
+**Demo.** `powerhouse.html#demo`: every state (Idle, Thinking, Dispatch, Working, Needs you, Failed, Paused, Busy day, Overflow) and "Log a step", from made-up records in memory (nothing is stored), with a render meter (fps or stopped, frames, draws).
 
-- The level of detail is per worker by camera distance (alien under 70 units, core over 95, crossfade between); the overview shows cores, flying to a worker shows the alien.
-- Controls: drag to turn, right-drag or shift-drag to pan, wheel or pinch to zoom, + / − / Reset buttons, arrow keys, + − 0 on the focused canvas; click a worker (or its label) to fly to it, from the side it faces, and open its drawer; Escape returns focus to the canvas without scrolling.
-- The trace from the die to the addressed worker is a glowing tube with moving dashes (6 s with the shout). The fan spins while anything works.
-- Cost of looking: render only while something moves and the tab is visible, otherwise once per change; pixel ratio ≤ 2, one 1024 shadow map, bloom at half resolution. Reduced motion: still poses, camera jumps instead of flying.
-- Without WebGL the stage says so and the worker list carries everything.
-- `powerhouse.html#demo` shows every state from made-up records, in memory only (nothing stored).
+**Differences from the handoff.**
+- `PCFSoftShadowMap` no longer exists in three 0.186: shadows use `PCFShadowMap`.
+- The HQ roof light is above Sidekick (ROOF + 19), not at his chest; at ROOF + 9 it blew his face out up close.
+- Robots are merged, vertex-coloured parts with one material (body/trim roughness averaged).
+- Sora and JetBrains Mono are bundled locally (no Google Fonts).
+- The prototype kept the last moving frame on screen when a scene stopped moving; the view now draws a final frame.
 
+**History.** Phase 6 first shipped a 2D SVG gym with alien coaches (mockup `docs/design/powerhouse-mockup.html`, reviewed by a second agent), then a 3D graphics card with alien workers; both were replaced by the city (commits up to `8bc7bec`, swapped in M6). The voice hook (`voice.ts`, `speak()`) stays a no-op stub.
 
 ## 2. The Jobs dashboard (restyled)
 

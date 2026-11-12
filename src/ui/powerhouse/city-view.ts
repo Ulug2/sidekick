@@ -298,8 +298,15 @@ export function createCityView(stage: HTMLElement, opts: { onPick(id: string): v
     shadowsDirty = true; renderOnce();
   };
   const ro = new ResizeObserver(resize); ro.observe(stage);
-  canvas.addEventListener("webglcontextlost", e => { e.preventDefault(); running = false; });
-  canvas.addEventListener("webglcontextrestored", () => { shadowsDirty = true; kick(); });
+  // The GPU can drop the context (sleep, driver reset): stop, say so, and draw again when it is back.
+  let lostNote: HTMLElement | null = null;
+  canvas.addEventListener("webglcontextlost", e => {
+    e.preventDefault(); running = false;
+    lostNote = document.createElement("p"); lostNote.className = "nogl";
+    lostNote.textContent = "3D view is off because WebGL is not available. The worker list below shows everything.";
+    stage.append(lostNote);
+  });
+  canvas.addEventListener("webglcontextrestored", () => { lostNote?.remove(); lostNote = null; shadowsDirty = true; kick(); });
 
   // The city and the robots draw text on canvases: build them once the bundled fonts are loaded.
   fontsReady().then(() => {
