@@ -79,6 +79,30 @@ export function mergeStatic(group: THREE.Group, keep: Set<THREE.Object3D>): void
   }
 }
 
+// Every static shadow caster baked into one invisible mesh: the shadow map then draws the whole
+// city in one call (it is redrawn on every animated frame), instead of one per caster. The proxy
+// writes neither colour nor depth, so the main pass draws nothing visible for it.
+export function bakeShadowProxy(group: THREE.Group, keep: Set<THREE.Object3D>): THREE.Mesh | null {
+  group.updateMatrixWorld(true);
+  const geos: THREE.BufferGeometry[] = [];
+  for (const o of group.children) {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || (m as unknown as THREE.InstancedMesh).isInstancedMesh || keep.has(m) || !m.castShadow) continue;
+    const g = (m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone()).applyMatrix4(m.matrixWorld);
+    for (const name of Object.keys(g.attributes)) if (name !== "position" && name !== "normal") g.deleteAttribute(name);
+    geos.push(g);
+    m.castShadow = false; // the proxy casts for it; it still receives shadows
+  }
+  if (!geos.length) return null;
+  const merged = mergeGeometries(geos, false);
+  for (const g of geos) g.dispose();
+  if (!merged) return null;
+  const proxy = new THREE.Mesh(merged, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
+  proxy.castShadow = true; proxy.receiveShadow = false; proxy.matrixAutoUpdate = false;
+  group.add(proxy);
+  return proxy;
+}
+
 export function buildCity(world: THREE.Object3D, mats: Materials): City {
   const root = new THREE.Group(); world.add(root);
   const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 0, shadows = true, parent: THREE.Object3D = root) => {
@@ -219,11 +243,15 @@ export function buildCity(world: THREE.Object3D, mats: Materials): City {
   fins.castShadow = true; fins.receiveShadow = true; root.add(fins);
   const fan = new THREE.Group(); fan.position.set(83, G + 17.2, 0); root.add(fan);
   add(new THREE.CylinderGeometry(3.4, 3.4, 1.4, 28), std(0x2a3036, { m: 0.6, r: 0.3 }), 0, 0, 0, true, fan);
-  const bladeGeo = rbox(12, 0.35, 4, 2, 0.15), bladeMat = std(0x15181a, { r: 0.45, m: 0.4 });
+  // nine pitched blades as one mesh (they turn together with the fan group)
+  const blades: THREE.BufferGeometry[] = [];
   for (let i = 0; i < 9; i++) {
-    const b = add(bladeGeo, bladeMat, Math.cos((i / 9) * Math.PI * 2) * 8.2, 0, Math.sin((i / 9) * Math.PI * 2) * 8.2, true, fan);
-    b.rotation.y = -(i / 9) * Math.PI * 2; b.rotation.x = 0.35;
+    const a = (i / 9) * Math.PI * 2;
+    const m = new THREE.Matrix4().compose(new THREE.Vector3(Math.cos(a) * 8.2, 0, Math.sin(a) * 8.2), new THREE.Quaternion().setFromEuler(new THREE.Euler(0.35, -a, 0)), new THREE.Vector3(1, 1, 1));
+    blades.push(rbox(12, 0.35, 4, 2, 0.15).applyMatrix4(m));
   }
+  add(mergeGeometries(blades, false)!, std(0x15181a, { r: 0.45, m: 0.4 }), 0, 0, 0, true, fan);
+  for (const g of blades) g.dispose();
   const fanRing = glow(0x39d0e8, 1);
   add(new THREE.TorusGeometry(14.6, 0.35, 10, 80), fanRing, 83, G + 17.2, 0, false).rotation.x = Math.PI / 2;
 
@@ -286,9 +314,11 @@ export function buildCity(world: THREE.Object3D, mats: Materials): City {
 
   // one draw per material for everything that never moves
   mergeStatic(root, new Set([fan, plates]));
+  bakeShadowProxy(root, new Set([fan, plates]));
 
   // ---------- city lights ----------
-  const hqLight = new THREE.PointLight(0xffd29a, 260, 70, 2); hqLight.position.set(0, ROOF + 9, 4); root.add(hqLight);
+  // above Sidekick (1.7× scale, about 15 tall), not at his chest: at ROOF + 9 it blew his face out up close
+  const hqLight = new THREE.PointLight(0xffd29a, 260, 90, 2); hqLight.position.set(0, ROOF + 19, 7); root.add(hqLight);
   const plantLight = new THREE.PointLight(0x39d0e8, 160, 60, 2); plantLight.position.set(83, 26, 0); root.add(plantLight);
 
   return {

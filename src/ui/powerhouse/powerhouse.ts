@@ -192,6 +192,7 @@ async function openDrawer(id: string, from: "list" | "canvas" = "list"): Promise
   d.inert = false;
   d.classList.add("open");
   if (id === "sk") jobs = (await readLocal("jobs")).jobs || [];
+  if (from === "list") cityView?.focusWorker(id); // a list click flies to the robot too (a canvas pick already did)
   fillDrawer();
   $("#closeDrawer").focus();
 }
@@ -279,7 +280,8 @@ function showMeter(info: DrawInfo): void {
 if ($("#powerhouseApp")) {
   const reducedMotion = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   if (cityMode) {
-    cityView = createCityView($("#stage"), { onPick: id => openDrawer(id, "canvas"), reducedMotion, ...(demo && { onDraw: showMeter }) });
+    cityView = createCityView($("#stage"), { onPick: id => openDrawer(id, "canvas"), reducedMotion, overlay: $("#overlay"), ...(demo && { onDraw: showMeter }) });
+    const hint = document.querySelector(".ph-hint"); if (hint) hint.textContent = "Drag to turn · scroll or pinch to zoom · click a robot";
     if (!cityView) { const n = document.createElement("p"); n.className = "nogl"; n.textContent = "3D view is off because WebGL is not available. The worker list below shows everything."; $("#stage").append(n); }
     addEventListener("pagehide", () => cityView?.dispose());
   } else {

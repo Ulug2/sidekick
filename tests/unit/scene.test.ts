@@ -202,3 +202,51 @@ describe("the city on the card", () => {
     expect(merged.geometry.boundingBox!.max.x).toBeCloseTo(12.5); // positions baked in
   });
 });
+
+// ---------- M4: the robots (pure parts: faces, antenna lights, poses) ----------
+import { lookFor, glowFor, SIDEKICK_LOOK, makeRobot, addWorkerProps, addSidekickProps, poseWorker, poseSidekick, sitPose } from "../../src/ui/powerhouse/robot.js";
+
+describe("robots", () => {
+  it.each([
+    ["read", "scan", "#39d0e8"], ["write", "down", "#39d0e8"], ["apply", "focus", "#39d0e8"], ["start", "happy", "#39d0e8"],
+    ["ask", "q", "#f2b33d"], ["fail", "bang", "#ef5f55"], ["done", "check", "#9db0b6"], ["stopped", "stopped", "#9db0b6"],
+    ["nonews", "sleep", "#4f7a86"], ["wait", "sleep", "#4f7a86"]
+  ] as const)("%s shows the %s face", (a, expr, col) => {
+    expect(lookFor(a)).toMatchObject({ expr, col });
+  });
+  it("antenna: cyan pulse working, amber needs you, red failed, off asleep, gold finishing", () => {
+    expect(glowFor("read", false, 0)).toEqual({ hex: 0x39d0e8, k: 1.3 });
+    expect(glowFor("ask", false, 0).hex).toBe(0xf2b33d);
+    expect(glowFor("fail", false, 5)).toEqual({ hex: 0xef5f55, k: 2.0 });
+    expect(glowFor("wait", false, 0).k).toBe(0);
+    expect(glowFor("apply", true, 3)).toEqual({ hex: 0xd9a54a, k: 1.4 });
+    expect(SIDEKICK_LOOK.sleep.expr).toBe("sleep");
+  });
+  it("a robot is 9 draws (merged parts); workers share one geometry and material", () => {
+    const a = makeRobot("a"), b = makeRobot("b");
+    expect(a.meshes).toHaveLength(9);
+    expect(a.meshes[0].geometry).toBe(b.meshes[0].geometry);
+    expect(a.meshes[0].material).toBe(b.meshes[0].material);
+    expect(a.meshes.every(m => m.userData.robotId === "a")).toBe(true);
+  });
+  it("poses: sitting on the bench lifts the body to the seat; frozen time gives the same pose", () => {
+    const r = makeRobot("w"); addWorkerProps(r);
+    sitPose(r, 1.5);
+    expect(r.inner.position.y).toBeCloseTo(-0.05);
+    poseWorker(r, "read", 1.23, true); const head1 = r.head.rotation.x;
+    poseWorker(r, "read", 1.23, true);
+    expect(r.head.rotation.x).toBe(head1);
+    poseWorker(r, "apply", 0, true, true); expect(r.props.crate!.visible).toBe(true);
+    poseWorker(r, "apply", 0, true, false); expect(r.props.crate!.visible).toBe(false); // walking back: no crate
+    poseWorker(r, "fail", 2, false); expect(r.props.sparks!.visible).toBe(false); // sparks only while the loop runs
+  });
+  it("Sidekick: the barbell only while lifting, the whistle only while dispatching; still lift = top of the rep", () => {
+    const s = makeRobot("sk", { scale: 1.7 }); addSidekickProps(s);
+    expect(poseSidekick(s, "lift", 0, false)).toBe(1);
+    expect([s.props.bar!.visible, s.props.whistle!.visible]).toEqual([true, false]);
+    poseSidekick(s, "whistle", 0, true, 1.2);
+    expect([s.props.bar!.visible, s.props.whistle!.visible, s.root.rotation.y]).toEqual([false, true, 1.2]);
+    poseSidekick(s, "sleep", 0, false);
+    expect(s.inner.position.y).toBeLessThan(0); // sitting on the roof
+  });
+});

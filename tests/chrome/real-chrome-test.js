@@ -433,9 +433,27 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
     const a = await meter(); await cp.waitForTimeout(1200); const b = await meter();
     await cp.click('#demoBar button:text-is("Busy day")'); await cp.waitForTimeout(1200);
     const c = await meter(); await cp.waitForTimeout(1200); const d = await meter();
-    check('Real Chrome city (M2): the city draws with WebGL; idle draws one frame then stops; busy keeps drawing; under 200 draws a frame', await cp.locator('.ph-canvas').count() === 1 && a.running === 'false' && b.frames === a.frames && c.running === 'true' && d.frames > c.frames && d.calls > 20 && d.calls < 200, JSON.stringify({ a, b, c, d }));
+    check('Real Chrome city (M2): the city draws with WebGL; idle draws one frame then stops; busy keeps drawing; draws stay in budget (busy day has 9 robots)', await cp.locator('.ph-canvas').count() === 1 && a.running === 'false' && b.frames === a.frames && c.running === 'true' && d.frames > c.frames && d.calls > 20 && d.calls < 300, JSON.stringify({ a, b, c, d }));
     await cp.setViewportSize({ width: 1280, height: 900 });
     await shot(cp, '09c-city-busy');
+    // M4: robots. One badge per robot with its activity and part of the city; a click flies to it and opens its drawer.
+    const badges = () => cp.evaluate(() => [...document.querySelectorAll('#overlay .ph-label')].map(b => `${b.dataset.id}:${b.dataset.activity}@${b.dataset.zone}`).join(' '));
+    await cp.click('#demoBar button:text-is("Working")'); await cp.waitForTimeout(1200);
+    const working = await badges(), wm = await meter();
+    await cp.evaluate(() => document.querySelector('#overlay .ph-label[data-id="d4"]').click()); await cp.waitForTimeout(1500);
+    const flown = await cp.evaluate(() => ({ radius: +document.getElementById('stage').dataset.radius, drawer: document.getElementById('drawerTitle').textContent, open: document.getElementById('drawer').classList.contains('open') }));
+    await shot(cp, '09c-city-reader-closeup');
+    await cp.keyboard.press('Escape'); await cp.waitForTimeout(300);
+    check('Real Chrome city (M4): Working shows 4 robots where they work (couriers on the lane, a writer at a terminal, a reader at the rack), 4 robots + Sidekick under 250 draws; clicking a badge flies in and opens that worker', working === 'd1:apply@lane d2:apply@lane d3:write@terminal d4:read@rack' && wm.calls < 250 && flown.radius === 32 && flown.open && /Agent 4 · Read: Datadog careers page/.test(flown.drawer), JSON.stringify({ working, wm, flown }));
+    // the change from moving to still draws the still state (it used to keep the last moving frame)
+    await cp.click('#zoomReset'); await cp.waitForTimeout(1200);
+    await cp.click('#demoBar button:text-is("Busy day")'); await cp.waitForTimeout(800);
+    await cp.click('#demoBar button:text-is("Idle")'); await cp.waitForTimeout(1200);
+    const idle = await meter(), idleBadges = await badges();
+    await shot(cp, '09c-city-idle');
+    await cp.click('#demoBar button:text-is("Paused")'); await cp.waitForTimeout(1000);
+    const paused = await badges(), pm = await meter();
+    check('Real Chrome city (M4): from busy to Idle: no robots, everything stops after drawing the asleep state; Paused: the two couriers frozen with "finishing", nothing moving', idleBadges === '' && idle.running === 'false' && paused === 'd1:apply@lane d2:apply@lane' && (await cp.locator('#overlay .ph-label .ph-tag').allTextContents()).join() === 'finishing,finishing' && pm.running === 'false', JSON.stringify({ idle, idleBadges, paused, pm }));
     await cp.close();
   }
 
