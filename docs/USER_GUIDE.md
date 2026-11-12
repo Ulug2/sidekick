@@ -56,7 +56,7 @@ Your personal AI assistant in a Chrome side panel. It knows who you are, remembe
 - **Voice:** mic button to dictate; replies to dictated messages are read aloud.
 
 ## Bundled libraries (vendor/)
-marked (MIT), DOMPurify (Apache-2.0/MPL-2.0), KaTeX (MIT), highlight.js (BSD-3), math.js (Apache-2.0), nerdamer (MIT), pdf.js (Apache-2.0), mammoth (BSD-2), Inter font (OFL). Three.js 0.186.1 (MIT) is an npm dependency bundled into the Powerhouse page only (licence in `vendor/LICENSE-three`).
+marked (MIT), DOMPurify (Apache-2.0/MPL-2.0), KaTeX (MIT), highlight.js (BSD-3), math.js (Apache-2.0), nerdamer (MIT), pdf.js (Apache-2.0), mammoth (BSD-2), Inter font (OFL). Three.js 0.186.1 (MIT) is an npm dependency bundled into the Powerhouse page only (licence in `vendor/LICENSE-three`). The Powerhouse's Sora and JetBrains Mono fonts (OFL) are bundled in `vendor/fonts` (licences `vendor/LICENSE-sora`, `vendor/LICENSE-jetbrains-mono`).
 
 ## Security
 See SECURITY.md: what protects you (and is tested), and the risks that remain.

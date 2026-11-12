@@ -422,6 +422,23 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
     await opt.emulateMedia({ colorScheme: 'light' });
   }
 
+  // ---------- 9c. Silicon City (?city=1, M2): the city loads, idle draws one frame, busy draws ----------
+  {
+    const cp = await ctx.newPage();
+    watch(cp, 'powerhouse.html?city=1');
+    await cp.goto(url('powerhouse.html?city=1#demo'));
+    await cp.waitForSelector('#renderMeter', { timeout: 15000 });
+    const meter = () => cp.evaluate(() => { const m = document.getElementById('renderMeter'); return { running: m.dataset.running, frames: +m.dataset.frames, calls: +m.dataset.calls }; });
+    await cp.click('#demoBar button:text-is("Idle")'); await cp.waitForTimeout(800);
+    const a = await meter(); await cp.waitForTimeout(1200); const b = await meter();
+    await cp.click('#demoBar button:text-is("Busy day")'); await cp.waitForTimeout(1200);
+    const c = await meter(); await cp.waitForTimeout(1200); const d = await meter();
+    check('Real Chrome city (M2): the city draws with WebGL; idle draws one frame then stops; busy keeps drawing; under 200 draws a frame', await cp.locator('.ph-canvas').count() === 1 && a.running === 'false' && b.frames === a.frames && c.running === 'true' && d.frames > c.frames && d.calls > 20 && d.calls < 200, JSON.stringify({ a, b, c, d }));
+    await cp.setViewportSize({ width: 1280, height: 900 });
+    await shot(cp, '09c-city-busy');
+    await cp.close();
+  }
+
   // ---------- 9b. v1 Phase 6: the Powerhouse with real-shaped state ----------
   {
     const ph = await ctx.newPage();

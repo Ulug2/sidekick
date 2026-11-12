@@ -1,6 +1,17 @@
 /* The Powerhouse (docs/DESIGN.md §1): a dark graphics card in 3D (gpu3d.ts) in both system themes;
    the page around it (top bar, list, drawer) follows light and dark. Labels over the canvas are
    positioned by the view each frame; the worker list below is the accessible path. */
+/* Bundled fonts for the city's signs and robot faces (local files, OFL; no network). */
+@font-face { font-family: "Sora"; src: url("/vendor/fonts/sora-latin-500-normal.woff2") format("woff2"); font-weight: 500; font-display: block; }
+@font-face { font-family: "Sora"; src: url("/vendor/fonts/sora-latin-600-normal.woff2") format("woff2"); font-weight: 600; font-display: block; }
+@font-face { font-family: "Sora"; src: url("/vendor/fonts/sora-latin-700-normal.woff2") format("woff2"); font-weight: 700; font-display: block; }
+@font-face { font-family: "JetBrains Mono"; src: url("/vendor/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-display: block; }
+@font-face { font-family: "JetBrains Mono"; src: url("/vendor/fonts/jetbrains-mono-latin-500-normal.woff2") format("woff2"); font-weight: 500; font-display: block; }
+@font-face { font-family: "JetBrains Mono"; src: url("/vendor/fonts/jetbrains-mono-latin-600-normal.woff2") format("woff2"); font-weight: 600; font-display: block; }
+.ph-meter { position: absolute; left: 12px; top: 12px; z-index: 2; font: 500 11.5px/1 "JetBrains Mono", ui-monospace, monospace; color: #9fb0b6; background: rgba(12, 16, 19, .72); border: 1px solid rgba(140, 200, 215, .22); border-radius: 999px; padding: 6px 10px; pointer-events: none; }
+.ph-meter[data-running=true]::before { content: "● "; color: #4ade80; }
+.ph-meter[data-running=false]::before { content: "● "; color: #6b7a80; }
+
 .ph-top { gap: 14px; flex-wrap: wrap; justify-content: flex-start; }
 .ph-top .links { margin-left: auto; display: flex; gap: 14px; }
 .ph-top .links a { color: var(--muted); text-decoration: none; }

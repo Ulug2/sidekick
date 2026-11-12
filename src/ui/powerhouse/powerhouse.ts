@@ -19,6 +19,7 @@ import type { Job } from "../../jobs/types.js";
 import { deriveScene, nextDeadline, type CityInput, type Scene, type SceneWorker } from "./scene.js";
 import { deriveScene as deriveGym, type Scene as GymScene } from "./scene-gym.js";
 import { createView, type PowerhouseView } from "./gpu3d.js";
+import { createCityView, type CityView, type DrawInfo } from "./city-view.js";
 import { speak } from "./voice.js";
 import { MODEL_IDS } from "../../core/llm/models.js";
 
@@ -39,6 +40,9 @@ let pausedNow = false;
 let spendLine = "";
 const logs = new Map<string, string[]>(); // steps seen while this page is open, per worker
 const demo = location.hash === "#demo";
+// The Silicon City view is behind ?city=1 until it replaces the gym (docs/powerhouse-redesign/06, M6).
+const cityMode = new URLSearchParams(location.search).get("city") === "1";
+let cityView: CityView | null = null;
 
 // ---------- state ----------
 // The raw state, read once: what the city contract needs (04 › Inputs) and what the gym view needs.
@@ -135,7 +139,7 @@ export function render(s: Scene, gym: GymScene, input: CityInput): void {
   $("#overlay").dataset.coach = gym.coach; // the gym view (until M6)
   $("#overlay").dataset.mode = s.sidekick.mode;
   if (s.sidekick.bubble) { const key = `${s.sidekick.dispatchTo}:${s.sidekick.bubble}`; if (lastBubbleKey !== key) { lastBubbleKey = key; speak(`Agent ${s.workers.find(w => w.id === s.sidekick.dispatchTo)?.n ?? ""}! ${s.sidekick.bubble}`); } }
-  view?.update(gym);
+  if (cityMode) cityView?.apply(s); else view?.update(gym);
   const everyone = [...s.workers, ...s.overflow];
   for (const w of everyone) {
     const log = logs.get(w.id) || [];
@@ -264,18 +268,33 @@ export async function refresh(): Promise<void> {
   render(deriveScene(input), gymScene(r.raw), input);
 }
 
+// The demo page's render meter: live fps, or stopped with the total frame count (05 › Page).
+function showMeter(info: DrawInfo): void {
+  let m = document.getElementById("renderMeter");
+  if (!m) { m = document.createElement("div"); m.id = "renderMeter"; m.className = "ph-meter"; m.setAttribute("aria-hidden", "true"); $("#stage").append(m); }
+  m.textContent = info.running ? `live · ${info.fps} fps · ${info.calls} draws` : `stopped · nothing moving · ${info.frames} frames total · ${info.calls} draws`;
+  m.dataset.running = String(info.running); m.dataset.frames = String(info.frames); m.dataset.calls = String(info.calls);
+}
+
 if ($("#powerhouseApp")) {
   const reducedMotion = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  view = createView($("#stage"), $("#overlay"), { reducedMotion });
-  // A pick on the card returns focus to the card when the drawer closes (not to a list row
-  // further down the page, which would scroll it).
-  view.onPick(id => { view?.focus(id); openDrawer(id, "canvas"); });
-  $("#zoomIn").onclick = () => view?.zoom(0.75);
-  $("#zoomOut").onclick = () => view?.zoom(1.33);
-  $("#zoomReset").onclick = () => view?.reset();
-  // Timers are throttled in background tabs: catch up when the tab is seen again; draw nothing while hidden.
+  if (cityMode) {
+    cityView = createCityView($("#stage"), { onPick: id => openDrawer(id, "canvas"), reducedMotion, ...(demo && { onDraw: showMeter }) });
+    if (!cityView) { const n = document.createElement("p"); n.className = "nogl"; n.textContent = "3D view is off because WebGL is not available. The worker list below shows everything."; $("#stage").append(n); }
+    addEventListener("pagehide", () => cityView?.dispose());
+  } else {
+    view = createView($("#stage"), $("#overlay"), { reducedMotion });
+    // A pick on the card returns focus to the card when the drawer closes (not to a list row
+    // further down the page, which would scroll it).
+    view.onPick(id => { view?.focus(id); openDrawer(id, "canvas"); });
+  }
+  $("#zoomIn").onclick = () => cityMode ? cityView?.zoom(0.75) : view?.zoom(0.75);
+  $("#zoomOut").onclick = () => cityMode ? cityView?.zoom(1.33) : view?.zoom(1.33);
+  $("#zoomReset").onclick = () => cityMode ? cityView?.resetView() : view?.reset();
+  // Timers are throttled in background tabs: catch up when the tab is seen again; draw nothing while
+  // hidden (the city view stops its own loop when the tab is hidden).
   const setLive = () => { const on = document.visibilityState === "visible"; view?.setLive(on); if (on) refresh(); };
-  view.setLive(document.visibilityState === "visible");
+  view?.setLive(document.visibilityState === "visible");
   document.addEventListener("visibilitychange", setLive);
   $("#pause").onclick = async () => { if (demo) { demoState = demoState === "Paused" ? "Working" : "Paused"; return refresh(); } await setPaused(!pausedNow); await refresh(); };
   $("#closeDrawer").onclick = closeDrawer;

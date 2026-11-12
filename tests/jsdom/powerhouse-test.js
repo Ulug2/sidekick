@@ -101,6 +101,17 @@ const results = []; const check = (n, ok, x = '') => results.push(`${ok ? 'PASS'
   await set({ workers: [1, 2, 3, 4, 5, 6].map(n => rec({ id: `a${n}`, n, title: `Apply: Job ${n}`, startedAt: now() + n })) });
   check('More workers than slots: the old view shows 3 on the heat pipe; the city has room for 4 couriers, so 2 more are only in the list, and all 6 are listed', $$('#overlay .ph-label').length === 3 && /^2 more workers than there is room for on the card/.test($('#thinking').textContent) && listText().length === 7, $('#thinking').textContent);
 
+  // ---- Silicon City (?city=1, M2): without WebGL the stage says so; the list still works ----
+  {
+    const w2 = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true, url: 'chrome-extension://abc/powerhouse.html?city=1' }).window;
+    w2.chrome = { storage: { local: makeStore({ orchestrator: { workers: [rec({ id: 'c1' })] } }), session: makeStore(), onChanged: { addListener() {} } }, runtime: { getURL: p => p }, tabs: { update: async () => ({}) }, windows: { update: async () => {} } };
+    w2.ResizeObserver = class { observe() {} };
+    loadScripts(w2, ['ui/powerhouse/powerhouse.js'], ['refresh']);
+    await w2.refresh(); await sleep(30);
+    const note = w2.document.querySelector('.stage .nogl');
+    check('City view without WebGL: one line in the stage, no canvas, and the list still shows the worker', !!note && /3D view is off because WebGL is not available/.test(note.textContent) && !w2.document.querySelector('.ph-canvas') && /Apply: Software Engineer at Stripe/.test(w2.document.querySelector('#workerList').textContent), note?.textContent);
+  }
+
   console.log(results.join('\n'));
   const passed = results.filter(x => x.startsWith('PASS')).length;
   console.log(`\n${passed}/${results.length} passed`);

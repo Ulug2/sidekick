@@ -169,3 +169,36 @@ describe("worker records count their steps", () => {
     expect(rec.step).toBe("Page 2");
   });
 });
+
+// ---------- M2: the city (pure parts) ----------
+import * as THREE from "three";
+import { skyline, roadDist, EXCL, mergeStatic } from "../../src/ui/powerhouse/city.js";
+
+describe("the city on the card", () => {
+  it("the skyline is the same on every load, on the board, off the roads and out of every exclusion zone", () => {
+    const a = skyline(), b = skyline();
+    expect(a).toEqual(b);
+    expect(a.length).toBeGreaterThan(50); // 65 with the doc's exclusion zones
+    for (const s of a) {
+      expect(Math.abs(s.x) + s.w / 2).toBeLessThanOrEqual(97);
+      expect(Math.abs(s.z) + s.d / 2).toBeLessThanOrEqual(58);
+      expect(roadDist(s.x, s.z)).toBeGreaterThanOrEqual(Math.max(s.w, s.d) / 2 + 2.3);
+      const m = Math.max(s.w, s.d) / 2;
+      expect(EXCL.some(([x0, x1, z0, z1]) => s.x > x0 - m && s.x < x1 + m && s.z > z0 - m && s.z < z1 + m)).toBe(false);
+      if (s.x > -66 && s.x < -30) expect(s.h).toBeLessThanOrEqual(5.5); // the archive robots stay visible
+      if (s.z > 30) expect(s.h).toBeLessThanOrEqual(7); // the docks stay visible
+    }
+  });
+  it("static meshes with one material and the same shadow flags merge into one; kept ones stay", () => {
+    const g = new THREE.Group(), mat = new THREE.MeshStandardMaterial(), other = new THREE.MeshStandardMaterial();
+    for (let i = 0; i < 5; i++) { const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat); m.position.x = i * 3; m.castShadow = true; g.add(m); }
+    const kept = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat); g.add(kept);
+    g.add(new THREE.Mesh(new THREE.SphereGeometry(1), other));
+    mergeStatic(g, new Set([kept]));
+    expect(g.children).toHaveLength(3); // the 5 boxes as one, the kept box, the lone sphere
+    const merged = g.children.find(c => c !== kept && (c as THREE.Mesh).material === mat) as THREE.Mesh;
+    expect(merged.castShadow).toBe(true);
+    merged.geometry.computeBoundingBox();
+    expect(merged.geometry.boundingBox!.max.x).toBeCloseTo(12.5); // positions baked in
+  });
+});
