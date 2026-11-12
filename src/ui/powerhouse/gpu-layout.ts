@@ -1,7 +1,7 @@
 // Where things are on the 3D graphics card (docs/DESIGN.md §1, "3D"). Pure: numbers only, so the
 // placement and the zoom levels can be tested without WebGL. Units: the board is 200 × 120, lying
 // on the XZ plane, top surface at y = BOARD.top; +z faces the default camera.
-import { SLOTS, type Area, type Figure, type Scene } from "./scene.js";
+import { SLOTS, type Area, type Figure, type Scene } from "./scene-gym.js";
 
 export type Zone = "heatpipe" | "vram" | "pcie" | "caps";
 export const ZONE_OF: Record<Area, Zone> = { bar: "heatpipe", mat: "vram", bench: "pcie", floor: "caps" };

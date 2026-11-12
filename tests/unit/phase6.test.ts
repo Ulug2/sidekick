@@ -3,7 +3,7 @@
 // for 15 min stops moving, the spend cap read live, slots and overflow; brain calls tracked from
 // start to end; the shout text is the real title, plain and redacted.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { deriveScene, LEAVE_MS, SHOUT_MS, QUIET_MS, SLOTS } from "../../src/ui/powerhouse/scene.js";
+import { deriveScene, LEAVE_MS, SHOUT_MS, QUIET_MS, SLOTS } from "../../src/ui/powerhouse/scene-gym.js";
 import { trackBrain, liveBrainCalls, BRAIN_STALE_MS } from "../../src/orchestrator/activity.js";
 import { shoutFor } from "../../src/orchestrator/workers.js";
 import type { WorkerRecord } from "../../src/orchestrator/types.js";

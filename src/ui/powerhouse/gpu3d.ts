@@ -10,7 +10,7 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import type { Figure, Scene } from "./scene.js";
+import type { Figure, Scene } from "./scene-gym.js";
 import { BOARD, CAMERA, DIE, FOCUS_AZIMUTH, HEATPIPE, SIDEKICK, alienWeight, clampPolar, clampRadius, clampTarget, orbitPosition, placeFigures, type Placed, type Spot } from "./gpu-layout.js";
 import { makeAlien, pose, setOpacity, type Alien, type AlienPose } from "./alien.js";
 

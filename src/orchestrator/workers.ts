@@ -29,11 +29,12 @@ export async function newTask(t: Omit<WorkerTask, "id" | "n" | "role" | "context
 // For an approved batch: the job's own sites (the form's ATS, the company's posting) are pre-approved.
 export const approvedSitesFor = (urls: string[]) => [...new Set(urls.map(u => siteOf(u)).filter(Boolean))];
 
-export async function upsertWorker(rec: Partial<WorkerRecord> & { id: string }): Promise<void> {
+export async function upsertWorker(rec: Partial<WorkerRecord> & { id: string }, newStep = false): Promise<void> {
   await updateLocal("orchestrator", (o = {}) => {
     const list = (o.workers || []).filter(w => w.id !== rec.id);
     const old = (o.workers || []).find(w => w.id === rec.id);
     const next: WorkerRecord = { n: 0, kind: "apply", title: "", model: "", status: "queued", step: "", startedAt: Date.now(), cost: 0, ...old, ...rec, updatedAt: Date.now() } as WorkerRecord;
+    if (newStep) next.steps = (old?.steps || 0) + 1; // counted under the same lock as the write
     return { ...o, workers: [next, ...list].slice(0, WORKERS_KEEP) };
   });
 }
@@ -81,6 +82,6 @@ export async function setPaused(on: boolean): Promise<void> {
 export async function pausedByYou(): Promise<boolean> {
   return (await readLocal("orchestrator")).orchestrator?.paused === USER_PAUSE;
 }
-export const workerStep = (id: string, step: string, cost?: number) => upsertWorker({ id, step: step.slice(0, 160), ...(cost != null && { cost }) });
+export const workerStep = (id: string, step: string, cost?: number) => upsertWorker({ id, step: step.slice(0, 160), ...(cost != null && { cost }) }, true);
 export const finishWorker = (id: string, status: WorkerStatus, extra: Partial<WorkerRecord> = {}) => upsertWorker({ id, status, ...extra });
 export async function listWorkers(): Promise<WorkerRecord[]> { return (await readLocal("orchestrator")).orchestrator?.workers || []; }

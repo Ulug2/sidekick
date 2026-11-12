@@ -34,7 +34,7 @@ const results = []; const check = (n, ok, x = '') => results.push(`${ok ? 'PASS'
 
   // ---- idle ----
   await set({});
-  check('Idle: Sidekick stands, no workers, the list says why it is empty, the chip says when the next batch is', coach() === 'idle' && !$$('#overlay .ph-label').length && !$('#emptyList').hidden && /^Sleeping until \d{1,2}:00 (AM|PM) ET$/.test($('#chip').textContent) && bubble().hidden && listText().length === 1, $('#chip').textContent);
+  check('Idle: everyone is asleep (Sidekick sleeps on the roof), no workers, the list says why it is empty, the chip says when the next batch is', $('#overlay').dataset.mode === 'sleep' && /^Everyone is asleep\. The next batch is built at/.test($('#thinking').textContent) && /Sleeping on the HQ roof/.test(listText()[0]) && coach() === 'idle' && !$$('#overlay .ph-label').length && !$('#emptyList').hidden && /^Sleeping until \d{1,2}:00 (AM|PM) ET$/.test($('#chip').textContent) && bubble().hidden && listText().length === 1, $('#chip').textContent);
 
   // ---- dispatch: a worker starts; Sidekick shouts its real title ----
   await set({ workers: [rec({ id: 'w1' })], lastShout: { text: 'Agent 1! Apply: Software Engineer at Stripe', at: now(), workerId: 'w1' } });
@@ -43,9 +43,11 @@ const results = []; const check = (n, ok, x = '') => results.push(`${ok ? 'PASS'
 
   // ---- a brain call in flight: push-ups win over the shout ----
   await set({ workers: [rec({ id: 'w1' })], lastShout: { text: 'Agent 1! x', at: now(), workerId: 'w1' } }, [{ id: 'b1', what: 'Pick the best 18 to apply to today', startedAt: now() }]);
-  check('Brain call in flight: Sidekick does push-ups and the page says what he is thinking about', coach() === 'thinking' && /thinking: Pick the best 18/.test($('#thinking').textContent));
+  check('A brain call and a fresh dispatch at once: the status line names the dispatch (city contract: dispatch beats lifting)', /^Sidekick started worker 1: Apply: Software Engineer at Stripe$/.test($('#thinking').textContent) && $('#overlay').dataset.mode === 'whistle', $('#thinking').textContent);
+  await set({ workers: [rec({ id: 'w1' })] }, [{ id: 'b1', what: 'Pick the best 18 to apply to today', startedAt: now() }]);
+  check('Brain call in flight: Sidekick lifts and the page says what he is thinking about', $('#overlay').dataset.mode === 'lift' && /^Sidekick is thinking: Pick the best 18/.test($('#thinking').textContent) && /lifting on the HQ roof/.test(listText()[0]), $('#thinking').textContent);
   await set({ workers: [rec({ id: 'w1' })] }, [{ id: 'b1', what: 'old', startedAt: now() - 4 * 60000 }]);
-  check('A brain call older than 3 minutes (page closed mid-call) no longer counts', coach() === 'idle' && !$('#thinking').textContent);
+  check('A brain call older than 3 minutes (page closed mid-call) no longer counts: Sidekick coaches', $('#overlay').dataset.mode === 'coach' && /^Sidekick is coaching: 1 worker is on the job\.$/.test($('#thinking').textContent), $('#thinking').textContent);
 
   // ---- working: the shout is over; a writer joins ----
   await set({ workers: [rec({ id: 'w1', step: 'Page 2: Education' }), rec({ id: 'w2', n: 2, kind: 'write', title: 'Cover letter: Stripe', step: 'Writing', startedAt: now() + 1 })], lastShout: { text: 'Agent 1! x', at: now() - 7000, workerId: 'w1' } });
@@ -80,7 +82,7 @@ const results = []; const check = (n, ok, x = '') => results.push(`${ok ? 'PASS'
 
   // ---- paused by him ----
   await set({ workers: [rec({ id: 'w3', n: 3 })], paused: 'you' });
-  check('Paused by you: Sidekick sits; a running worker stops moving and says it is finishing this one; the button says Resume', coach() === 'paused' && /paused by you/.test(listText()[0]) && fig('w3').dataset.animate === 'false' && fig('w3').dataset.state === 'finishing' && /finishing/.test(fig('w3').textContent) && $('#pause').textContent === 'Resume' && $('#chip').textContent === 'Paused by you · 1 finishing');
+  check('Paused by you: Sidekick sits; a running worker stops moving and says it is finishing this one; the button says Resume', coach() === 'paused' && $('#overlay').dataset.mode === 'rest' && /Paused by you/.test(listText()[0]) && /finishing/.test(listText()[1]) && fig('w3').dataset.animate === 'false' && fig('w3').dataset.state === 'finishing' && /finishing/.test(fig('w3').textContent) && $('#pause').textContent === 'Resume' && $('#chip').textContent === 'Paused by you · 1 finishing');
   $('#pause').click(); await sleep(60);
   check('Resume clears the pause in storage', local.data().orchestrator.paused === null && $('#pause').textContent === 'Pause');
   await set({ workers: [], paused: 'spend-cap' });
@@ -89,14 +91,15 @@ const results = []; const check = (n, ok, x = '') => results.push(`${ok ? 'PASS'
   // ---- spend cap, live ----
   await local.set({ capDaily: 1, usage: { [new Date().toLocaleDateString('en-CA')]: { 'claude-sonnet-5-5': { calls: 9, input: 400000, output: 30000, cacheRead: 0, cacheWrite: 0 } } } });
   await set({ workers: [] });
-  check('Spend over the daily cap: Sidekick sits, the chip says so, the meter shows it', coach() === 'paused' && /spend cap: daily/.test(listText()[0]) && $('#chip').textContent === 'Spend cap reached (daily)' && $('#chip').dataset.tone === 'warn' && $$('#meters .meter.over').length === 1);
+  check('Spend over the daily cap: Sidekick sits, the chip says so, the meter shows it', coach() === 'paused' && /Paused: spend cap/.test(listText()[0]) && /^Spend cap reached\./.test($('#thinking').textContent) && $('#chip').textContent === 'Spend cap reached (daily)' && $('#chip').dataset.tone === 'warn' && $$('#meters .meter.over').length === 1);
   await local.set({ usage: {} });
 
   // ---- web text is text; overflow goes to the list ----
   const evil = 'Apply: <img src=x onerror="window.pwned=1"> at Evil';
   await set({ workers: [1, 2, 3, 4, 5].map(n => rec({ id: `a${n}`, n, title: n === 1 ? evil : `Apply: Job ${n}`, startedAt: now() + n })), lastShout: { text: `Agent 1! ${evil}`, at: now(), workerId: 'a1' } });
   check('Titles from job boards render as text (no element, no script)', !w.document.querySelector('#workerList img, .stage img, #drawer img') && bubble().textContent.includes('<img') && !w.pwned);
-  check('More workers than slots: 3 on the heat pipe, the page says 2 more are in the list, all 5 listed', $$('#overlay .ph-label').length === 3 && /2 more workers than there is room for/.test($('#thinking').textContent) && listText().length === 6);
+  await set({ workers: [1, 2, 3, 4, 5, 6].map(n => rec({ id: `a${n}`, n, title: `Apply: Job ${n}`, startedAt: now() + n })) });
+  check('More workers than slots: the old view shows 3 on the heat pipe; the city has room for 4 couriers, so 2 more are only in the list, and all 6 are listed', $$('#overlay .ph-label').length === 3 && /^2 more workers than there is room for on the card/.test($('#thinking').textContent) && listText().length === 7, $('#thinking').textContent);
 
   console.log(results.join('\n'));
   const passed = results.filter(x => x.startsWith('PASS')).length;

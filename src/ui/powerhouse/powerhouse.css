@@ -72,9 +72,13 @@
 .wl-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 .wl-sub { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 .wl-state { font-size: 12px; padding: 1px 9px; border-radius: 999px; background: var(--surface); color: var(--muted); white-space: nowrap; }
-.wl-state[data-s=needs_you] { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
-.wl-state[data-s=failed] { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
-.wl-state[data-s=working] { color: var(--ok); }
+/* state pills (docs/powerhouse-redesign/04): cyan working, amber needs you, red failed, grey done/asleep, gold finishing */
+.wl-state[data-tone=cyan] { color: var(--ok); }
+.wl-state[data-tone=amber] { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.wl-state[data-tone=red] { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
+.wl-state[data-tone=gold] { color: #a5741f; background: color-mix(in srgb, #d9a54a 16%, transparent); }
+@media (prefers-color-scheme: dark) { .wl-state[data-tone=gold] { color: #e2b45c; } }
+.ph-thinking b { font-weight: 600; color: var(--text); }
 
 /* the drawer: off screen and inert when closed */
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 100%; background: var(--bg); border-left: 1px solid var(--border); box-shadow: -12px 0 40px rgba(0,0,0,.08); padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; transform: translateX(100%); visibility: hidden; transition: transform .2s ease, visibility 0s .2s; z-index: 8; }

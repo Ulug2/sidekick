@@ -40,7 +40,7 @@ export interface WorkerResult {
   error?: string;
 }
 // What the Powerhouse shows for a worker, written to storage as the run goes.
-export interface WorkerRecord { id: string; n: number; kind: WorkerKind; title: string; model: string; status: WorkerStatus; step: string; startedAt: number; updatedAt: number; cost: number; traceId?: string; jobId?: string; error?: string; tabId?: number }
+export interface WorkerRecord { id: string; n: number; kind: WorkerKind; title: string; model: string; status: WorkerStatus; step: string; startedAt: number; updatedAt: number; cost: number; traceId?: string; jobId?: string; error?: string; tabId?: number; steps?: number } // steps: how many steps it has logged (the Powerhouse's step pulses)
 
 // A question the worker could not answer from memory (docs/DESIGN.md §3).
 export interface NeedsYouQuestion { question: string; fieldType: "text" | "select" | "radio" | "checkbox" | "file" | "date" | "human"; options?: string[]; fieldId?: string }
