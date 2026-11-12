@@ -250,3 +250,21 @@ describe("robots", () => {
     expect(s.inner.position.y).toBeLessThan(0); // sitting on the roof
   });
 });
+
+// ---------- M5: traffic ----------
+import { createTraffic } from "../../src/ui/powerhouse/traffic.js";
+
+describe("traffic", () => {
+  it("packets match the scene's counts (docks has two paths), none when hidden; a pulse travels 1.5 s then ends", () => {
+    const g = new THREE.Group();
+    const t = createTraffic(g);
+    const packets = g.children[0] as THREE.InstancedMesh, pulses = g.children[1] as THREE.InstancedMesh;
+    t.setCounts({ archive: 3, docks: 2, plant: 4, ring: 0 }, true); t.update(1.5);
+    expect(packets.count).toBe(3 + 2 * 2 + 4);
+    t.setCounts({ archive: 3, docks: 2, plant: 4, ring: 0 }, false); t.update(1.5);
+    expect(packets.count).toBe(0);
+    t.pulse("archive", 1000);
+    expect(t.stepPulses(1100)).toBe(true); expect(pulses.count).toBe(1);
+    expect(t.stepPulses(2600)).toBe(false); expect(pulses.count).toBe(0);
+  });
+});

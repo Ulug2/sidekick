@@ -98,8 +98,9 @@ async function load(now = Date.now()): Promise<{ raw: Raw; apply: () => void }> 
 const DEMO_STATES = ["Idle", "Thinking", "Dispatch", "Working", "Needs you", "Failed", "Paused", "Busy day", "Overflow"] as const;
 let demoState: (typeof DEMO_STATES)[number] = "Dispatch";
 let demoAt = Date.now();
+let demoSteps = 0; // "Log a step" bumps every demo worker's step count (a step pulse each)
 function demoRaw(now: number): Raw {
-  const W = (o: Partial<WorkerRecord>): WorkerRecord => ({ id: "d1", n: 1, kind: "apply", title: "Apply: Software Engineer, New Grad at Stripe", model: MODEL_IDS.anthropic.fast, status: "working", step: "Page 2: Education", startedAt: demoAt, updatedAt: now, cost: 0, steps: 3, ...o });
+  const W = (o: Partial<WorkerRecord>): WorkerRecord => ({ id: "d1", n: 1, kind: "apply", title: "Apply: Software Engineer, New Grad at Stripe", model: MODEL_IDS.anthropic.fast, status: "working", step: "Page 2: Education", startedAt: demoAt, updatedAt: now, cost: 0, steps: 3 + demoSteps, ...o });
   const crew = [W({}), W({ id: "d2", n: 2, title: "Apply: Backend Engineer at Ramp", startedAt: demoAt + 1 }), W({ id: "d3", n: 3, kind: "write", title: "Cover letter: Plaid", step: "Writing", startedAt: demoAt + 2 }), W({ id: "d4", n: 4, kind: "read", title: "Read: Datadog careers page", step: "Reading the posting", startedAt: demoAt + 3 })];
   const raw: Raw = { now, workers: [], brainCalls: [], spend: { today: 0.31, month: 6.12, unpriced: [] }, caps: { daily: 1, monthly: 25 }, nextBatchAt: nextAt(now, 8) };
   switch (demoState) {
@@ -122,9 +123,13 @@ function demoBar(): void {
   bar.append(label, ...DEMO_STATES.map(s => {
     const b = document.createElement("button"); b.type = "button"; b.className = "small"; b.textContent = s;
     b.setAttribute("aria-pressed", String(s === demoState));
-    b.onclick = () => { demoState = s; demoAt = Date.now(); for (const x of bar.querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b)); refresh(); };
+    b.onclick = () => { demoState = s; demoAt = Date.now(); for (const x of bar.querySelectorAll("button[data-state]")) x.setAttribute("aria-pressed", String(x === b)); refresh(); };
+    b.dataset.state = s;
     return b;
   }));
+  const step = document.createElement("button"); step.type = "button"; step.className = "small"; step.id = "demoStep"; step.textContent = "Log a step";
+  step.onclick = () => { demoSteps++; refresh(); };
+  bar.append(step);
 }
 
 // ---------- drawing ----------

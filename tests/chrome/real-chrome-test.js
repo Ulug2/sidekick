@@ -453,6 +453,12 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
     await shot(cp, '09c-city-idle');
     await cp.click('#demoBar button:text-is("Paused")'); await cp.waitForTimeout(1000);
     const paused = await badges(), pm = await meter();
+    // M5: dispatch shows the bubble with the real title; a step in a stopped scene sends a pulse, then the loop stops again
+    await cp.click('#demoBar button:text-is("Dispatch")'); await cp.waitForTimeout(1000);
+    const bub = await cp.evaluate(() => document.querySelector('#overlay .bubble')?.textContent || '');
+    await cp.click('#demoBar button:text-is("Paused")'); await cp.waitForTimeout(1200);
+    const s0 = await meter(); await cp.click('#demoStep'); await cp.waitForTimeout(200); const s1 = await meter(); await cp.waitForTimeout(2300); const s2 = await meter();
+    check('Real Chrome city (M5): dispatch shows "Sidekick" and the worker\'s real title; a logged step in a stopped scene runs the loop until its pulse lands, then it stops', bub === 'SidekickApply: Software Engineer, New Grad at Stripe' && s0.running === 'false' && s1.running === 'true' && s2.running === 'false' && s2.frames > s0.frames, JSON.stringify({ bub, s0, s1, s2 }));
     check('Real Chrome city (M4): from busy to Idle: no robots, everything stops after drawing the asleep state; Paused: the two couriers frozen with "finishing", nothing moving', idleBadges === '' && idle.running === 'false' && paused === 'd1:apply@lane d2:apply@lane' && (await cp.locator('#overlay .ph-label .ph-tag').allTextContents()).join() === 'finishing,finishing' && pm.running === 'false', JSON.stringify({ idle, idleBadges, paused, pm }));
     await cp.close();
   }

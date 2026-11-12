@@ -1,7 +1,7 @@
 // The Silicon City view (docs/powerhouse-redesign/01, 05): draws a Scene from scene.ts. It never
 // reads app state. Cost rule: frames are drawn only while the scene animates (or a camera flight /
 // step pulse is in progress) and the tab is visible, capped at 30 fps; otherwise exactly one frame
-// per change. Behind ?city=1 until the swap (06-build-plan M6). Traffic and the dispatch trace: M5.
+// per change. Behind ?city=1 until the swap (06-build-plan M6).
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
@@ -14,6 +14,7 @@ import { CAMERA, G, SIDEKICK_SPOT, SPOTS, lanePosition, yawOf } from "./city-lay
 import { Materials, fontsReady } from "./materials.js";
 import { buildCity, type City } from "./city.js";
 import { buildCase, type Case } from "./case.js";
+import { createTraffic, HAND } from "./traffic.js";
 import { addSidekickProps, addWorkerProps, disposeRig, glowFor, lookFor, makeRobot, poseSidekick, poseWorker, setGlow, setLook, type Rig } from "./robot.js";
 
 export interface CityView {
@@ -96,6 +97,10 @@ export function createCityView(stage: HTMLElement, opts: { onPick(id: string): v
   const rigs = new Map<string, Rig>();
   let active: { w: SceneWorker; r: Rig }[] = [];
   const badges = new Map<string, HTMLElement>();
+  const traffic = createTraffic(world);
+  const stepKeys = new Map<string, string>(); // each worker's last step key: a change sends a pulse
+  let pulsing = false; // a pulse keeps the loop alive (transient) until it lands
+  let bubble: HTMLElement | null = null;
 
   // ---------- the loop (05 › The render loop) ----------
   let running = false, lastFrame = 0, clock = 0, shadowsDirty = true, pendingOnce = false, disposed = false;
@@ -112,6 +117,7 @@ export function createCityView(stage: HTMLElement, opts: { onPick(id: string): v
     if (now - lastFrame < 1000 / 30 - 2) return; // 30 fps cap
     const dt = Math.min(0.1, (now - (lastFrame || now)) / 1000); lastFrame = now;
     stepFlight(now);
+    if (pulsing && !traffic.stepPulses(now)) { pulsing = false; transient.n--; }
     if (animates()) { clock += dt; poseAll(dt); shadowsDirty = true; }
     fpsCount++; if (now - fpsT > 1000) { fps = fpsCount; fpsCount = 0; fpsT = now; }
     draw();
@@ -158,6 +164,8 @@ export function createCityView(stage: HTMLElement, opts: { onPick(id: string): v
     const faceTo = target ? yawOf([target.root.position.x - SIDEKICK_SPOT.x, target.root.position.z - SIDEKICK_SPOT.z]) : undefined;
     const ph = poseSidekick(sk, mode, clock, moving, faceTo);
     city.hqLight.intensity = mode === "lift" ? 260 + 220 * ph : { whistle: 300, coach: 260, rest: 90, sleep: 45 }[mode];
+    traffic.update(clock); // packets only show while live (setCounts)
+    traffic.updateTrace(moving ? clock : 0);
     if (moving && dt) {
       city.fan.rotation.y += dt * (mode === "lift" ? 5 : 2.5);
       pcCase?.bgFans.forEach((f, i) => { f.rotation.z += dt * (1.6 + i * 0.3); });
@@ -210,7 +218,35 @@ export function createCityView(stage: HTMLElement, opts: { onPick(id: string): v
     el.style.visibility = ok ? "visible" : "hidden";
     if (ok) { el.style.left = `${(v3.x * 0.5 + 0.5) * stage.clientWidth}px`; el.style.top = `${(-v3.y * 0.5 + 0.5) * stage.clientHeight}px`; }
   }
-  function updateOverlay() { for (const { w, r } of active) { const b = badges.get(w.id); if (b) project(r.head, 5.0, b); } }
+  function updateOverlay() {
+    for (const { w, r } of active) { const b = badges.get(w.id); if (b) project(r.head, 5.0, b); }
+    if (bubble && sk) project(sk.head, 5.6, bubble);
+  }
+  // The speech bubble above Sidekick while he dispatches: "Sidekick", then the worker's real title (text only).
+  function setBubble(text: string | undefined) {
+    if (!text) { bubble?.remove(); bubble = null; return; }
+    if (!bubble) { bubble = document.createElement("div"); bubble.className = "bubble"; overlay.append(bubble); }
+    const who = document.createElement("small"); who.textContent = "Sidekick";
+    bubble.replaceChildren(who, document.createTextNode(text));
+  }
+  // Traffic for a scene: packet counts, step pulses for new steps, the dispatch trace.
+  function applyTraffic(s: Scene) {
+    traffic.setCounts(s.traffic, s.mood === "live" && !opts.reducedMotion);
+    const now = performance.now();
+    for (const w of s.workers) {
+      const prev = stepKeys.get(w.id);
+      stepKeys.set(w.id, w.stepKey);
+      if (prev === undefined || prev === w.stepKey || opts.reducedMotion || !w.slot) continue;
+      const route = w.slot.zone === "rack" || w.slot.zone === "terminal" ? "archive" : w.slot.zone === "lane" ? "docks" : null;
+      if (!route) continue;
+      traffic.pulse(route, now);
+      if (!pulsing) { pulsing = true; transient.n++; }
+    }
+    for (const id of [...stepKeys.keys()]) if (!s.workers.some(w => w.id === id)) stepKeys.delete(id);
+    const target = s.sidekick.mode === "whistle" ? active.find(a => a.w.id === s.sidekick.dispatchTo)?.r : undefined;
+    traffic.setTrace(target ? HAND : null, target ? new THREE.Vector3(target.root.position.x, G + 9.5, target.root.position.z) : undefined);
+    setBubble(s.sidekick.mode === "whistle" ? s.sidekick.bubble : undefined);
+  }
 
   // ---------- camera flights (05 › Camera) ----------
   let flight: { p0: THREE.Vector3; t0: THREE.Vector3; p1: THREE.Vector3; t1: THREE.Vector3; start: number } | null = null;
@@ -282,6 +318,7 @@ export function createCityView(stage: HTMLElement, opts: { onPick(id: string): v
         city.setMood(s.mood); pcCase?.setMood(s.mood);
         placeRobots(s);
         poseAll(0); // at the current (or frozen) clock
+        applyTraffic(s);
       }
       shadowsDirty = true;
       kick();
@@ -297,7 +334,9 @@ export function createCityView(stage: HTMLElement, opts: { onPick(id: string): v
       disposed = true; running = false;
       ro.disconnect(); document.removeEventListener("visibilitychange", onVisibility); controls.dispose();
       for (const el of badges.values()) el.remove();
+      bubble?.remove();
       for (const r of rigs.values()) disposeRig(r);
+      traffic.dispose();
       world.traverse(o => {
         const m = o as THREE.Mesh;
         m.geometry?.dispose();
