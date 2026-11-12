@@ -3,7 +3,7 @@
 // traffic, chip and line texts, plain text, the next deadline. Pure: no DOM, no storage, no clock.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deriveScene, nextDeadline, activityOf, DISPATCH_MS, LEAVE_MS, NO_NEWS_MS, FAILED_KEEP_MS, type CityInput } from "../../src/ui/powerhouse/scene.js";
-import { CAPACITY, SPOTS, LANE, LANE_PHASES, along, lanePosition, polylineLength, yawOf, ROUTES, ROADS } from "../../src/ui/powerhouse/city-layout.js";
+import { CAPACITY, SPOTS, LANE, LANE_PHASES, along, lanePosition, polylineLength, yawOf, ROUTES, ROADS, spreadBadges, badgeWidth, BADGE_W, BADGE_H } from "../../src/ui/powerhouse/city-layout.js";
 import type { WorkerRecord } from "../../src/orchestrator/types.js";
 
 const NOW = Date.parse("2026-11-12T15:00:00Z");
@@ -228,6 +228,9 @@ describe("robots", () => {
     expect(a.meshes[0].geometry).toBe(b.meshes[0].geometry);
     expect(a.meshes[0].material).toBe(b.meshes[0].material);
     expect(a.meshes.every(m => m.userData.robotId === "a")).toBe(true);
+    // only the body and head cast shadows: each caster is drawn again in the shadow pass on every
+    // moving frame, and legs/arms' shadows hide under the body's (Busy day went 258 -> 238 draws)
+    expect(a.meshes.filter(m => m.castShadow)).toHaveLength(2);
   });
   it("poses: sitting on the bench lifts the body to the seat; frozen time gives the same pose", () => {
     const r = makeRobot("w"); addWorkerProps(r);
@@ -266,5 +269,29 @@ describe("traffic", () => {
     t.pulse("archive", 1000);
     expect(t.stepPulses(1100)).toBe(true); expect(pulses.count).toBe(1);
     expect(t.stepPulses(2600)).toBe(false); expect(pulses.count).toBe(0);
+  });
+});
+
+// M7: at the narrow layout the rack's robots are a few pixels apart on screen and their badges
+// stacked into one unreadable blob (screenshot 600-light-Overflow).
+describe("badges on a crowded screen", () => {
+  const boxes = (at: [number, number][], ws: number[]) => at.map(([x, y], i) => ({ l: x - 14, r: x - 14 + ws[i]!, y }));
+  const overlaps = (b: { l: number; r: number; y: number }[]) => b.some((a, i) => b.some((c, j) => j > i && a.l < c.r && c.l < a.r && Math.abs(a.y - c.y) < BADGE_H));
+  it("badges far apart stay exactly over their robots", () => {
+    const items = [{ x: 100, y: 100, w: BADGE_W }, { x: 300, y: 120, w: badgeWidth("?") }];
+    expect(spreadBadges(items)).toEqual([[100, 100], [300, 120]]);
+  });
+  it("four robots within a few pixels (the rack at 420 px): no badge covers another, each stays within two rows of its robot", () => {
+    const items = [{ x: 200, y: 150, w: BADGE_W }, { x: 204, y: 152, w: BADGE_W }, { x: 198, y: 147, w: badgeWidth("!") }, { x: 202, y: 149, w: BADGE_W }];
+    const at = spreadBadges(items);
+    expect(overlaps(boxes(at, items.map(i => i.w)))).toBe(false);
+    at.forEach(([x, y], i) => { expect(Math.abs(x - items[i]!.x)).toBeLessThanOrEqual(items[i]!.w); expect(items[i]!.y - y).toBeLessThanOrEqual(2 * BADGE_H); });
+  });
+  it("a tagged badge (\"?\", \"finishing\") counts its tag's width", () => {
+    expect(badgeWidth("")).toBe(BADGE_W);
+    expect(badgeWidth("?")).toBeGreaterThan(BADGE_W);
+    expect(badgeWidth("finishing")).toBeGreaterThan(badgeWidth("?"));
+    const items = [{ x: 100, y: 100, w: badgeWidth("finishing") }, { x: 120, y: 100, w: BADGE_W }];
+    expect(overlaps(boxes(spreadBadges(items), items.map(i => i.w)))).toBe(false);
   });
 });

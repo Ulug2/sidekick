@@ -149,10 +149,11 @@ export function makeRobot(id: string, o: { body?: number; trim?: number; scale?:
     if (shadows) { m.castShadow = true; m.receiveShadow = true; }
     m.userData.robotId = id; parent.add(m); meshes.push(m); return m;
   };
-  const legs = [-1, 1].map(s => { const p = new THREE.Group(); p.position.set(0.7 * s, 2.0, 0); inner.add(p); mk(P.leg, P.mat, p); return p; });
+  // legs and arms cast no shadow: too small to see under the body's, and every caster is drawn again in
+  // the shadow pass on each moving frame (9 robots: 18 fewer draws, docs/powerhouse-redesign/05 budget)
+  const legs = [-1, 1].map(s => { const p = new THREE.Group(); p.position.set(0.7 * s, 2.0, 0); inner.add(p); mk(P.leg, P.mat, p).castShadow = false; return p; });
   const torso = new THREE.Group(); torso.position.y = 2.0; inner.add(torso);
   mk(P.body, P.mat, torso); mk(S.belly, glowMat, torso, 0, 1.2, 1.012, false);
-  // arms cast no shadow: too small to see, and every caster is drawn again in the shadow pass
   const arms = [-1, 1].map(s => { const p = new THREE.Group(); p.position.set(1.62 * s, 2.2, 0); torso.add(p); const a = mk(P.arm, P.mat, p); a.castShadow = false; return p; });
   const head = new THREE.Group(); head.position.y = 2.7; torso.add(head);
   mk(P.head, P.mat, head);

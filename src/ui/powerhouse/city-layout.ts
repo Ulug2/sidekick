@@ -82,3 +82,30 @@ export function lanePosition(phase: number, t: number): { x: number; z: number; 
 }
 // Rotation around y that makes a model facing +z face the direction (dx, dz).
 export const yawOf = ([dx, dz]: XZ) => Math.atan2(dx, dz);
+
+// ---------- badges on screen (CSS pixels) ----------
+export const BADGE_W = 30, BADGE_H = 26; // a badge's number disc plus a gap
+// where a crowded badge may go, in its own widths and in rows from its robot: in place, right, left, rows up
+const SPOTS_NEAR: [number, number][] = [[0, 0], [1, 0], [-1, 0], [0, -1], [1, -1], [-1, -1], [0, -2], [1, -2], [-1, -2]];
+/** A badge's width: the number disc, plus its tag ("?", "!", "done", "finishing"…) to the right. */
+export const badgeWidth = (tag: string): number => BADGE_W + (tag ? 14 + 7 * tag.length : 0);
+/**
+ * Spread badges so none covers another: each badge (centre of its number disc at x, y; w wide to the
+ * right from x - 14) takes the first of SPOTS_NEAR that overlaps nothing placed before it, or the one
+ * that overlaps least. Returns each badge's new x, y, in the same order.
+ */
+export function spreadBadges(items: { x: number; y: number; w: number }[]): [number, number][] {
+  const placed: { x: number; y: number; w: number }[] = [];
+  const overlap = (x: number, y: number, w: number) => placed.reduce((sum, p) => sum + Math.max(0, Math.min(x + w, p.x + p.w) - Math.max(x, p.x)) * Math.max(0, BADGE_H - Math.abs(p.y - y)), 0);
+  return items.map(({ x, y, w }) => {
+    let best = SPOTS_NEAR[0]!, least = Infinity;
+    for (const s of SPOTS_NEAR) {
+      const o = overlap(x + s[0] * w - 14, y + s[1] * BADGE_H, w);
+      if (o < least) { least = o; best = s; }
+      if (o === 0) break;
+    }
+    const at: [number, number] = [x + best[0] * w, y + best[1] * BADGE_H];
+    placed.push({ x: at[0] - 14, y: at[1], w });
+    return at;
+  });
+}

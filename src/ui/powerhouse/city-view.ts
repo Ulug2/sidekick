@@ -10,7 +10,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import type { Scene, SceneWorker } from "./scene.js";
-import { CAMERA, G, SIDEKICK_SPOT, SPOTS, lanePosition, yawOf } from "./city-layout.js";
+import { CAMERA, G, SIDEKICK_SPOT, SPOTS, badgeWidth, lanePosition, spreadBadges, yawOf } from "./city-layout.js";
 import { Materials, fontsReady } from "./materials.js";
 import { buildCity, type City } from "./city.js";
 import { buildCase, type Case } from "./case.js";
@@ -212,15 +212,24 @@ export function createCityView(stage: HTMLElement, opts: { onPick(id: string): v
     }
   }
   const v3 = new THREE.Vector3();
-  function project(obj: THREE.Object3D, y: number, el: HTMLElement) {
+  // Screen position of a point above an object, or null when it is behind the camera or off the stage.
+  function screenOf(obj: THREE.Object3D, y: number): [number, number] | null {
     obj.localToWorld(v3.set(0, y, 0)); v3.project(camera);
-    const ok = v3.z < 1 && Math.abs(v3.x) < 1.2 && Math.abs(v3.y) < 1.2;
-    el.style.visibility = ok ? "visible" : "hidden";
-    if (ok) { el.style.left = `${(v3.x * 0.5 + 0.5) * stage.clientWidth}px`; el.style.top = `${(-v3.y * 0.5 + 0.5) * stage.clientHeight}px`; }
+    if (!(v3.z < 1 && Math.abs(v3.x) < 1.2 && Math.abs(v3.y) < 1.2)) return null;
+    return [(v3.x * 0.5 + 0.5) * stage.clientWidth, (-v3.y * 0.5 + 0.5) * stage.clientHeight];
+  }
+  function place(el: HTMLElement, at: [number, number] | null) {
+    el.style.visibility = at ? "visible" : "hidden";
+    if (at) { el.style.left = `${at[0]}px`; el.style.top = `${at[1]}px`; }
   }
   function updateOverlay() {
-    for (const { w, r } of active) { const b = badges.get(w.id); if (b) project(r.head, 5.0, b); }
-    if (bubble && sk) project(sk.head, 5.6, bubble);
+    // Robots close together on screen (the rack, the bench, a far or narrow view) would stack their
+    // badges into one blob: spreadBadges moves a crowded badge beside the others, next to its robot.
+    const shown = active.map(({ w, r }) => ({ b: badges.get(w.id), at: screenOf(r.head, 5.0), w: badgeWidth(w.tag) }));
+    const spots = spreadBadges(shown.flatMap(x => x.b && x.at ? [{ x: x.at[0], y: x.at[1], w: x.w }] : []));
+    let i = 0;
+    for (const x of shown) if (x.b) place(x.b, x.at ? spots[i++]! : null);
+    if (bubble && sk) place(bubble, screenOf(sk.head, 5.6));
   }
   // The speech bubble above Sidekick while he dispatches: "Sidekick", then the worker's real title (text only).
   function setBubble(text: string | undefined) {

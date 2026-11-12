@@ -485,6 +485,12 @@ const sse = events => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('')
       await ph.waitForTimeout(250);
       const ov = await ph.evaluate(() => document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth);
       check(`Real Chrome Powerhouse: fits at ${w}px`, ov <= 1, `overflow ${ov}px`);
+      if (w === 420) {
+        // a badge is a <button>: the page's light-theme button pill drew a ring round every badge (M7)
+        await ph.emulateMedia({ colorScheme: 'light' });
+        const pill = await ph.evaluate(() => { const c = getComputedStyle(document.querySelector('#overlay .ph-label')); return [c.paddingLeft, c.borderTopWidth, c.backgroundColor].join(' '); });
+        check('Real Chrome Powerhouse: badges have no button pill in the light theme (no padding, border or background)', pill === '0px 0px rgba(0, 0, 0, 0)', pill);
+      }
       await shot(ph, `09b-powerhouse-${name}`);
     }
     // zoom: buttons, wheel, 0 resets; a badge click flies in and opens the drawer; Escape returns focus to the card
