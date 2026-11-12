@@ -13,6 +13,7 @@ import type { Scene } from "./scene.js";
 import { CAMERA } from "./city-layout.js";
 import { Materials, fontsReady } from "./materials.js";
 import { buildCity, type City } from "./city.js";
+import { buildCase, type Case } from "./case.js";
 
 export interface CityView {
   apply(scene: Scene): void; // update the world for this scene, then draw (one frame or the loop)
@@ -87,10 +88,10 @@ export function createCityView(stage: HTMLElement, opts: { onPick(id: string): v
   const rim = new THREE.DirectionalLight(0x5fd4ea, 0.4); rim.position.set(-120, 60, -140); world.add(rim);
 
   const mats = new Materials();
-  let city: City | null = null;
+  let city: City | null = null, pcCase: Case | null = null;
   let scene: Scene | null = null;
   // The city draws text on canvases: build it once the bundled fonts are loaded.
-  fontsReady().then(() => { if (disposed) return; city = buildCity(world, mats); shadowsDirty = true; if (scene) view.apply(scene); else renderOnce(); });
+  fontsReady().then(() => { if (disposed) return; city = buildCity(world, mats); pcCase = buildCase(world); shadowsDirty = true; if (scene) view.apply(scene); else renderOnce(); });
 
   // ---------- the loop (05 › The render loop) ----------
   let running = false, lastFrame = 0, clock = 0, shadowsDirty = true, pendingOnce = false, disposed = false;
@@ -112,6 +113,7 @@ export function createCityView(stage: HTMLElement, opts: { onPick(id: string): v
   function tick(dt: number) {
     if (!city || !scene) return;
     city.fan.rotation.y += dt * (scene.sidekick.mode === "lift" ? 5 : 2.5);
+    pcCase?.bgFans.forEach((f, i) => { f.rotation.z += dt * (1.6 + i * 0.3); });
     const writers = scene.workers.filter(w => w.activity === "write" && !w.finishing && w.slot);
     // the screen scrolls with the animation clock, so a frozen scene draws the same every time
     for (const w of writers) { const t = city.termTextures[w.slot!.index]; if (t) t.offset.y = (clock * 0.06) % 1; }
@@ -149,6 +151,7 @@ export function createCityView(stage: HTMLElement, opts: { onPick(id: string): v
       scene = s;
       if (city) {
         city.setMood(s.mood);
+        pcCase?.setMood(s.mood);
         city.hqLight.intensity = { lift: 260, whistle: 300, coach: 260, rest: 90, sleep: 45 }[s.sidekick.mode];
       }
       shadowsDirty = true;
